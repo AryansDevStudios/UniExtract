@@ -35,7 +35,7 @@ const logger = (jobId, message, type = 'INFO') => {
 const cleanMediaUrl = (rawUrl) => {
     try {
         const parsed = new URL(rawUrl);
-        
+
         // Strip YouTube Playlist & Tracking Params
         if (parsed.hostname.includes('youtube.com')) {
             parsed.searchParams.delete('list');
@@ -46,11 +46,11 @@ const cleanMediaUrl = (rawUrl) => {
             parsed.searchParams.delete('si');
             parsed.searchParams.delete('pp');
         }
-        
+
         // Universal tracking parameters to strip for IG, TikTok, FB, Snap
         const trackingParams = ['igsh', 'utm_source', 'utm_medium', 'utm_campaign', 'is_from_webapp', 'sender_device', 'share_app_id', 'feature', 'fbclid'];
         trackingParams.forEach(param => parsed.searchParams.delete(param));
-        
+
         return parsed.toString();
     } catch (e) {
         return rawUrl; // Fallback to raw URL if parsing fails
@@ -118,23 +118,31 @@ app.post('/api/analyze', async (req, res) => {
         logger(null, `Metadata retrieved for: "${info.title}"`);
 
         // Graceful error handling to prevent backend crash if a playlist still slips through
-        if (!info.formats) {
-            throw new Error("No video stream found. Please ensure the link points to a specific video, not a channel or playlist.");
+        let rawFormats = info.formats;
+        if (!rawFormats) {
+            if (info.url) {
+                // Some extractors (like direct Snapchat Spotlight) return a single format at the root instead of an array
+                rawFormats = [info];
+                // Manually inject format_id if missing so the download step knows what to request
+                if (!info.format_id) info.format_id = info.format_id || '0';
+            } else {
+                throw new Error("No video stream found. Please ensure the link points to a specific video, not a channel or playlist.");
+            }
         }
 
         // Safely map formats (Supports YT, FB, IG, TT, Snap natively now)
-        const formats = info.formats.map(f => {
+        const formats = rawFormats.map(f => {
             let label = "SD";
-            
+
             // Fix: Treat missing codec fields as present unless explicitly flagged as 'none' (fixes Snapchat/IG)
-            const hasVideo = f.vcodec !== 'none';
-            const hasAudio = f.acodec !== 'none';
+            const hasVideo = f.vcodec !== 'none' && f.video_ext !== 'none';
+            const hasAudio = f.acodec !== 'none' && f.audio_ext !== 'none';
 
             // Smart orientation detection for vertical videos (TikTok, Shorts, Reels)
             const width = f.width || 0;
             const height = f.height || 0;
             const isVertical = height > width && width > 0;
-            
+
             // Use the shortest edge to accurately determine quality category (HD, FHD, 4K)
             let shortEdge = height;
             if (width && height) {
@@ -200,7 +208,7 @@ app.get('/api/thumbnail', (req, res) => {
     }
 
     const safeTitle = (title || 'thumbnail').replace(/[^a-z0-9]/gi, '_');
-    
+
     // Force browser to treat as a downloadable PNG file
     res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}_thumb.png"`);
     res.setHeader('Content-Type', 'image/png');
@@ -225,9 +233,9 @@ app.get('/api/thumbnail', (req, res) => {
 // --- API: DOWNLOAD & PROCESS ---
 app.post('/api/download', async (req, res) => {
     const { url, vId, aId, vLabel, aLabel, title } = req.body;
-    const cleanedUrl = cleanMediaUrl(url); 
+    const cleanedUrl = cleanMediaUrl(url);
     const jobId = uuidv4();
-    const extension = 'mp4'; 
+    const extension = 'mp4';
     const namingTag = `${vLabel || 'NoVideo'}_${aLabel || 'NoAudio'}`;
 
     jobs[jobId] = { status: 'downloading', progress: '0%', file: null, customTag: namingTag, title };
@@ -245,7 +253,8 @@ app.post('/api/download', async (req, res) => {
         '--postprocessor-args', `Merger:-c:V ${selectedEncoder} -preset fast -c:a aac -b:a 192k`,
         '--add-metadata',
         '--write-thumbnail',    // Forces yt-dlp to save the thumbnail alongside the video
-        '--convert-thumbnails', 'jpg' // Guarantees the thumbnail is cleanly converted to JPG
+        '--convert-thumbnails', 'jpg', // Guarantees the thumbnail is cleanly converted to JPG
+        '-o', `${jobId}.%(ext)s`
     ];
 
     ytdlp.download(cleanedUrl)
@@ -264,7 +273,7 @@ app.post('/api/download', async (req, res) => {
             if (result.filePaths && result.filePaths.length > 0) {
                 const finalFile = result.filePaths.find(p => p.endsWith(`.${extension}`)) || result.filePaths[0];
                 const baseName = finalFile.substring(0, finalFile.lastIndexOf('.'));
-                
+
                 // Locate the safely extracted JPG thumbnail 
                 const possibleThumbs = [baseName + '.jpg', baseName + '.webp', baseName + '.png'];
                 const thumbFile = possibleThumbs.find(f => fs.existsSync(f));
@@ -274,7 +283,7 @@ app.post('/api/download', async (req, res) => {
                     try {
                         logger(jobId, `Task 2: Injecting high-res thumbnail into MP4...`, "THUMB");
                         const embeddedFile = baseName + '_with_thumb.' + extension;
-                        
+
                         // -c copy ensures we don't re-encode the video again, we just inject the picture
                         spawnSync('ffmpeg', [
                             '-y',
@@ -326,7 +335,7 @@ app.get('/api/file/:jobId/:title', (req, res) => {
 
     const filePath = path.join(TEMP_DIR, job.file);
     const safeTitle = req.params.title.replace(/[^a-z0-9]/gi, '_');
-    
+
     // Strictly force the .mp4 extension for maximum compatibility delivery
     const finalName = `${safeTitle}_${job.customTag}.mp4`;
 
@@ -422,7 +431,6 @@ app.get('/', (req, res) => {
                 <div class="mt-4 md:mt-6 flex flex-wrap justify-center gap-1.5 md:gap-2 text-[9px] md:text-[10px] font-black uppercase tracking-widest text-white/80">
                     <span class="px-2 py-1 md:px-3 md:py-1.5 rounded-lg bg-white/10 border border-white/20">YouTube</span>
                     <span class="px-2 py-1 md:px-3 md:py-1.5 rounded-lg bg-white/10 border border-white/20">Instagram Reels</span>
-                    <span class="px-2 py-1 md:px-3 md:py-1.5 rounded-lg bg-white/10 border border-white/20">Facebook Reels/Posts</span>
                     <span class="px-2 py-1 md:px-3 md:py-1.5 rounded-lg bg-white/10 border border-white/20">Snapchat Spotlight</span>                    
                 </div>
             </div>
