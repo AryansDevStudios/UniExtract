@@ -216,7 +216,7 @@ app.get('/api/thumbnail', (req, res) => {
     // Pipe the image through FFmpeg to convert it (e.g. YouTube WebP) into a high-quality PNG on the fly
     const ffmpegProcess = spawn('ffmpeg', [
         '-i', imgUrl,
-        '-vframes', '1',
+        '-vframes', '1',    
         '-c:v', 'png',
         '-f', 'image2pipe',
         'pipe:1'
