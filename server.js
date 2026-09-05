@@ -273,6 +273,12 @@ app.post('/api/analyze', async (req, res) => {
 
         const responseData = { title: info.title, thumbnail: info.thumbnail, formats };
         setCachedAnalysis(cleanedUrl, responseData);
+        
+        // SAVE RAW METADATA FOR INSTANT DOWNLOAD START
+        const hash = Buffer.from(cleanedUrl).toString('base64url');
+        const infoJsonPath = path.join(CACHE_DIR, `${hash}.info.json`);
+        fs.writeFileSync(infoJsonPath, JSON.stringify(info));
+        
         res.json(responseData);
     } catch (err) {
         logger(null, `Analysis failed: ${err.message}`, "ERROR");
@@ -339,9 +345,18 @@ app.post('/api/download', async (req, res) => {
     // TASK 1: Build the specific FFmpeg instructions based on media type
     let ffmpegArgs = [];
     
+    // SPEED UP: Bypass extraction phase completely if we have cached metadata
+    const hash = Buffer.from(cleanedUrl).toString('base64url');
+    const infoJsonPath = path.join(CACHE_DIR, `${hash}.info.json`);
+    
+    if (fs.existsSync(infoJsonPath)) {
+        ffmpegArgs.push('--load-info-json', infoJsonPath);
+        logger(jobId, "Bypassing network extraction phase using cached metadata (Instant Start)", "SPEED");
+    }
+    
     if (isAudioOnly) {
         // Extract audio and convert directly to MP3
-        ffmpegArgs = [
+        ffmpegArgs.push(
             '--extract-audio',
             '--audio-format', 'mp3',
             '--audio-quality', '0',
@@ -349,19 +364,19 @@ app.post('/api/download', async (req, res) => {
             '--write-thumbnail', // Save cover art
             '--convert-thumbnails', 'jpg',
             '-o', `${jobId}.%(ext)s`
-        ];
+        );
     } else {
         // Merge Video + Audio and ensure MP4 container
-        ffmpegArgs = [
+        ffmpegArgs.push(
             '--merge-output-format', extension,
             '--recode-video', extension,
-            '--postprocessor-args', `VideoConvertor:-c:V ${selectedEncoder} -preset fast -c:a aac -b:a 192k`,
-            '--postprocessor-args', `Merger:-c:V ${selectedEncoder} -preset fast -c:a aac -b:a 192k`,
+            '--postprocessor-args', `VideoConvertor:-c:v ${selectedEncoder} -preset ultrafast -c:a aac -b:a 192k`,
+            '--postprocessor-args', `Merger:-c:v ${selectedEncoder} -preset ultrafast -c:a aac -b:a 192k`,
             '--add-metadata',
             '--write-thumbnail',
             '--convert-thumbnails', 'jpg',
             '-o', `${jobId}.%(ext)s`
-        ];
+        );
     }
 
     ytdlp.download(cleanedUrl)
