@@ -8,8 +8,8 @@ export default function Header({ isDark, toggleTheme }) {
         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
           <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
         </div>
-        <h1 className="text-xl font-bold tracking-tight text-slate-800 dark:text-slate-100">
-          Extractor <span className="font-light text-slate-400">Pro</span>
+        <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100">
+          Universal <span className="font-light text-slate-400">Media Extractor</span>
         </h1>
       </div>
       <button 

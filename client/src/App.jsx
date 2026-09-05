@@ -162,9 +162,15 @@ function App() {
       
       {/* Dynamic Background */}
       <div className="fixed inset-0 pointer-events-none -z-10 bg-slate-50 dark:bg-slate-950 transition-colors duration-500" />
-      <div className="fixed inset-0 pointer-events-none -z-10 opacity-40 dark:opacity-20"
+      <motion.div 
+        className="fixed inset-0 pointer-events-none -z-10 opacity-40 dark:opacity-20"
+        animate={{
+          backgroundPosition: ['0% 0%', '100% 100%', '0% 0%'],
+        }}
+        transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
         style={{
-          backgroundImage: 'radial-gradient(circle at 50% 0%, #6366f1 0%, transparent 40%), radial-gradient(circle at 100% 100%, #a855f7 0%, transparent 40%)'
+          backgroundImage: 'radial-gradient(circle at 50% 0%, #6366f1 0%, transparent 50%), radial-gradient(circle at 100% 100%, #a855f7 0%, transparent 50%)',
+          backgroundSize: '200% 200%'
         }}
       />
 
@@ -223,6 +229,17 @@ function App() {
         />
       </main>
 
+      <footer className="w-full py-8 text-center flex flex-col items-center justify-center space-y-2 opacity-80 hover:opacity-100 transition-opacity">
+        <div className="text-slate-800 dark:text-slate-300 text-xs font-medium">
+          © 2026 
+          <span className="bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent font-black tracking-wide ml-1.5">
+            AryansDevStudios
+          </span>
+        </div>
+        <a href="https://github.com/AryansDevStudios/Universal-Media-Extractor" target="_blank" rel="noreferrer" className="text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 text-[10px] uppercase tracking-widest font-bold transition-colors">
+          Open-Source & Free
+        </a>
+      </footer>
     </div>
   );
 }

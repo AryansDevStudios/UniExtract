@@ -20,8 +20,15 @@ export default function SearchBox({ onAnalyze, isLoading }) {
         value={url}
         onChange={(e) => setUrl(e.target.value)}
         placeholder="Paste YouTube, TikTok, or Instagram link..." 
-        className="w-full pl-12 pr-32 py-4 bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 rounded-2xl text-sm md:text-base text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm"
+        className="w-full pl-12 pr-40 py-4 bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 rounded-2xl text-sm md:text-base text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm"
       />
+      {!url && (
+        <div className="absolute right-36 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1 pointer-events-none opacity-50">
+          <kbd className="px-2 py-1 bg-slate-200 dark:bg-slate-800 rounded text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700 shadow-sm">Ctrl</kbd>
+          <span className="text-slate-400 text-xs">+</span>
+          <kbd className="px-2 py-1 bg-slate-200 dark:bg-slate-800 rounded text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700 shadow-sm">V</kbd>
+        </div>
+      )}
       <button 
         type="submit" 
         disabled={isLoading || !url}
