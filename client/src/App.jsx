@@ -74,8 +74,8 @@ function App() {
         return next.slice(0, 8); // Keep compact history
       });
       
-      const vList = data.formats.filter(f => f.vcodec).sort((a,b) => (b.height - a.height) || (b.size - a.size));
-      const aList = data.formats.filter(f => f.acodec && !f.vcodec).sort((a,b) => b.size - a.size);
+      const vList = data.formats.filter(f => f.vcodec).sort((a,b) => (b.height - a.height) || ((a.size || Infinity) - (b.size || Infinity)));
+      const aList = data.formats.filter(f => f.acodec && !f.vcodec).sort((a,b) => (b.size || 0) - (a.size || 0));
       
       if (vList.length > 0) setSelectedVideo({ id: vList[0].id, size: vList[0].size, label: vList[0].label });
       else setSelectedVideo({ id: '', size: 0, label: 'NoVideo' });

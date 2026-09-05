@@ -93,7 +93,10 @@ export default function CompactResultPanel({
   if (!metadata) return null;
 
   const vFormats = useMemo(() => {
-    let list = metadata.formats.filter(f => f.vcodec).sort((a, b) => (b.height - a.height) || (b.size - a.size));
+    // Sort by height descending, then size ASCENDING so standard users get the smallest, most efficient codec per resolution
+    let list = metadata.formats
+      .filter(f => f.vcodec)
+      .sort((a, b) => (b.height - a.height) || ((a.size || Infinity) - (b.size || Infinity)));
     
     if (!advancedMode) {
       const seen = new Set();
@@ -113,8 +116,14 @@ export default function CompactResultPanel({
   }, [metadata, advancedMode]);
 
   const aFormats = useMemo(() => {
-    let list = metadata.formats.filter(f => f.acodec && !f.vcodec).sort((a, b) => b.size - a.size);
+    let list = metadata.formats
+      .filter(f => f.acodec && !f.vcodec)
+      .sort((a, b) => (b.size || 0) - (a.size || 0)); // Largest size (best quality) audio
     
+    if (!advancedMode && list.length > 0) {
+      list = [list[0]];
+    }
+
     return list.map(f => ({
       ...f,
       display: advancedMode
