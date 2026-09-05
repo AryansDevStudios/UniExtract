@@ -88,27 +88,40 @@ export default function CompactResultPanel({
   progress,
   status
 }) {
+  const [advancedMode, setAdvancedMode] = useState(false);
+
   if (!metadata) return null;
 
   const vFormats = useMemo(() => {
     let list = metadata.formats.filter(f => f.vcodec).sort((a, b) => (b.height - a.height) || (b.size - a.size));
-    const seen = new Set();
-    return list.filter(f => {
-      if (seen.has(f.resolution)) return false;
-      seen.add(f.resolution);
-      return true;
-    }).map(f => ({
+    
+    if (!advancedMode) {
+      const seen = new Set();
+      list = list.filter(f => {
+        if (seen.has(f.resolution)) return false;
+        seen.add(f.resolution);
+        return true;
+      });
+    }
+
+    return list.map(f => ({
       ...f,
-      display: `${f.resolution} • ${formatBytes(f.size)}`
+      display: advancedMode 
+        ? `${f.resolution} • ${f.codec_info || f.vcodec} • ${formatBytes(f.size)}`
+        : `${f.resolution} • ${formatBytes(f.size)}`
     }));
-  }, [metadata]);
+  }, [metadata, advancedMode]);
 
   const aFormats = useMemo(() => {
-    return metadata.formats.filter(f => f.acodec && !f.vcodec).sort((a, b) => b.size - a.size).map(f => ({
+    let list = metadata.formats.filter(f => f.acodec && !f.vcodec).sort((a, b) => b.size - a.size);
+    
+    return list.map(f => ({
       ...f,
-      display: `${f.abr || 'High Quality'} • ${formatBytes(f.size)}`
+      display: advancedMode
+        ? `${f.abr || 'High Quality'} • ${f.codec_info || f.acodec} • ${formatBytes(f.size)}`
+        : `${f.abr || 'High Quality'} • ${formatBytes(f.size)}`
     }));
-  }, [metadata]);
+  }, [metadata, advancedMode]);
 
   const totalSize = (selectedVideo.size || 0) + (selectedAudio.size || 0);
   const sizeText = totalSize > 0 ? formatBytes(totalSize) : 'Unknown Size';
@@ -140,11 +153,22 @@ export default function CompactResultPanel({
       {/* RIGHT: DETAILS & CONTROLS */}
       <div className="flex-1 flex flex-col justify-between py-2 md:py-4 md:pr-4">
         <div>
-          <h2 className="text-lg md:text-xl font-bold text-slate-800 dark:text-slate-100 line-clamp-2 leading-snug mb-6">
+          <h2 className="text-lg md:text-xl font-bold text-slate-800 dark:text-slate-100 line-clamp-2 leading-snug mb-4">
             {metadata.title}
           </h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mt-4 relative z-10">
+          <div className="flex justify-end mb-3 relative z-10">
+            <label className="flex items-center gap-2 cursor-pointer text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-indigo-500 transition-colors">
+              <div className="relative">
+                <input type="checkbox" className="peer sr-only" checked={advancedMode} onChange={(e) => setAdvancedMode(e.target.checked)} />
+                <div className="w-7 h-4 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:bg-indigo-500 transition-colors"></div>
+                <div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform peer-checked:translate-x-3 shadow-sm"></div>
+              </div>
+              Show All Codecs
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 relative z-10">
             {/* VIDEO DROPDOWN */}
             <CustomSelect 
               label="Video Quality"
