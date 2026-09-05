@@ -375,50 +375,32 @@ app.post('/api/download', async (req, res) => {
     jobs[jobId].metaThumb = metaThumb;
     
     if (isAudioOnly) {
-        // Extract audio and convert directly to MP3
-        ffmpegArgs.push(
-            '--extract-audio',
-            '--audio-format', 'mp3',
-            '--audio-quality', '0',
-            '--add-metadata', // yt-dlp first pass
-            '--write-thumbnail', // Save cover art
-            '--convert-thumbnails', 'jpg',
-            '-o', `${jobId}.%(ext)s`
-        );
+        ffmpegArgs.push('--no-playlist');
     } else {
-        // Merge Video + Audio and ensure MP4 container
-        // Using libx264 CPU encoder explicitly with ultrafast preset to guarantee stability. 
-        // Hardware encoders (QuickSync) crash on AV1 inputs, causing yt-dlp to output WEBM instead of MP4.
-        ffmpegArgs.push(
-            '--merge-output-format', extension,
-            '--recode-video', extension,
-            '--postprocessor-args', `VideoConvertor:-c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k`,
-            '--add-metadata', // yt-dlp first pass
-            '--write-thumbnail',
-            '--convert-thumbnails', 'jpg',
-            '-o', `${jobId}.%(ext)s`
-        );
+        ffmpegArgs.push('--no-playlist');
     }
 
-    ytdlp.download(cleanedUrl)
-        .cookies(COOKIES)
-        .format(formatSelection)
-        .output(TEMP_DIR)
-        .on('progress', (p) => {
-            if (jobs[jobId]) {
-                jobs[jobId].progress = p.percentage_str || '0%';
-                const pInt = parseInt(p.percentage_str);
-                if (pInt % 25 === 0) logger(jobId, `Progress: ${p.percentage_str}`, "PROGRESS");
-            }
-        })
-        .run(ffmpegArgs)
+    const download = ytdlp.download(cleanedUrl);
+    download.cookies(COOKIES);
+    download.format(formatSelection);
+    download.output(TEMP_DIR);
+    if (ffmpegArgs.length > 0) {
+        download.addArgs(...ffmpegArgs);
+    }
+    download.on('progress', (p) => {
+        if (jobs[jobId]) {
+            jobs[jobId].progress = p.percentage_str || '0%';
+            const pInt = parseInt(p.percentage_str);
+            if (pInt % 25 === 0) logger(jobId, `Progress: ${p.percentage_str}`, "PROGRESS");
+        }
+    });
+
+    download.run()
         .then((result) => {
             if (result.filePaths && result.filePaths.length > 0) {
-                // If yt-dlp's hardware encoder crashed, it silently falls back to .webm or .mkv. We MUST detect the actual extension.
-                const finalFile = result.filePaths.find(p => p.endsWith(`.${extension}`)) || result.filePaths[0];
+                let finalFile = result.filePaths[0];
                 const baseName = finalFile.substring(0, finalFile.lastIndexOf('.'));
-                const actualExt = finalFile.split('.').pop(); // 'mp4', 'webm', 'mkv', or 'mp3'
-                jobs[jobId].extension = actualExt; // Tell the delivery route the correct container
+                const targetExt = isAudioOnly ? 'mp3' : 'mp4';
 
                 const possibleThumbs = [baseName + '.jpg', baseName + '.webp', baseName + '.png'];
                 let thumbFile = possibleThumbs.find(f => fs.existsSync(f));
@@ -428,7 +410,7 @@ app.post('/api/download', async (req, res) => {
                 const mDate = jobs[jobId].metaDate;
                 const mThumb = jobs[jobId].metaThumb;
 
-                // If yt-dlp skipped thumbnail download because of --load-info-json, explicitly fetch it manually!
+                // If yt-dlp skipped thumbnail download, explicitly fetch it
                 if (!thumbFile && mThumb) {
                     logger(jobId, `Manual thumbnail fetch triggered for Task 2...`, "THUMB");
                     const manualThumb = baseName + '_manual.jpg';
@@ -440,68 +422,95 @@ app.post('/api/download', async (req, res) => {
                     }
                 }
 
-                // TASK 2: Use an isolated FFmpeg operation to natively embed the thumbnail and force metadata
+                // TASK 2: Convert/remux into target format (MP4 for video, MP3 for audio) with full metadata and cover art
                 if (fs.existsSync(finalFile)) {
                     try {
+                        const embeddedFile = baseName + '_final.' + targetExt;
                         let embedArgs = [];
-                        // Keep the exact same container extension to prevent FFmpeg from blindly trying to transcode streams during a metadata copy
-                        const embeddedFile = baseName + '_with_meta.' + actualExt;
 
-                        if (thumbFile) {
-                            logger(jobId, `Task 2: Injecting high-res thumbnail and metadata into ${actualExt.toUpperCase()}...`, "META");
-                            if (isAudioOnly) {
+                        if (isAudioOnly) {
+                            if (thumbFile) {
                                 embedArgs = [
                                     '-y', '-i', finalFile, '-i', thumbFile,
-                                    '-map', '0:0', '-map', '1:0', '-c', 'copy', '-map_metadata', '0', '-id3v2_version', '3',
-                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album_artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`, '-metadata', `year=${mDate}`,
-                                    '-metadata:s:v', 'title="Album cover"', '-metadata:s:v', 'comment="Cover (front)"',
+                                    '-map', '0:a:0', '-map', '1:0',
+                                    '-c:a', 'libmp3lame', '-q:a', '0',
+                                    '-id3v2_version', '3',
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
+                                    '-metadata:s:v', 'title=Album cover',
+                                    '-metadata:s:v', 'comment=Cover (front)',
                                     embeddedFile
                                 ];
                             } else {
                                 embedArgs = [
-                                    '-y', '-i', finalFile, '-i', thumbFile,
-                                    '-map', '0', '-map', '1', '-c', 'copy', '-map_metadata', '0', '-movflags', 'use_metadata_tags',
-                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album_artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`, '-metadata', `year=${mDate}`,
-                                    '-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic',
+                                    '-y', '-i', finalFile,
+                                    '-map', '0:a:0',
+                                    '-c:a', 'libmp3lame', '-q:a', '0',
+                                    '-id3v2_version', '3',
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
                                     embeddedFile
                                 ];
                             }
                         } else {
-                            logger(jobId, `Task 2: Thumbnail completely missing. Injecting ONLY metadata into ${actualExt.toUpperCase()}...`, "META");
-                            if (isAudioOnly) {
+                            if (thumbFile) {
                                 embedArgs = [
-                                    '-y', '-i', finalFile, '-c', 'copy', '-map_metadata', '0', '-id3v2_version', '3',
-                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album_artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`, '-metadata', `year=${mDate}`,
+                                    '-y', '-i', finalFile, '-i', thumbFile,
+                                    '-map', '0:v:0', '-map', '0:a:0?', '-map', '1:0',
+                                    '-c:v:0', 'copy',
+                                    '-c:a', 'aac', '-b:a', '192k',
+                                    '-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic',
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
                                     embeddedFile
                                 ];
                             } else {
                                 embedArgs = [
-                                    '-y', '-i', finalFile, '-c', 'copy', '-map_metadata', '0', '-movflags', 'use_metadata_tags',
-                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album_artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`, '-metadata', `year=${mDate}`,
+                                    '-y', '-i', finalFile,
+                                    '-map', '0:v:0', '-map', '0:a:0?',
+                                    '-c:v:0', 'copy',
+                                    '-c:a', 'aac', '-b:a', '192k',
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
                                     embeddedFile
                                 ];
                             }
                         }
 
-                        // Run Task 2 natively
+                        logger(jobId, `Task 2: Converting/packaging to pristine ${targetExt.toUpperCase()} with metadata...`, "META");
                         const task2Result = spawnSync('ffmpeg', embedArgs);
 
-                        if (task2Result.status !== 0) {
-                            const errorLog = task2Result.stderr ? task2Result.stderr.toString() : 'Unknown FFmpeg Error';
-                            logger(jobId, `Task 2 FFmpeg Error Output:\n${errorLog}`, "ERROR");
-                        }
-
-                        // Replace the original with our newly embedded version
-                        if (fs.existsSync(embeddedFile)) {
+                        if (task2Result.status === 0 && fs.existsSync(embeddedFile) && fs.statSync(embeddedFile).size > 1000) {
                             fs.unlinkSync(finalFile);
-                            if (thumbFile) fs.unlinkSync(thumbFile);
-                            fs.renameSync(embeddedFile, finalFile);
-                            logger(jobId, `Task 2 Metadata Injection Successful.`, "META");
+                            if (thumbFile && fs.existsSync(thumbFile)) fs.unlinkSync(thumbFile);
+                            finalFile = embeddedFile;
+                            jobs[jobId].extension = targetExt;
+                            logger(jobId, `Task 2 Packaging Successful: Output is authentic ${targetExt.toUpperCase()}`, "META");
                         } else {
-                            logger(jobId, `Task 2 failed to generate the output file. Reverting to raw file without metadata.`, "WARN");
+                            const errorLog = task2Result.stderr ? task2Result.stderr.toString() : 'Unknown FFmpeg Error';
+                            logger(jobId, `Task 2 FFmpeg warning/fallback:\n${errorLog}`, "WARN");
+                            if (fs.existsSync(embeddedFile)) fs.unlinkSync(embeddedFile);
+                            jobs[jobId].extension = finalFile.split('.').pop();
                         }
                     } catch (err) {
                         logger(jobId, `Metadata injection script crashed: ${err.message}`, "WARN");
+                        jobs[jobId].extension = finalFile.split('.').pop();
                     }
                 }
 
