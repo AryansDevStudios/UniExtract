@@ -353,6 +353,7 @@ app.post('/api/download', async (req, res) => {
     let metaTitle = title || "Unknown Title";
     let metaArtist = "Unknown Artist";
     let metaDate = "";
+    let metaThumb = "";
 
     if (fs.existsSync(infoJsonPath)) {
         ffmpegArgs.push('--load-info-json', infoJsonPath);
@@ -363,6 +364,7 @@ app.post('/api/download', async (req, res) => {
             if (infoData.title) metaTitle = infoData.title;
             if (infoData.uploader || infoData.channel) metaArtist = infoData.uploader || infoData.channel;
             if (infoData.upload_date) metaDate = infoData.upload_date.substring(0, 4);
+            if (infoData.thumbnail) metaThumb = infoData.thumbnail;
         } catch (e) {}
     }
     
@@ -370,6 +372,7 @@ app.post('/api/download', async (req, res) => {
     jobs[jobId].metaTitle = metaTitle;
     jobs[jobId].metaArtist = metaArtist;
     jobs[jobId].metaDate = metaDate;
+    jobs[jobId].metaThumb = metaThumb;
     
     if (isAudioOnly) {
         // Extract audio and convert directly to MP3
@@ -384,11 +387,12 @@ app.post('/api/download', async (req, res) => {
         );
     } else {
         // Merge Video + Audio and ensure MP4 container
+        // Adding -pix_fmt yuv420p prevents hardware encoders (QuickSync/NVENC) from crashing on 10-bit/AV1 streams
         ffmpegArgs.push(
             '--merge-output-format', extension,
             '--recode-video', extension,
-            '--postprocessor-args', `VideoConvertor:-c:v ${selectedEncoder} -preset ultrafast -c:a aac -b:a 192k`,
-            '--postprocessor-args', `Merger:-c:v ${selectedEncoder} -preset ultrafast -c:a aac -b:a 192k`,
+            '--postprocessor-args', `VideoConvertor:-c:v ${selectedEncoder} -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k`,
+            '--postprocessor-args', `Merger:-c:v ${selectedEncoder} -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k`,
             '--add-metadata', // yt-dlp first pass
             '--write-thumbnail',
             '--convert-thumbnails', 'jpg',
@@ -410,24 +414,41 @@ app.post('/api/download', async (req, res) => {
         .run(ffmpegArgs)
         .then((result) => {
             if (result.filePaths && result.filePaths.length > 0) {
+                // If yt-dlp's hardware encoder crashed, it silently falls back to .webm or .mkv. We MUST detect the actual extension.
                 const finalFile = result.filePaths.find(p => p.endsWith(`.${extension}`)) || result.filePaths[0];
                 const baseName = finalFile.substring(0, finalFile.lastIndexOf('.'));
+                const actualExt = finalFile.split('.').pop(); // 'mp4', 'webm', 'mkv', or 'mp3'
+                jobs[jobId].extension = actualExt; // Tell the delivery route the correct container
 
                 const possibleThumbs = [baseName + '.jpg', baseName + '.webp', baseName + '.png'];
-                const thumbFile = possibleThumbs.find(f => fs.existsSync(f));
+                let thumbFile = possibleThumbs.find(f => fs.existsSync(f));
 
                 const mTitle = jobs[jobId].metaTitle;
                 const mArtist = jobs[jobId].metaArtist;
                 const mDate = jobs[jobId].metaDate;
+                const mThumb = jobs[jobId].metaThumb;
+
+                // If yt-dlp skipped thumbnail download because of --load-info-json, explicitly fetch it manually!
+                if (!thumbFile && mThumb) {
+                    logger(jobId, `Manual thumbnail fetch triggered for Task 2...`, "THUMB");
+                    const manualThumb = baseName + '_manual.jpg';
+                    try {
+                        execSync(`ffmpeg -y -i "${mThumb}" -vframes 1 "${manualThumb}" -hide_banner -loglevel error`);
+                        if (fs.existsSync(manualThumb)) thumbFile = manualThumb;
+                    } catch (e) {
+                        logger(jobId, `Manual thumbnail fetch failed.`, "WARN");
+                    }
+                }
 
                 // TASK 2: Use an isolated FFmpeg operation to natively embed the thumbnail and force metadata
                 if (fs.existsSync(finalFile)) {
                     try {
                         let embedArgs = [];
-                        const embeddedFile = baseName + '_with_meta.' + extension;
+                        // Keep the exact same container extension to prevent FFmpeg from blindly trying to transcode streams during a metadata copy
+                        const embeddedFile = baseName + '_with_meta.' + actualExt;
 
                         if (thumbFile) {
-                            logger(jobId, `Task 2: Injecting high-res thumbnail and metadata into ${extension.toUpperCase()}...`, "META");
+                            logger(jobId, `Task 2: Injecting high-res thumbnail and metadata into ${actualExt.toUpperCase()}...`, "META");
                             if (isAudioOnly) {
                                 embedArgs = [
                                     '-y', '-i', finalFile, '-i', thumbFile,
@@ -446,7 +467,7 @@ app.post('/api/download', async (req, res) => {
                                 ];
                             }
                         } else {
-                            logger(jobId, `Task 2: Thumbnail missing. Injecting ONLY metadata into ${extension.toUpperCase()}...`, "META");
+                            logger(jobId, `Task 2: Thumbnail completely missing. Injecting ONLY metadata into ${actualExt.toUpperCase()}...`, "META");
                             if (isAudioOnly) {
                                 embedArgs = [
                                     '-y', '-i', finalFile, '-c', 'copy', '-map_metadata', '0', '-id3v2_version', '3',
@@ -462,6 +483,7 @@ app.post('/api/download', async (req, res) => {
                             }
                         }
 
+                        // Run Task 2 natively
                         spawnSync('ffmpeg', embedArgs);
 
                         // Replace the original with our newly embedded version
