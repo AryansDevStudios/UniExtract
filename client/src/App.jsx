@@ -194,7 +194,7 @@ function App() {
 
       <Header isDark={isDark} toggleTheme={() => setIsDark(!isDark)} />
 
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
+      <main className="flex-1 w-full max-w-5xl mx-auto px-4 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
         
         <motion.div 
           initial={{ opacity: 0, y: 10 }}

@@ -3,7 +3,7 @@ import { Sun, Moon } from 'lucide-react';
 
 export default function Header({ isDark, toggleTheme }) {
   return (
-    <header className="w-full flex justify-between items-center py-6 px-4 md:px-8 max-w-4xl mx-auto">
+    <header className="w-full flex justify-between items-center py-6 px-4 md:px-8 max-w-5xl mx-auto">
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
           <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
