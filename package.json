@@ -4,7 +4,7 @@
   "description": "A multi-platform media downloader using Express, FFmpeg, and yt-dlp",
   "main": "server.js",
   "scripts": {
-    "postinstall": "node -e \"const { helpers } = require('ytdlp-nodejs'); helpers.downloadYtDlp().then(p => console.log('[BUILD] yt-dlp binary ready at:', p)).catch(err => console.warn('[BUILD] yt-dlp postinstall warning:', err.message));\"",
+    "postinstall": "node scripts/install-ytdlp.js",
     "start": "node server.js",
     "dev": "nodemon server.js"
   },

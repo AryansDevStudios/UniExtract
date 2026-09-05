@@ -65,6 +65,13 @@ const ensureYtDlp = async () => {
     try {
         ytDlpPath = await helpers.downloadYtDlp();
         logger(null, `yt-dlp downloaded successfully to: ${ytDlpPath}`);
+        if (process.platform !== 'win32') {
+            try { fs.chmodSync(ytDlpPath, 0o755); } catch (e) {}
+        }
+        try {
+            const ver = execSync(`"${ytDlpPath}" --version`).toString().trim();
+            logger(null, `yt-dlp version: ${ver}`);
+        } catch (e) {}
         return ytDlpPath;
     } catch (err) {
         logger(null, `Failed to download yt-dlp binary: ${err.message}`, "CRITICAL");
@@ -155,6 +162,7 @@ app.post('/api/analyze', async (req, res) => {
 
     try {
         await ensureYtDlp();
+        const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
         let info;
         try {
             info = await ytdlp.getInfoAsync(cleanedUrl, {
