@@ -75,7 +75,12 @@ function App() {
       });
       
       const vList = data.formats.filter(f => f.vcodec).sort((a,b) => (b.height - a.height) || ((a.size || Infinity) - (b.size || Infinity)));
-      const aList = data.formats.filter(f => f.acodec && !f.vcodec).sort((a,b) => (b.size || 0) - (a.size || 0));
+      const aList = data.formats.filter(f => f.acodec && !f.vcodec).sort((a,b) => {
+        const abrA = parseInt(a.abr) || 0;
+        const abrB = parseInt(b.abr) || 0;
+        if (abrA !== abrB) return abrB - abrA;
+        return (a.size || Infinity) - (b.size || Infinity);
+      });
       
       if (vList.length > 0) setSelectedVideo({ id: vList[0].id, size: vList[0].size, label: vList[0].label });
       else setSelectedVideo({ id: '', size: 0, label: 'NoVideo' });

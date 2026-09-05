@@ -118,10 +118,21 @@ export default function CompactResultPanel({
   const aFormats = useMemo(() => {
     let list = metadata.formats
       .filter(f => f.acodec && !f.vcodec)
-      .sort((a, b) => (b.size || 0) - (a.size || 0)); // Largest size (best quality) audio
+      .sort((a, b) => {
+        const abrA = parseInt(a.abr) || 0;
+        const abrB = parseInt(b.abr) || 0;
+        if (abrA !== abrB) return abrB - abrA; // Highest bitrate first
+        return (a.size || Infinity) - (b.size || Infinity); // Smallest file first for same bitrate
+      });
     
-    if (!advancedMode && list.length > 0) {
-      list = [list[0]];
+    if (!advancedMode) {
+      const seen = new Set();
+      list = list.filter(f => {
+        const key = f.abr || 'High Quality';
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     }
 
     return list.map(f => ({
