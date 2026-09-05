@@ -396,7 +396,7 @@ app.post('/api/download', async (req, res) => {
     });
 
     download.run()
-        .then((result) => {
+        .then(async (result) => {
             if (result.filePaths && result.filePaths.length > 0) {
                 let finalFile = result.filePaths[0];
                 const baseName = finalFile.substring(0, finalFile.lastIndexOf('.'));
@@ -415,7 +415,11 @@ app.post('/api/download', async (req, res) => {
                     logger(jobId, `Manual thumbnail fetch triggered for Task 2...`, "THUMB");
                     const manualThumb = baseName + '_manual.jpg';
                     try {
-                        execSync(`ffmpeg -y -i "${mThumb}" -vframes 1 "${manualThumb}" -hide_banner -loglevel error`);
+                        await new Promise((resolve) => {
+                            const p = spawn('ffmpeg', ['-y', '-i', mThumb, '-vframes', '1', manualThumb, '-hide_banner', '-loglevel', 'error']);
+                            p.on('close', resolve);
+                            p.on('error', resolve);
+                        });
                         if (fs.existsSync(manualThumb)) thumbFile = manualThumb;
                     } catch (e) {
                         logger(jobId, `Manual thumbnail fetch failed.`, "WARN");
@@ -494,7 +498,15 @@ app.post('/api/download', async (req, res) => {
                         }
 
                         logger(jobId, `Task 2: Converting/packaging to pristine ${targetExt.toUpperCase()} with metadata...`, "META");
-                        const task2Result = spawnSync('ffmpeg', embedArgs);
+                        
+                        // Non-blocking asynchronous FFmpeg spawn
+                        const task2Result = await new Promise((resolve) => {
+                            const proc = spawn('ffmpeg', embedArgs);
+                            let stderr = '';
+                            proc.stderr?.on('data', (d) => stderr += d.toString());
+                            proc.on('close', (code) => resolve({ status: code, stderr }));
+                            proc.on('error', (err) => resolve({ status: -1, stderr: err.message }));
+                        });
 
                         if (task2Result.status === 0 && fs.existsSync(embeddedFile) && fs.statSync(embeddedFile).size > 1000) {
                             fs.unlinkSync(finalFile);
