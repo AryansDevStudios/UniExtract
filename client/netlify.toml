@@ -1,0 +1,9 @@
+[build]
+  publish = "dist"
+  command = "npm run build"
+
+[[redirects]]
+  from = "/api/*"
+  to = "https://universal-media-extractor-vav8.onrender.com/api/:splat"
+  status = 200
+  force = true
