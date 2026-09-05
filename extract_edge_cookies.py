@@ -1,5 +1,6 @@
 import json
 import sys
+import os
 
 # Google account domains to EXCLUDE (security risk if leaked)
 # YouTube cookies are intentionally NOT in this list — yt-dlp needs them
@@ -52,7 +53,7 @@ def main():
         input("Press Enter to exit...")
         sys.exit(1)
 
-    output_file = r"D:\YouTube_Video_Downloader\cookies.txt"
+    output_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
 
     included = 0
     excluded = 0
