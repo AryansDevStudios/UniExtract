@@ -387,12 +387,12 @@ app.post('/api/download', async (req, res) => {
         );
     } else {
         // Merge Video + Audio and ensure MP4 container
-        // Adding -pix_fmt yuv420p prevents hardware encoders (QuickSync/NVENC) from crashing on 10-bit/AV1 streams
+        // Using libx264 CPU encoder explicitly with ultrafast preset to guarantee stability. 
+        // Hardware encoders (QuickSync) crash on AV1 inputs, causing yt-dlp to output WEBM instead of MP4.
         ffmpegArgs.push(
             '--merge-output-format', extension,
             '--recode-video', extension,
-            '--postprocessor-args', `VideoConvertor:-c:v ${selectedEncoder} -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k`,
-            '--postprocessor-args', `Merger:-c:v ${selectedEncoder} -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k`,
+            '--postprocessor-args', `VideoConvertor:-c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k`,
             '--add-metadata', // yt-dlp first pass
             '--write-thumbnail',
             '--convert-thumbnails', 'jpg',
@@ -453,15 +453,15 @@ app.post('/api/download', async (req, res) => {
                                 embedArgs = [
                                     '-y', '-i', finalFile, '-i', thumbFile,
                                     '-map', '0:0', '-map', '1:0', '-c', 'copy', '-map_metadata', '0', '-id3v2_version', '3',
-                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`,
+                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album_artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`, '-metadata', `year=${mDate}`,
                                     '-metadata:s:v', 'title="Album cover"', '-metadata:s:v', 'comment="Cover (front)"',
                                     embeddedFile
                                 ];
                             } else {
                                 embedArgs = [
                                     '-y', '-i', finalFile, '-i', thumbFile,
-                                    '-map', '0', '-map', '1', '-c', 'copy', '-map_metadata', '0',
-                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`,
+                                    '-map', '0', '-map', '1', '-c', 'copy', '-map_metadata', '0', '-movflags', 'use_metadata_tags',
+                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album_artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`, '-metadata', `year=${mDate}`,
                                     '-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic',
                                     embeddedFile
                                 ];
@@ -471,13 +471,13 @@ app.post('/api/download', async (req, res) => {
                             if (isAudioOnly) {
                                 embedArgs = [
                                     '-y', '-i', finalFile, '-c', 'copy', '-map_metadata', '0', '-id3v2_version', '3',
-                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`,
+                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album_artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`, '-metadata', `year=${mDate}`,
                                     embeddedFile
                                 ];
                             } else {
                                 embedArgs = [
-                                    '-y', '-i', finalFile, '-c', 'copy', '-map_metadata', '0',
-                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`,
+                                    '-y', '-i', finalFile, '-c', 'copy', '-map_metadata', '0', '-movflags', 'use_metadata_tags',
+                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album_artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`, '-metadata', `year=${mDate}`,
                                     embeddedFile
                                 ];
                             }
