@@ -484,16 +484,24 @@ app.post('/api/download', async (req, res) => {
                         }
 
                         // Run Task 2 natively
-                        spawnSync('ffmpeg', embedArgs);
+                        const task2Result = spawnSync('ffmpeg', embedArgs);
+
+                        if (task2Result.status !== 0) {
+                            const errorLog = task2Result.stderr ? task2Result.stderr.toString() : 'Unknown FFmpeg Error';
+                            logger(jobId, `Task 2 FFmpeg Error Output:\n${errorLog}`, "ERROR");
+                        }
 
                         // Replace the original with our newly embedded version
                         if (fs.existsSync(embeddedFile)) {
                             fs.unlinkSync(finalFile);
                             if (thumbFile) fs.unlinkSync(thumbFile);
                             fs.renameSync(embeddedFile, finalFile);
+                            logger(jobId, `Task 2 Metadata Injection Successful.`, "META");
+                        } else {
+                            logger(jobId, `Task 2 failed to generate the output file. Reverting to raw file without metadata.`, "WARN");
                         }
                     } catch (err) {
-                        logger(jobId, `Metadata injection failed, proceeding with original. Error: ${err.message}`, "WARN");
+                        logger(jobId, `Metadata injection script crashed: ${err.message}`, "WARN");
                     }
                 }
 
