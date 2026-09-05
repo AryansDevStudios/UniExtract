@@ -174,9 +174,16 @@ const cleanMediaUrl = (rawUrl) => {
             const listParam = parsed.searchParams.get('list');
             const isPlaylistUrl = parsed.pathname.includes('/playlist') || (listParam && !parsed.searchParams.has('v'));
             
-            // If it's a dynamic radio/mix, strip it because yt-dlp cannot extract infinite mixes
+            // Handle dynamic YouTube Radio / Mixes (list=RD...)
             if (listParam && listParam.startsWith('RD')) {
-                parsed.searchParams.delete('list');
+                // If it's a /playlist URL, convert to /watch?v=<seedVideoId>&list=RD... so YouTube does not 404
+                if (parsed.pathname.includes('/playlist') && !parsed.searchParams.has('v')) {
+                    const seedVideoId = listParam.replace(/^RD(AMVM|AMBN|CLAK5uy_)?/, '').slice(0, 11);
+                    if (seedVideoId && seedVideoId.length >= 11) {
+                        parsed.pathname = '/watch';
+                        parsed.searchParams.set('v', seedVideoId);
+                    }
+                }
             } else if (!isPlaylistUrl && !parsed.pathname.includes('/playlist')) {
                 // If it's a watch URL without playlist ID, delete list
                 if (!listParam || (!listParam.startsWith('PL') && !listParam.startsWith('OLAK') && !listParam.startsWith('UU') && !listParam.startsWith('FL'))) {
@@ -186,9 +193,11 @@ const cleanMediaUrl = (rawUrl) => {
             parsed.searchParams.delete('index');
             parsed.searchParams.delete('si');
             parsed.searchParams.delete('pp');
+            parsed.searchParams.delete('playnext');
         } else if (parsed.hostname.includes('youtu.be')) {
             parsed.searchParams.delete('si');
             parsed.searchParams.delete('pp');
+            parsed.searchParams.delete('playnext');
         }
 
         // Universal tracking parameters to strip for IG, TikTok, FB, Snap
@@ -268,12 +277,20 @@ app.post('/api/analyze', async (req, res) => {
         const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
         
         const isPlaylist = cleanedUrl.includes('/playlist') || cleanedUrl.includes('list=');
+        const isMix = cleanedUrl.includes('list=RD');
 
-        const info = await ytdlp.getInfoAsync(cleanedUrl, { 
+        const ytdlpOptions = { 
             cookies: COOKIES, 
             flatPlaylist: isPlaylist,
             noPlaylist: !isPlaylist
-        });
+        };
+
+        // Cap infinite dynamic YouTube mixes to the top 50 songs for instant snappy response
+        if (isMix) {
+            ytdlpOptions.playlistItems = '1-50';
+        }
+
+        const info = await ytdlp.getInfoAsync(cleanedUrl, ytdlpOptions);
         
         // 1. HANDLE PLAYLISTS
         if (info._type === 'playlist' || Array.isArray(info.entries)) {
