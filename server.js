@@ -12,6 +12,15 @@ const COOKIES = path.join(__dirname, 'cookies.txt');
 const TEMP_DIR = path.join(__dirname, 'temp');
 
 // --- INITIALIZATION ---
+let ytDlpPath = 'yt-dlp';
+try {
+    const checkCmd = process.platform === 'win32' ? 'where yt-dlp' : 'which yt-dlp';
+    ytDlpPath = execSync(checkCmd).toString().trim().split(/\r?\n/)[0].trim();
+} catch (e) {
+    // Fall back to default PATH executable
+}
+console.log(`[SYSTEM] Using yt-dlp binary at: ${ytDlpPath}`);
+
 app.use(cors());
 app.use(express.json());
 
@@ -113,8 +122,8 @@ app.post('/api/analyze', async (req, res) => {
     logger(null, `Incoming analysis for URL: ${url}`);
 
     try {
-        const ytdlp = new YtDlp();
-        const info = await ytdlp.getInfoAsync(cleanedUrl, { cookies: COOKIES });
+        const ytdlp = new YtDlp({ binaryPath: ytDlpPath });
+        const info = await ytdlp.getInfoAsync(cleanedUrl, { cookies: COOKIES, additionalOptions: ['--js-runtimes', 'node'] });
         logger(null, `Metadata retrieved for: "${info.title}"`);
 
         // Graceful error handling to prevent backend crash if a playlist still slips through
@@ -242,11 +251,12 @@ app.post('/api/download', async (req, res) => {
 
     logger(jobId, `Download initiated for "${title}"`, "START");
 
-    const ytdlp = new YtDlp();
+    const ytdlp = new YtDlp({ binaryPath: ytDlpPath });
     let formatSelection = (vId && aId) ? `${vId}+${aId}` : (vId || aId);
 
     // TASK 1: Re-encode to MP4 and download the thumbnail safely (No embedding yet)
     let ffmpegArgs = [
+        '--js-runtimes', 'node',    // Required: enables Node.js for YouTube's JS signature challenges
         '--merge-output-format', extension,
         '--recode-video', extension,
         '--postprocessor-args', `VideoConvertor:-c:V ${selectedEncoder} -preset fast -c:a aac -b:a 192k`,
