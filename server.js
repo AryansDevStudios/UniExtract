@@ -31,6 +31,63 @@ if (!fs.existsSync(CACHE_DIR)) {
 const jobs = {};
 let selectedEncoder = 'libx264';
 
+// --- IN-FLIGHT DOWNLOAD ABORT & CLEANUP HELPER ---
+const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
+    const job = jobs[jobId];
+    if (!job || job.status === 'completed' || job.status === 'cancelled') return;
+
+    logger(jobId, `Aborting in-flight download: ${reason}`, "ABORT");
+    job.status = 'cancelled';
+
+    // 1. Kill yt-dlp child process tree
+    if (job.downloadInstance) {
+        try {
+            if (process.platform === 'win32' && job.downloadInstance.pid) {
+                execSync(`taskkill /pid ${job.downloadInstance.pid} /T /F`, { stdio: 'ignore' });
+            } else {
+                job.downloadInstance.kill('SIGKILL');
+            }
+        } catch (e) {}
+    }
+
+    // 2. Kill Task 2 FFmpeg conversion process if running
+    if (job.activeFfmpeg && job.activeFfmpeg.pid) {
+        try {
+            if (process.platform === 'win32') {
+                execSync(`taskkill /pid ${job.activeFfmpeg.pid} /T /F`, { stdio: 'ignore' });
+            } else {
+                job.activeFfmpeg.kill('SIGKILL');
+            }
+        } catch (e) {}
+    }
+
+    // 3. Immediately purge partial downloaded files to save disk space
+    try {
+        const files = fs.readdirSync(TEMP_DIR);
+        files.forEach(f => {
+            if (f.includes(jobId) || (job.baseName && f.includes(job.baseName))) {
+                try { fs.unlinkSync(path.join(TEMP_DIR, f)); } catch (e) {}
+            }
+        });
+        logger(jobId, `Bandwidth usage halted & partial temporary files purged.`, "CLEANUP");
+    } catch (e) {}
+
+    // 4. Remove from jobs memory after brief grace period
+    setTimeout(() => {
+        delete jobs[jobId];
+    }, 4000);
+};
+
+// Automatic watchdog: if client stops polling for > 10 seconds (e.g. closed browser / killed app), drop the download immediately
+setInterval(() => {
+    const now = Date.now();
+    Object.entries(jobs).forEach(([jobId, job]) => {
+        if (job.status === 'downloading' && job.lastPoll && (now - job.lastPoll > 10000)) {
+            abortJob(jobId, 'Client stopped polling (browser tab closed or refreshed)');
+        }
+    });
+}, 3000);
+
 // --- IN-MEMORY METADATA CACHE ---
 const analysisCache = new Map();
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -341,7 +398,18 @@ app.post('/api/download', async (req, res) => {
     
     const namingTag = `${vLabel || 'NoVideo'}_${aLabel || 'NoAudio'}`;
 
-    jobs[jobId] = { status: 'downloading', progress: '0%', file: null, customTag: namingTag, title, extension };
+    jobs[jobId] = { 
+        status: 'downloading', 
+        progress: '0%', 
+        file: null, 
+        customTag: namingTag, 
+        title, 
+        extension,
+        lastPoll: Date.now(),
+        downloadInstance: null,
+        activeFfmpeg: null,
+        baseName: null
+    };
 
     logger(jobId, `Download initiated for "${title}" [Format: ${extension.toUpperCase()}]`, "START");
 
@@ -388,6 +456,7 @@ app.post('/api/download', async (req, res) => {
     }
 
     const download = ytdlp.download(cleanedUrl);
+    jobs[jobId].downloadInstance = download;
     download.cookies(COOKIES);
     download.format(formatSelection);
     download.output(TEMP_DIR);
@@ -395,7 +464,7 @@ app.post('/api/download', async (req, res) => {
         download.addArgs(...ffmpegArgs);
     }
     download.on('progress', (p) => {
-        if (jobs[jobId]) {
+        if (jobs[jobId] && jobs[jobId].status === 'downloading') {
             jobs[jobId].progress = p.percentage_str || '0%';
             const pInt = parseInt(p.percentage_str);
             if (pInt % 25 === 0) logger(jobId, `Progress: ${p.percentage_str}`, "PROGRESS");
@@ -404,9 +473,11 @@ app.post('/api/download', async (req, res) => {
 
     download.run()
         .then(async (result) => {
+            if (jobs[jobId] && jobs[jobId].status === 'cancelled') return; // Exit if aborted
             if (result.filePaths && result.filePaths.length > 0) {
                 let finalFile = result.filePaths[0];
                 const baseName = finalFile.substring(0, finalFile.lastIndexOf('.'));
+                jobs[jobId].baseName = baseName;
                 const targetExt = isAudioOnly ? 'mp3' : 'mp4';
 
                 const possibleThumbs = [baseName + '.jpg', baseName + '.webp', baseName + '.png'];
@@ -418,7 +489,7 @@ app.post('/api/download', async (req, res) => {
                 const mThumb = jobs[jobId].metaThumb;
 
                 // If yt-dlp skipped thumbnail download, explicitly fetch it
-                if (!thumbFile && mThumb) {
+                if (!thumbFile && mThumb && jobs[jobId]?.status === 'downloading') {
                     logger(jobId, `Manual thumbnail fetch triggered for Task 2...`, "THUMB");
                     const manualThumb = baseName + '_manual.jpg';
                     try {
@@ -432,6 +503,8 @@ app.post('/api/download', async (req, res) => {
                         logger(jobId, `Manual thumbnail fetch failed.`, "WARN");
                     }
                 }
+
+                if (jobs[jobId] && jobs[jobId].status === 'cancelled') return; // Exit if aborted
 
                 // TASK 2: Convert/remux into target format (MP4 for video, MP3 for audio) with full metadata and cover art
                 if (fs.existsSync(finalFile)) {
@@ -506,14 +579,23 @@ app.post('/api/download', async (req, res) => {
 
                         logger(jobId, `Task 2: Converting/packaging to pristine ${targetExt.toUpperCase()} with metadata...`, "META");
                         
-                        // Non-blocking asynchronous FFmpeg spawn
+                        // Non-blocking asynchronous FFmpeg spawn with process tracking
                         const task2Result = await new Promise((resolve) => {
                             const proc = spawn('ffmpeg', embedArgs);
+                            if (jobs[jobId]) jobs[jobId].activeFfmpeg = proc;
                             let stderr = '';
                             proc.stderr?.on('data', (d) => stderr += d.toString());
-                            proc.on('close', (code) => resolve({ status: code, stderr }));
-                            proc.on('error', (err) => resolve({ status: -1, stderr: err.message }));
+                            proc.on('close', (code) => {
+                                if (jobs[jobId]) jobs[jobId].activeFfmpeg = null;
+                                resolve({ status: code, stderr });
+                            });
+                            proc.on('error', (err) => {
+                                if (jobs[jobId]) jobs[jobId].activeFfmpeg = null;
+                                resolve({ status: -1, stderr: err.message });
+                            });
                         });
+
+                        if (jobs[jobId] && jobs[jobId].status === 'cancelled') return; // Exit if aborted
 
                         if (task2Result.status === 0 && fs.existsSync(embeddedFile) && fs.statSync(embeddedFile).size > 1000) {
                             fs.unlinkSync(finalFile);
@@ -533,7 +615,7 @@ app.post('/api/download', async (req, res) => {
                     }
                 }
 
-                if (jobs[jobId]) {
+                if (jobs[jobId] && jobs[jobId].status !== 'cancelled') {
                     jobs[jobId].status = 'completed';
                     jobs[jobId].file = path.basename(finalFile);
                     logger(jobId, `Processing Finished. Output: ${jobs[jobId].file}`, "SUCCESS");
@@ -541,16 +623,29 @@ app.post('/api/download', async (req, res) => {
             }
         })
         .catch((err) => {
-            if (jobs[jobId]) jobs[jobId].status = 'error';
-            logger(jobId, `Download/Merge error: ${err.message}`, "ERROR");
+            if (jobs[jobId] && jobs[jobId].status !== 'cancelled') {
+                jobs[jobId].status = 'error';
+                logger(jobId, `Download/Merge error: ${err.message}`, "ERROR");
+            }
         });
 
     res.json({ jobId });
 });
 
+// --- API: CANCEL / ABORT IN-FLIGHT DOWNLOAD ---
+app.all('/api/cancel/:jobId', (req, res) => {
+    const { jobId } = req.params;
+    abortJob(jobId, 'Client requested cancellation via button or tab close');
+    res.json({ success: true, message: 'Download aborted and bandwidth saved' });
+});
+
 // --- API: STATUS ---
 app.get('/api/status/:jobId', (req, res) => {
-    res.json(jobs[req.params.jobId] || {});
+    const job = jobs[req.params.jobId];
+    if (job) {
+        job.lastPoll = Date.now();
+    }
+    res.json(job || {});
 });
 
 // --- API: DELIVERY & CLEANUP ---

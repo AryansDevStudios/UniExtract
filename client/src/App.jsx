@@ -130,6 +130,24 @@ function App() {
     document.body.removeChild(a);
   };
 
+  const activeJobIdRef = useRef(null);
+
+  const cancelDownload = async () => {
+    const jobId = activeJobIdRef.current;
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    activeJobIdRef.current = null;
+    setJobStatus('');
+    setProgress('0%');
+    setDownloadJob(null);
+
+    if (jobId) {
+      try {
+        await fetch(`/api/cancel/${jobId}`, { method: 'POST' });
+        showToast("Download cancelled. Server bandwidth freed.", "info");
+      } catch (e) {}
+    }
+  };
+
   const startDownload = async () => {
     if (!selectedVideo.id && !selectedAudio.id) return showToast("Choose a stream.", "error");
 
@@ -152,14 +170,24 @@ function App() {
       });
       
       const { jobId } = await res.json();
+      activeJobIdRef.current = jobId;
 
       pollIntervalRef.current = setInterval(async () => {
         try {
           const s = await (await fetch(`/api/status/${jobId}`)).json();
+          if (s.status === 'cancelled') {
+            clearInterval(pollIntervalRef.current);
+            activeJobIdRef.current = null;
+            setJobStatus('');
+            setDownloadJob(null);
+            return;
+          }
+
           if (s.progress) setProgress(s.progress);
           
           if (s.status === 'completed') {
             clearInterval(pollIntervalRef.current);
+            activeJobIdRef.current = null;
             setJobStatus('completed');
             setProgress('100%');
             showToast("File ready! Downloading...", "success");
@@ -167,6 +195,7 @@ function App() {
             setTimeout(() => setDownloadJob(null), 3000);
           } else if (s.status === 'error') {
             clearInterval(pollIntervalRef.current);
+            activeJobIdRef.current = null;
             setJobStatus('error');
             showToast("Processing failed.", "error");
           }
@@ -174,13 +203,25 @@ function App() {
       }, 1000);
 
     } catch (e) {
+      activeJobIdRef.current = null;
       setJobStatus('error');
       showToast("Request failed.", "error");
     }
   };
 
+  // Drop in-flight download immediately if user closes the tab or navigates away
   useEffect(() => {
+    const handleUnload = () => {
+      const jobId = activeJobIdRef.current;
+      if (jobId) {
+        navigator.sendBeacon(`/api/cancel/${jobId}`);
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
     return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, []);
@@ -257,6 +298,7 @@ function App() {
               setSelectedAudio={setSelectedAudio}
               onDownloadThumb={handleDownloadThumbnail}
               onDownloadMedia={startDownload}
+              onCancelDownload={cancelDownload}
               isDownloading={!!downloadJob}
               progress={progress}
               status={jobStatus}

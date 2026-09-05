@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image as ImageIcon, Video, Music, DownloadCloud, Loader2, ChevronDown, Check } from 'lucide-react';
+import { Image as ImageIcon, Video, Music, DownloadCloud, Loader2, ChevronDown, Check, X } from 'lucide-react';
 
 function formatBytes(bytes) {
   if (!bytes) return '-- MB';
@@ -84,6 +84,7 @@ export default function CompactResultPanel({
   selectedAudio, setSelectedAudio, 
   onDownloadThumb, 
   onDownloadMedia,
+  onCancelDownload,
   isDownloading,
   progress,
   status
@@ -255,7 +256,7 @@ export default function CompactResultPanel({
                 <DownloadCloud size={18} /> Download
               </button>
             ) : (
-              <div className="flex items-center gap-4 w-56 md:w-[260px] bg-slate-900 text-white p-3 pr-4 rounded-xl md:rounded-2xl shadow-xl shadow-indigo-500/10 transition-all duration-300">
+              <div className="flex items-center gap-3 w-64 md:w-[280px] bg-slate-900 text-white p-2.5 pr-3 rounded-xl md:rounded-2xl shadow-xl shadow-indigo-500/10 transition-all duration-300">
                 <div className="relative flex items-center justify-center flex-shrink-0 pl-1">
                   {status === 'error' ? (
                     <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
@@ -294,6 +295,16 @@ export default function CompactResultPanel({
                     </motion.div>
                   </div>
                 </div>
+
+                {/* Cancel Button */}
+                <button
+                  type="button"
+                  onClick={onCancelDownload}
+                  title="Cancel download & save bandwidth"
+                  className="flex-shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-800/80 active:scale-95 transition-all"
+                >
+                  <X size={15} />
+                </button>
               </div>
             )}
           </div>
