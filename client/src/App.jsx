@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import SearchBox from './components/SearchBox';
-import MediaCard from './components/MediaCard';
-import FormatSelector from './components/FormatSelector';
-import DownloadProgress from './components/DownloadProgress';
+import CompactResultPanel from './components/CompactResultPanel';
 import RecentHistory from './components/RecentHistory';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -16,7 +14,6 @@ function App() {
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [metadata, setMetadata] = useState(null);
-  const [advancedMode, setAdvancedMode] = useState(false);
   
   const [selectedVideo, setSelectedVideo] = useState({ id: '', size: 0, label: '' });
   const [selectedAudio, setSelectedAudio] = useState({ id: '', size: 0, label: '' });
@@ -74,12 +71,9 @@ function App() {
       setHistory(prev => {
         const filtered = prev.filter(r => r.url !== url);
         const next = [{ title: data.title, thumb: data.thumbnail, url }, ...filtered];
-        return next.slice(0, 20);
+        return next.slice(0, 8); // Keep compact history
       });
       
-      // Auto select defaults will be handled by FormatSelector via empty string initially or we can preselect
-      // To mirror previous behavior, we'll let FormatSelector render and the user clicks.
-      // Wait, we need to preselect the first available if not advanced.
       const vList = data.formats.filter(f => f.vcodec).sort((a,b) => (b.height - a.height) || (b.size - a.size));
       const aList = data.formats.filter(f => f.acodec && !f.vcodec).sort((a,b) => b.size - a.size);
       
@@ -89,7 +83,6 @@ function App() {
       if (aList.length > 0) setSelectedAudio({ id: aList[0].id, size: aList[0].size, label: aList[0].label });
       else setSelectedAudio({ id: '', size: 0, label: 'PreMerged' });
 
-      showToast("Analysis Complete", "success");
     } catch (e) {
       showToast(e.message || "Network error.", "error");
     } finally {
@@ -99,7 +92,7 @@ function App() {
 
   const handleDownloadThumbnail = () => {
     if (!metadata?.thumbnail) return showToast("No thumbnail available", "error");
-    showToast("Converting high-res thumbnail to PNG...", "info");
+    showToast("Converting high-res thumbnail...", "info");
     const url = `/api/thumbnail?imgUrl=${encodeURIComponent(metadata.thumbnail)}&title=${encodeURIComponent(metadata.title)}`;
     const a = document.createElement('a');
     a.style.display = 'none';
@@ -110,11 +103,11 @@ function App() {
   };
 
   const startDownload = async () => {
-    if (!selectedVideo.id && !selectedAudio.id) return showToast("Selection invalid. Choose a stream.", "error");
+    if (!selectedVideo.id && !selectedAudio.id) return showToast("Choose a stream.", "error");
 
-    showToast("Task Started: Processing media...", "info");
     setJobStatus('downloading');
     setProgress('0%');
+    setDownloadJob(true);
 
     try {
       const res = await fetch('/api/download', {
@@ -131,7 +124,6 @@ function App() {
       });
       
       const { jobId } = await res.json();
-      setDownloadJob(jobId);
 
       pollIntervalRef.current = setInterval(async () => {
         try {
@@ -148,39 +140,44 @@ function App() {
           } else if (s.status === 'error') {
             clearInterval(pollIntervalRef.current);
             setJobStatus('error');
-            showToast("Processing failed. Check server logs.", "error");
+            showToast("Processing failed.", "error");
           }
         } catch(e) {}
       }, 1000);
 
     } catch (e) {
       setJobStatus('error');
-      showToast("Download request failed.", "error");
+      showToast("Request failed.", "error");
     }
   };
 
-  // Cleanup interval on unmount
   useEffect(() => {
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, []);
 
-  const totalSize = (selectedVideo.size || 0) + (selectedAudio.size || 0);
-
   return (
-    <div className="pb-10 font-sans">
+    <div className="min-h-screen relative font-sans flex flex-col selection:bg-indigo-500/30 selection:text-indigo-900 dark:selection:text-indigo-100">
       
-      <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 z-50 flex flex-col gap-2 pointer-events-none md:max-w-sm">
+      {/* Dynamic Background */}
+      <div className="fixed inset-0 pointer-events-none -z-10 bg-slate-50 dark:bg-slate-950 transition-colors duration-500" />
+      <div className="fixed inset-0 pointer-events-none -z-10 opacity-40 dark:opacity-20"
+        style={{
+          backgroundImage: 'radial-gradient(circle at 50% 0%, #6366f1 0%, transparent 40%), radial-gradient(circle at 100% 100%, #a855f7 0%, transparent 40%)'
+        }}
+      />
+
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         <AnimatePresence>
           {toasts.map(t => (
             <motion.div 
               key={t.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              className={`px-6 py-4 rounded-2xl text-white font-black text-sm shadow-2xl flex items-center gap-3 ${
-                t.type === 'error' ? 'bg-red-500' : t.type === 'success' ? 'bg-green-500' : 'bg-brand'
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className={`px-4 py-3 rounded-xl text-white font-medium text-xs md:text-sm shadow-xl flex items-center gap-2 backdrop-blur-md ${
+                t.type === 'error' ? 'bg-red-500/90' : t.type === 'success' ? 'bg-emerald-500/90' : 'bg-slate-800/90'
               }`}
             >
               {t.message}
@@ -191,61 +188,41 @@ function App() {
 
       <Header isDark={isDark} toggleTheme={() => setIsDark(!isDark)} />
 
-      <main className="max-w-5xl mx-auto bg-white dark:bg-slate-900 shadow-2xl rounded-3xl md:rounded-[2.5rem] border border-slate-200 dark:border-slate-800 relative z-10 flex flex-col">
-        <SearchBox onAnalyze={handleAnalyze} isLoading={isAnalyzing} />
+      <main className="flex-1 w-full max-w-4xl mx-auto px-4 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
+        
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full"
+        >
+          <SearchBox onAnalyze={handleAnalyze} isLoading={isAnalyzing} />
+        </motion.div>
 
         <AnimatePresence mode="wait">
           {metadata && (
-            <motion.div
-              key="content"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden"
-            >
-              <MediaCard metadata={metadata} onDownloadThumb={handleDownloadThumbnail} />
-              
-              <FormatSelector 
-                formats={metadata.formats}
-                advancedMode={advancedMode}
-                onToggleAdvanced={setAdvancedMode}
-                selectedVideo={selectedVideo}
-                selectedAudio={selectedAudio}
-                setSelectedVideo={setSelectedVideo}
-                setSelectedAudio={setSelectedAudio}
-              />
-
-              <DownloadProgress 
-                isDownloading={!!downloadJob}
-                progress={progress}
-                status={jobStatus}
-                totalSize={totalSize}
-                onStart={startDownload}
-              />
-            </motion.div>
+            <CompactResultPanel
+              key="result-panel"
+              metadata={metadata}
+              selectedVideo={selectedVideo}
+              setSelectedVideo={setSelectedVideo}
+              selectedAudio={selectedAudio}
+              setSelectedAudio={setSelectedAudio}
+              onDownloadThumb={handleDownloadThumbnail}
+              onDownloadMedia={startDownload}
+              isDownloading={!!downloadJob}
+              progress={progress}
+              status={jobStatus}
+            />
           )}
         </AnimatePresence>
+
+        <RecentHistory 
+          history={history} 
+          onSelect={handleAnalyze} 
+          onDelete={(url) => setHistory(prev => prev.filter(h => h.url !== url))} 
+        />
       </main>
 
-      <RecentHistory 
-        history={history} 
-        onSelect={handleAnalyze} 
-        onDelete={(url) => setHistory(prev => prev.filter(h => h.url !== url))} 
-      />
-
-      <footer className="text-center text-sm mt-12 mb-6 space-y-1">
-        <div className="text-slate-800 dark:text-slate-200">
-          © 2026 
-          <span className="bg-gradient-to-r from-red-500 to-orange-500 bg-clip-text text-transparent font-black tracking-wide ml-1">
-            AryansDevStudios
-          </span>
-        </div>
-        <div className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">
-          <a href="https://github.com/AryansDevStudios/Universal-Media-Extractor" target="_blank" rel="noreferrer" className="hover:text-brand transition-colors underline decoration-transparent hover:decoration-brand underline-offset-4">
-            Open-source & free to use
-          </a>
-        </div>
-      </footer>
     </div>
   );
 }

@@ -3,23 +3,20 @@ import { Sun, Moon } from 'lucide-react';
 
 export default function Header({ isDark, toggleTheme }) {
   return (
-    <header className="max-w-5xl mx-auto mb-4 md:mb-6 flex justify-between items-center px-2 md:px-4 mt-4">
+    <header className="w-full flex justify-between items-center py-6 px-4 md:px-8 max-w-4xl mx-auto">
       <div className="flex items-center gap-3">
-        <img src="/favicon.ico" className="w-10 h-10 md:w-12 md:h-12 rounded-xl shadow-md" alt="Logo" />
-        <div>
-          <h1 className="text-2xl md:text-3xl text-brand" style={{ fontFamily: "'Pacifico', cursive" }}>
-            Universal Media Extractor
-          </h1>
-          <p className="text-[9px] md:text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5 md:mt-1">
-            Multi-Platform Supported
-          </p>
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
+          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
         </div>
+        <h1 className="text-xl font-bold tracking-tight text-slate-800 dark:text-slate-100">
+          Extractor <span className="font-light text-slate-400">Pro</span>
+        </h1>
       </div>
       <button 
         onClick={toggleTheme} 
-        className="p-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 hover:scale-110 transition text-slate-700 dark:text-slate-300"
+        className="w-10 h-10 flex items-center justify-center rounded-full bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200 dark:border-slate-700 hover:scale-105 transition-all text-slate-600 dark:text-slate-300 shadow-sm"
       >
-        {isDark ? <Sun size={20} /> : <Moon size={20} />}
+        {isDark ? <Sun size={18} /> : <Moon size={18} />}
       </button>
     </header>
   );
