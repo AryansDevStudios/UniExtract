@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import SearchBox from './components/SearchBox';
 import CompactResultPanel from './components/CompactResultPanel';
+import PlaylistView from './components/PlaylistView';
 import RecentHistory from './components/RecentHistory';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -59,8 +60,12 @@ function App() {
       return next.slice(0, 8); // Keep compact history
     });
     
-    const vList = data.formats.filter(f => f.vcodec).sort((a,b) => (b.height - a.height) || ((a.size || Infinity) - (b.size || Infinity)));
-    const aList = data.formats.filter(f => f.acodec && !f.vcodec).sort((a,b) => {
+    if (data.isPlaylist) {
+      return;
+    }
+    
+    const vList = (data.formats || []).filter(f => f.vcodec).sort((a,b) => (b.height - a.height) || ((a.size || Infinity) - (b.size || Infinity)));
+    const aList = (data.formats || []).filter(f => f.acodec && !f.vcodec).sort((a,b) => {
       const abrA = parseInt(a.abr) || 0;
       const abrB = parseInt(b.abr) || 0;
       if (abrA !== abrB) return abrB - abrA;
@@ -289,20 +294,28 @@ function App() {
               <span className="text-sm font-bold tracking-widest uppercase mt-2 text-indigo-500/70">Scanning Media...</span>
             </motion.div>
           ) : metadata ? (
-            <CompactResultPanel
-              key="result-panel"
-              metadata={metadata}
-              selectedVideo={selectedVideo}
-              setSelectedVideo={setSelectedVideo}
-              selectedAudio={selectedAudio}
-              setSelectedAudio={setSelectedAudio}
-              onDownloadThumb={handleDownloadThumbnail}
-              onDownloadMedia={startDownload}
-              onCancelDownload={cancelDownload}
-              isDownloading={!!downloadJob}
-              progress={progress}
-              status={jobStatus}
-            />
+            metadata.isPlaylist ? (
+              <PlaylistView
+                key="playlist-view"
+                playlist={metadata}
+                onToast={showToast}
+              />
+            ) : (
+              <CompactResultPanel
+                key="result-panel"
+                metadata={metadata}
+                selectedVideo={selectedVideo}
+                setSelectedVideo={setSelectedVideo}
+                selectedAudio={selectedAudio}
+                setSelectedAudio={setSelectedAudio}
+                onDownloadThumb={handleDownloadThumbnail}
+                onDownloadMedia={startDownload}
+                onCancelDownload={cancelDownload}
+                isDownloading={!!downloadJob}
+                progress={progress}
+                status={jobStatus}
+              />
+            )
           ) : null}
         </AnimatePresence>
 

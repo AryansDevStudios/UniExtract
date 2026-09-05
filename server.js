@@ -169,9 +169,20 @@ const cleanMediaUrl = (rawUrl) => {
     try {
         const parsed = new URL(rawUrl);
 
-        // Strip YouTube Playlist & Tracking Params
+        // Strip YouTube tracking params, but PRESERVE playlist parameters (list=...) for playlists
         if (parsed.hostname.includes('youtube.com')) {
-            parsed.searchParams.delete('list');
+            const listParam = parsed.searchParams.get('list');
+            const isPlaylistUrl = parsed.pathname.includes('/playlist') || (listParam && !parsed.searchParams.has('v'));
+            
+            // If it's a dynamic radio/mix, strip it because yt-dlp cannot extract infinite mixes
+            if (listParam && listParam.startsWith('RD')) {
+                parsed.searchParams.delete('list');
+            } else if (!isPlaylistUrl && !parsed.pathname.includes('/playlist')) {
+                // If it's a watch URL without playlist ID, delete list
+                if (!listParam || (!listParam.startsWith('PL') && !listParam.startsWith('OLAK') && !listParam.startsWith('UU') && !listParam.startsWith('FL'))) {
+                    parsed.searchParams.delete('list');
+                }
+            }
             parsed.searchParams.delete('index');
             parsed.searchParams.delete('si');
             parsed.searchParams.delete('pp');
@@ -255,7 +266,59 @@ app.post('/api/analyze', async (req, res) => {
     try {
         await ensureYtDlp();
         const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
-        const info = await ytdlp.getInfoAsync(cleanedUrl, { cookies: COOKIES, noPlaylist: true });
+        
+        const isPlaylist = cleanedUrl.includes('/playlist') || cleanedUrl.includes('list=');
+
+        const info = await ytdlp.getInfoAsync(cleanedUrl, { 
+            cookies: COOKIES, 
+            flatPlaylist: isPlaylist,
+            noPlaylist: !isPlaylist
+        });
+        
+        // 1. HANDLE PLAYLISTS
+        if (info._type === 'playlist' || Array.isArray(info.entries)) {
+            const rawItems = info.entries || [];
+            const items = rawItems.filter(item => item && item.id).map((item, idx) => {
+                const thumb = (item.thumbnails && item.thumbnails.length > 0)
+                    ? item.thumbnails[item.thumbnails.length - 1].url
+                    : `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`;
+
+                let durText = '--:--';
+                if (item.duration) {
+                    const m = Math.floor(item.duration / 60);
+                    const s = Math.floor(item.duration % 60);
+                    durText = `${m}:${s < 10 ? '0' : ''}${s}`;
+                }
+
+                return {
+                    index: idx + 1,
+                    id: item.id,
+                    title: item.title || `Video ${idx + 1}`,
+                    duration: item.duration || 0,
+                    durationText: durText,
+                    thumbnail: thumb,
+                    url: `https://www.youtube.com/watch?v=${item.id}`,
+                    uploader: item.uploader || item.channel || info.uploader || ''
+                };
+            });
+
+            const playlistThumb = info.thumbnails?.[0]?.url || items[0]?.thumbnail || '';
+
+            const responseData = {
+                isPlaylist: true,
+                id: info.id,
+                title: info.title || 'YouTube Playlist',
+                uploader: info.uploader || info.channel || 'Various Artists',
+                itemCount: items.length,
+                thumbnail: playlistThumb,
+                items
+            };
+
+            setCachedAnalysis(cleanedUrl, responseData);
+            logger(null, `Playlist retrieved: "${info.title}" (${items.length} videos)`);
+            return res.json(responseData);
+        }
+
         logger(null, `Metadata retrieved for: "${info.title}"`);
 
         // Graceful error handling to prevent backend crash if a playlist still slips through
@@ -388,15 +451,46 @@ app.get('/api/thumbnail', (req, res) => {
 
 // --- API: DOWNLOAD & PROCESS ---
 app.post('/api/download', async (req, res) => {
-    const { url, vId, aId, vLabel, aLabel, title } = req.body;
+    const { url, vId, aId, vLabel, aLabel, title, qualityPreset } = req.body;
     const cleanedUrl = cleanMediaUrl(url);
     const jobId = uuidv4();
     
-    // Determine dynamic extension based on user selection
-    const isAudioOnly = !vId && !!aId;
-    const extension = isAudioOnly ? 'mp3' : 'mp4';
-    
-    const namingTag = `${vLabel || 'NoVideo'}_${aLabel || 'NoAudio'}`;
+    let isAudioOnly = false;
+    let formatSelection = '';
+    let extension = 'mp4';
+    let namingTag = '';
+
+    // Handle high-level quality presets (used for playlists or simple mode) with graceful resolution fallback
+    if (qualityPreset) {
+        if (qualityPreset === 'audio') {
+            isAudioOnly = true;
+            formatSelection = 'bestaudio/best';
+            extension = 'mp3';
+            namingTag = 'Audio_MP3';
+        } else if (qualityPreset === '1080p') {
+            formatSelection = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
+            extension = 'mp4';
+            namingTag = '1080p_FHD';
+        } else if (qualityPreset === '720p') {
+            formatSelection = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best';
+            extension = 'mp4';
+            namingTag = '720p_HD';
+        } else if (qualityPreset === '480p') {
+            formatSelection = 'bestvideo[height<=480]+bestaudio/best[height<=480]/best';
+            extension = 'mp4';
+            namingTag = '480p_SD';
+        } else {
+            // 'best'
+            formatSelection = 'bestvideo+bestaudio/best';
+            extension = 'mp4';
+            namingTag = 'Best_Quality';
+        }
+    } else {
+        isAudioOnly = !vId && !!aId;
+        extension = isAudioOnly ? 'mp3' : 'mp4';
+        formatSelection = (vId && aId) ? `${vId}+${aId}` : (vId || aId || 'best');
+        namingTag = `${vLabel || 'NoVideo'}_${aLabel || 'NoAudio'}`;
+    }
 
     jobs[jobId] = { 
         status: 'downloading', 
@@ -415,7 +509,6 @@ app.post('/api/download', async (req, res) => {
 
     await ensureYtDlp();
     const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
-    let formatSelection = (vId && aId) ? `${vId}+${aId}` : (vId || aId);
 
     // TASK 1: Build the specific FFmpeg instructions based on media type
     let ffmpegArgs = [];
@@ -700,11 +793,19 @@ app.get('/api/file/:jobId/:title', (req, res) => {
 });
 
 // --- SERVE THE UI ---
-app.use(express.static(path.join(__dirname, 'public')));
-
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+const clientDist = path.join(__dirname, 'client', 'dist');
+if (fs.existsSync(clientDist)) {
+    app.use(express.static(clientDist));
+    app.use((req, res, next) => {
+        if (req.path.startsWith('/api')) return next();
+        res.sendFile(path.join(clientDist, 'index.html'));
+    });
+} else {
+    app.use(express.static(path.join(__dirname, 'public')));
+    app.get('/', (req, res) => {
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    });
+}
 
 // --- BOOT-TIME WARM-UP (primes yt-dlp disk cache in background) ---
 const warmUpYtDlp = () => {

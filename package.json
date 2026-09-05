@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "postinstall": "node scripts/install-ytdlp.js",
+    "build": "npm run build --prefix client",
     "start": "node server.js",
     "dev": "nodemon server.js"
   },
