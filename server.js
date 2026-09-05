@@ -776,21 +776,44 @@ app.get('/api/file/:jobId/:title', (req, res) => {
 
     res.download(filePath, finalName, (err) => {
         if (err) {
-            logger(req.params.jobId, `Transmission interrupted: ${err.message}`, "WARN");
+            logger(req.params.jobId, `Transmission stream status: ${err.message}`, "INFO");
         }
 
-        try {
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-                logger(req.params.jobId, `CLEANUP: Deleted temporary file ${job.file}`, "DELETE");
-            }
-            delete jobs[req.params.jobId];
-            logger(req.params.jobId, `Session closed. Memory purged.`, "PURGE");
-        } catch (e) {
-            logger(req.params.jobId, `Cleanup failed: ${e.message}`, "ERROR");
+        // Keep the completed file available for a 15-minute grace period so mobile browsers and download managers
+        // can make multiple Range requests, resume interrupted downloads, or stream in parallel chunks.
+        if (!job.cleanupTimer) {
+            job.cleanupTimer = setTimeout(() => {
+                try {
+                    if (fs.existsSync(filePath)) {
+                        fs.unlinkSync(filePath);
+                        logger(req.params.jobId, `CLEANUP: Deleted temporary file ${job.file} (grace period expired)`, "DELETE");
+                    }
+                    delete jobs[req.params.jobId];
+                    logger(req.params.jobId, `Session closed. Memory purged.`, "PURGE");
+                } catch (e) {
+                    logger(req.params.jobId, `Cleanup failed: ${e.message}`, "ERROR");
+                }
+            }, 15 * 60 * 1000);
         }
     });
 });
+
+// Periodic sweeper for any orphaned temp files older than 30 minutes
+setInterval(() => {
+    try {
+        const now = Date.now();
+        if (fs.existsSync(TEMP_DIR)) {
+            const files = fs.readdirSync(TEMP_DIR);
+            for (const file of files) {
+                const fPath = path.join(TEMP_DIR, file);
+                const stats = fs.statSync(fPath);
+                if (now - stats.mtimeMs > 30 * 60 * 1000) {
+                    fs.unlinkSync(fPath);
+                }
+            }
+        }
+    } catch (e) {}
+}, 10 * 60 * 1000);
 
 // --- SERVE THE UI ---
 const clientDist = path.join(__dirname, 'client', 'dist');
