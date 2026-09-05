@@ -33,3 +33,6 @@ logs/
 # Temporary files
 tmp/
 temp/
+
+# yt-dlp disk cache (generated at runtime)
+cache/

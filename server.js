@@ -10,6 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const COOKIES = path.join(__dirname, 'cookies.txt');
 const TEMP_DIR = path.join(__dirname, 'temp');
+const CACHE_DIR = path.join(__dirname, 'cache');
 
 // --- INITIALIZATION ---
 let ytDlpPath = null;
@@ -20,6 +21,11 @@ app.use(express.json());
 if (!fs.existsSync(TEMP_DIR)) {
     console.log(`[SYSTEM] Creating temporary directory at: ${TEMP_DIR}`);
     fs.mkdirSync(TEMP_DIR);
+}
+
+if (!fs.existsSync(CACHE_DIR)) {
+    console.log(`[SYSTEM] Creating yt-dlp cache directory at: ${CACHE_DIR}`);
+    fs.mkdirSync(CACHE_DIR);
 }
 
 const jobs = {};
@@ -447,6 +453,25 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// --- BOOT-TIME WARM-UP (primes yt-dlp disk cache in background) ---
+const warmUpYtDlp = () => {
+    if (!ytDlpPath) return;
+    logger(null, 'Warming up yt-dlp engine (background, non-blocking)...');
+    const warmup = spawn(ytDlpPath, [
+        '--simulate',
+        '--no-playlist',
+        '--cookies', COOKIES,
+        '--cache-dir', CACHE_DIR,
+        'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+    ], { stdio: 'ignore' });
+    warmup.on('close', (code) => {
+        logger(null, `yt-dlp warm-up completed (exit: ${code}) — disk cache primed`);
+    });
+    warmup.on('error', () => {
+        logger(null, 'yt-dlp warm-up skipped (non-critical)', 'WARN');
+    });
+};
+
 // --- START SERVER ---
 (async () => {
     try {
@@ -459,6 +484,10 @@ app.get('/', (req, res) => {
         console.log("\n" + "=".repeat(50));
         console.log(`[SERVER] Universal Media Extractor Server running on port ${PORT}`);
         console.log(`[TEMP] Temp Folder: ${TEMP_DIR}`);
+        console.log(`[CACHE] Cache Folder: ${CACHE_DIR}`);
         console.log("=".repeat(50) + "\n");
+
+        // Non-blocking: prime the yt-dlp disk cache while server is already accepting requests
+        warmUpYtDlp();
     });
-})();
+})();

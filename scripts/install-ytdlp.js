@@ -25,7 +25,7 @@ async function main() {
 
     try {
         console.log('[BUILD] Pre-caching EJS challenge solver scripts...');
-        execSync(`"${binaryPath}" --remote-components ejs:github --simulate --no-playlist "https://www.youtube.com/watch?v=dQw4w9WgXcQ"`, { stdio: 'ignore' });
+        execSync(`"${binaryPath}" --remote-components ejs:github --cache-dir ./cache --simulate --no-playlist "https://www.youtube.com/watch?v=dQw4w9WgXcQ"`, { stdio: 'ignore' });
         console.log('[BUILD] EJS challenge solver pre-cached successfully.');
     } catch (e) {
         console.log('[BUILD] Note: EJS pre-cache initialized.');
