@@ -413,58 +413,53 @@ app.post('/api/download', async (req, res) => {
                 const finalFile = result.filePaths.find(p => p.endsWith(`.${extension}`)) || result.filePaths[0];
                 const baseName = finalFile.substring(0, finalFile.lastIndexOf('.'));
 
-                // Locate the safely extracted JPG thumbnail 
                 const possibleThumbs = [baseName + '.jpg', baseName + '.webp', baseName + '.png'];
                 const thumbFile = possibleThumbs.find(f => fs.existsSync(f));
 
-                // TASK 2: Use an isolated FFmpeg operation to natively embed the thumbnail
-                if (thumbFile && fs.existsSync(finalFile)) {
+                const mTitle = jobs[jobId].metaTitle;
+                const mArtist = jobs[jobId].metaArtist;
+                const mDate = jobs[jobId].metaDate;
+
+                // TASK 2: Use an isolated FFmpeg operation to natively embed the thumbnail and force metadata
+                if (fs.existsSync(finalFile)) {
                     try {
-                        logger(jobId, `Task 2: Injecting high-res thumbnail into ${extension.toUpperCase()}...`, "THUMB");
-                        const embeddedFile = baseName + '_with_thumb.' + extension;
-
-                        const mTitle = jobs[jobId].metaTitle;
-                        const mArtist = jobs[jobId].metaArtist;
-                        const mDate = jobs[jobId].metaDate;
-
                         let embedArgs = [];
-                        if (isAudioOnly) {
-                            // Inject album art into MP3 file while preserving global metadata and explicitly setting ID3
-                            embedArgs = [
-                                '-y',
-                                '-i', finalFile,
-                                '-i', thumbFile,
-                                '-map', '0:0',
-                                '-map', '1:0',
-                                '-c', 'copy',
-                                '-map_metadata', '0',
-                                '-id3v2_version', '3',
-                                '-metadata', `title=${mTitle}`,
-                                '-metadata', `artist=${mArtist}`,
-                                '-metadata', `album=${mArtist} (YouTube)`,
-                                '-metadata', `date=${mDate}`,
-                                '-metadata:s:v', 'title="Album cover"',
-                                '-metadata:s:v', 'comment="Cover (front)"',
-                                embeddedFile
-                            ];
+                        const embeddedFile = baseName + '_with_meta.' + extension;
+
+                        if (thumbFile) {
+                            logger(jobId, `Task 2: Injecting high-res thumbnail and metadata into ${extension.toUpperCase()}...`, "META");
+                            if (isAudioOnly) {
+                                embedArgs = [
+                                    '-y', '-i', finalFile, '-i', thumbFile,
+                                    '-map', '0:0', '-map', '1:0', '-c', 'copy', '-map_metadata', '0', '-id3v2_version', '3',
+                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`,
+                                    '-metadata:s:v', 'title="Album cover"', '-metadata:s:v', 'comment="Cover (front)"',
+                                    embeddedFile
+                                ];
+                            } else {
+                                embedArgs = [
+                                    '-y', '-i', finalFile, '-i', thumbFile,
+                                    '-map', '0', '-map', '1', '-c', 'copy', '-map_metadata', '0',
+                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`,
+                                    '-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic',
+                                    embeddedFile
+                                ];
+                            }
                         } else {
-                            // Inject thumbnail into MP4 video file while preserving global metadata and explicitly setting atoms
-                            embedArgs = [
-                                '-y',
-                                '-i', finalFile,
-                                '-i', thumbFile,
-                                '-map', '0',
-                                '-map', '1',
-                                '-c', 'copy',
-                                '-map_metadata', '0',
-                                '-metadata', `title=${mTitle}`,
-                                '-metadata', `artist=${mArtist}`,
-                                '-metadata', `album=${mArtist} (YouTube)`,
-                                '-metadata', `date=${mDate}`,
-                                '-c:v:1', 'mjpeg',
-                                '-disposition:v:1', 'attached_pic',
-                                embeddedFile
-                            ];
+                            logger(jobId, `Task 2: Thumbnail missing. Injecting ONLY metadata into ${extension.toUpperCase()}...`, "META");
+                            if (isAudioOnly) {
+                                embedArgs = [
+                                    '-y', '-i', finalFile, '-c', 'copy', '-map_metadata', '0', '-id3v2_version', '3',
+                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`,
+                                    embeddedFile
+                                ];
+                            } else {
+                                embedArgs = [
+                                    '-y', '-i', finalFile, '-c', 'copy', '-map_metadata', '0',
+                                    '-metadata', `title=${mTitle}`, '-metadata', `artist=${mArtist}`, '-metadata', `album=${mArtist} (YouTube)`, '-metadata', `date=${mDate}`,
+                                    embeddedFile
+                                ];
+                            }
                         }
 
                         spawnSync('ffmpeg', embedArgs);
@@ -472,11 +467,11 @@ app.post('/api/download', async (req, res) => {
                         // Replace the original with our newly embedded version
                         if (fs.existsSync(embeddedFile)) {
                             fs.unlinkSync(finalFile);
-                            fs.unlinkSync(thumbFile);
+                            if (thumbFile) fs.unlinkSync(thumbFile);
                             fs.renameSync(embeddedFile, finalFile);
                         }
                     } catch (err) {
-                        logger(jobId, `Thumbnail injection failed, proceeding with original. Error: ${err.message}`, "WARN");
+                        logger(jobId, `Metadata injection failed, proceeding with original. Error: ${err.message}`, "WARN");
                     }
                 }
 
@@ -513,6 +508,25 @@ app.get('/api/file/:jobId/:title', (req, res) => {
     const finalName = `${safeTitle}_${job.customTag}.${finalExt}`;
 
     logger(req.params.jobId, `Transmitting file to client: ${finalName}`, "SEND");
+
+    // ==========================================
+    // DEBUG: Dump final metadata to console
+    // ==========================================
+    try {
+        console.log(`\n================= METADATA VERIFICATION =================`);
+        console.log(`File: ${job.file}`);
+        // Run FFmpeg to print format/metadata. Exit code 1 is normal because no output is specified.
+        const metaDump = execSync(`ffmpeg -i "${filePath}" -hide_banner -f null - 2>&1`, { stdio: 'pipe' }).toString();
+        
+        // Only print the lines that are actually related to Metadata/Stream details to keep the log clean
+        const cleanMeta = metaDump.split('\n').filter(line => line.includes('Metadata:') || line.includes('  title ') || line.includes('  artist ') || line.includes('  album ') || line.includes('  date ') || line.includes('Stream #')).join('\n');
+        console.log(cleanMeta || metaDump);
+        console.log(`=========================================================\n`);
+    } catch (e) {
+        const metaDump = e.stdout ? e.stdout.toString() : (e.stderr ? e.stderr.toString() : "");
+        const cleanMeta = metaDump.split('\n').filter(line => line.includes('Metadata:') || line.includes('    title') || line.includes('    artist') || line.includes('    album') || line.includes('    date') || line.includes('Stream #')).join('\n');
+        console.log(`\n================= METADATA VERIFICATION =================\n${cleanMeta || metaDump}\n=========================================================\n`);
+    }
 
     res.download(filePath, finalName, (err) => {
         if (err) {
