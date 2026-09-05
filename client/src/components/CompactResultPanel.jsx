@@ -254,17 +254,45 @@ export default function CompactResultPanel({
                 <DownloadCloud size={18} /> Download
               </button>
             ) : (
-              <div className="flex items-center gap-3 w-48 md:w-56 bg-slate-100 dark:bg-slate-800 p-2 pl-4 rounded-xl md:rounded-2xl shadow-inner">
-                <Loader2 size={16} className="animate-spin text-indigo-500 flex-shrink-0" />
-                <div className="flex-1 w-full bg-slate-200/50 dark:bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
-                  <motion.div 
-                    className={`h-full ${status === 'error' ? 'bg-red-500' : 'bg-indigo-500'}`}
-                    initial={{ width: '0%' }}
-                    animate={{ width: progress }}
-                    transition={{ duration: 0.3 }}
-                  />
+              <div className="flex items-center gap-4 w-56 md:w-[260px] bg-slate-900 text-white p-3 pr-4 rounded-xl md:rounded-2xl shadow-xl shadow-indigo-500/10 transition-all duration-300">
+                <div className="relative flex items-center justify-center flex-shrink-0 pl-1">
+                  {status === 'error' ? (
+                    <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
+                      <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    </div>
+                  ) : (
+                    <>
+                      <Loader2 size={18} className="animate-spin text-indigo-400 relative z-10" />
+                      <div className="absolute inset-0 bg-indigo-500/30 blur-md rounded-full"></div>
+                    </>
+                  )}
                 </div>
-                <span className="text-[10px] md:text-xs font-bold text-slate-500 w-8 text-right pr-2">{progress}</span>
+                
+                <div className="flex-1 flex flex-col justify-center gap-1.5 w-full">
+                  <div className="flex justify-between items-center text-[9px] md:text-[10px] font-bold uppercase tracking-wider leading-none">
+                    <span className={status === 'error' ? 'text-red-400' : 'text-indigo-300'}>
+                      {status === 'error' ? 'Failed' : 'Downloading'}
+                    </span>
+                    <span className="text-slate-300 font-mono tracking-tight">{progress}</span>
+                  </div>
+                  <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden shadow-inner">
+                    <motion.div 
+                      className={`h-full relative overflow-hidden ${status === 'error' ? 'bg-red-500' : 'bg-gradient-to-r from-indigo-500 to-purple-500'}`}
+                      initial={{ width: '0%' }}
+                      animate={{ width: progress }}
+                      transition={{ duration: 0.3, ease: 'easeOut' }}
+                    >
+                      {status !== 'error' && (
+                        <motion.div
+                          className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/30 to-transparent"
+                          initial={{ x: '-100%' }}
+                          animate={{ x: '100%' }}
+                          transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
+                        />
+                      )}
+                    </motion.div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
