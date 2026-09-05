@@ -161,31 +161,37 @@ export default function CompactResultPanel({
       initial={{ opacity: 0, y: 15, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -15, scale: 0.98 }}
-      className="mt-6 relative z-50 w-full bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 rounded-[2rem] p-3 md:p-4 shadow-xl flex flex-col md:flex-row gap-4 md:gap-6"
+      className="mt-6 relative z-50 w-full bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 rounded-[2rem] p-4 md:p-5 lg:p-6 shadow-xl flex flex-col"
     >
-      {/* LEFT: THUMBNAIL (Uncropped, natural aspect ratio, tight wrap) */}
-      <div className="relative flex-shrink-0 group rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50 self-start w-full md:w-fit mx-auto md:mx-0">
-        <img 
-          src={metadata.thumbnail} 
-          alt="Thumbnail" 
-          className="w-full md:w-auto h-auto md:max-w-[280px] lg:max-w-[320px] max-h-[360px] object-contain transition-transform duration-700 group-hover:scale-105 block" 
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-[2px]">
-          <button 
-            onClick={onDownloadThumb} 
-            className="translate-y-4 group-hover:translate-y-0 bg-white/20 hover:bg-indigo-500 text-white backdrop-blur-md border border-white/30 font-semibold px-5 py-2.5 rounded-full flex items-center gap-2 transition-all duration-300 shadow-xl text-sm"
-          >
-            <ImageIcon size={16} /> Get Cover
-          </button>
-        </div>
+      {/* TOP: TITLE */}
+      <div className="mb-4 md:mb-5 pr-2 w-full">
+        <h2 className="text-lg md:text-xl font-bold text-slate-800 dark:text-slate-100 line-clamp-2 leading-snug">
+          {metadata.title}
+        </h2>
       </div>
 
-      {/* RIGHT: DETAILS & CONTROLS */}
-      <div className="flex-1 flex flex-col justify-between py-2 md:py-4 md:pr-4">
-        <div>
-          <h2 className="text-lg md:text-xl font-bold text-slate-800 dark:text-slate-100 line-clamp-2 leading-snug mb-4">
-            {metadata.title}
-          </h2>
+      {/* BOTTOM: ADAPTIVE ROW */}
+      <div className="flex flex-col md:flex-row gap-5 md:gap-6 lg:gap-8 w-full items-center">
+        
+        {/* LEFT: THUMBNAIL (Uncropped, natural aspect ratio, tight wrap) */}
+        <div className="relative flex-shrink-0 group rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50 w-full md:w-fit mx-auto md:mx-0">
+          <img 
+            src={metadata.thumbnail} 
+            alt="Thumbnail" 
+            className="w-full md:w-auto h-auto md:max-w-[320px] lg:max-w-[360px] max-h-[360px] object-contain transition-transform duration-700 group-hover:scale-105 block" 
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-[2px]">
+            <button 
+              onClick={onDownloadThumb} 
+              className="translate-y-4 group-hover:translate-y-0 bg-white/20 hover:bg-indigo-500 text-white backdrop-blur-md border border-white/30 font-semibold px-5 py-2.5 rounded-full flex items-center gap-2 transition-all duration-300 shadow-xl text-sm"
+            >
+              <ImageIcon size={16} /> Get Cover
+            </button>
+          </div>
+        </div>
+
+        {/* RIGHT: CONTROLS */}
+        <div className="flex-1 w-full flex flex-col justify-center py-2">
           
           <div className="flex justify-end mb-3 relative z-10">
             <label className="flex items-center gap-2 cursor-pointer text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-indigo-500 transition-colors">
@@ -198,7 +204,7 @@ export default function CompactResultPanel({
             </label>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 relative z-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 relative z-10">
             {/* VIDEO DROPDOWN */}
             <CustomSelect 
               label="Video Quality"
@@ -231,39 +237,38 @@ export default function CompactResultPanel({
               }}
             />
           </div>
-        </div>
 
-        {/* BOTTOM ACTION BAR */}
-        <div className="mt-8 flex items-center justify-between border-t border-slate-200/60 dark:border-slate-700/60 pt-5">
-          <div className="flex flex-col">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Est. Size</span>
-            <span className="text-base md:text-lg font-black text-indigo-600 dark:text-indigo-400 leading-none">{sizeText}</span>
-          </div>
-
-          {!isDownloading ? (
-            <button 
-              onClick={onDownloadMedia}
-              disabled={!selectedVideo.id && !selectedAudio.id}
-              className="px-6 md:px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl md:rounded-2xl text-sm transition-all hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 shadow-xl shadow-slate-900/10 dark:shadow-white/10 disabled:opacity-50 disabled:hover:translate-y-0"
-            >
-              <DownloadCloud size={18} /> Download
-            </button>
-          ) : (
-            <div className="flex items-center gap-3 w-48 md:w-56 bg-slate-100 dark:bg-slate-800 p-2 pl-4 rounded-xl md:rounded-2xl shadow-inner">
-              <Loader2 size={16} className="animate-spin text-indigo-500 flex-shrink-0" />
-              <div className="flex-1 w-full bg-slate-200/50 dark:bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
-                <motion.div 
-                  className={`h-full ${status === 'error' ? 'bg-red-500' : 'bg-indigo-500'}`}
-                  initial={{ width: '0%' }}
-                  animate={{ width: progress }}
-                  transition={{ duration: 0.3 }}
-                />
-              </div>
-              <span className="text-[10px] md:text-xs font-bold text-slate-500 w-8 text-right pr-2">{progress}</span>
+          {/* BOTTOM ACTION BAR */}
+          <div className="mt-6 md:mt-8 flex items-center justify-between border-t border-slate-200/60 dark:border-slate-700/60 pt-5">
+            <div className="flex flex-col">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Est. Size</span>
+              <span className="text-base md:text-lg font-black text-indigo-600 dark:text-indigo-400 leading-none">{sizeText}</span>
             </div>
-          )}
-        </div>
 
+            {!isDownloading ? (
+              <button 
+                onClick={onDownloadMedia}
+                disabled={!selectedVideo.id && !selectedAudio.id}
+                className="px-6 md:px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl md:rounded-2xl text-sm transition-all hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 shadow-xl shadow-slate-900/10 dark:shadow-white/10 disabled:opacity-50 disabled:hover:translate-y-0"
+              >
+                <DownloadCloud size={18} /> Download
+              </button>
+            ) : (
+              <div className="flex items-center gap-3 w-48 md:w-56 bg-slate-100 dark:bg-slate-800 p-2 pl-4 rounded-xl md:rounded-2xl shadow-inner">
+                <Loader2 size={16} className="animate-spin text-indigo-500 flex-shrink-0" />
+                <div className="flex-1 w-full bg-slate-200/50 dark:bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
+                  <motion.div 
+                    className={`h-full ${status === 'error' ? 'bg-red-500' : 'bg-indigo-500'}`}
+                    initial={{ width: '0%' }}
+                    animate={{ width: progress }}
+                    transition={{ duration: 0.3 }}
+                  />
+                </div>
+                <span className="text-[10px] md:text-xs font-bold text-slate-500 w-8 text-right pr-2">{progress}</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </motion.div>
   );
