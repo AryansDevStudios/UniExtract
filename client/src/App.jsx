@@ -47,14 +47,53 @@ function App() {
     }, 3000);
   };
 
+  const isAnalyzingRef = useRef(false);
+  const sessionCacheRef = useRef(new Map());
+
+  const applyMetadata = (data, url) => {
+    setMetadata({ ...data, url });
+    
+    setHistory(prev => {
+      const filtered = prev.filter(r => r.url !== url);
+      const next = [{ title: data.title, thumb: data.thumbnail, url }, ...filtered];
+      return next.slice(0, 8); // Keep compact history
+    });
+    
+    const vList = data.formats.filter(f => f.vcodec).sort((a,b) => (b.height - a.height) || ((a.size || Infinity) - (b.size || Infinity)));
+    const aList = data.formats.filter(f => f.acodec && !f.vcodec).sort((a,b) => {
+      const abrA = parseInt(a.abr) || 0;
+      const abrB = parseInt(b.abr) || 0;
+      if (abrA !== abrB) return abrB - abrA;
+      return (a.size || Infinity) - (b.size || Infinity);
+    });
+    
+    if (vList.length > 0) setSelectedVideo({ id: vList[0].id, size: vList[0].size, label: vList[0].label });
+    else setSelectedVideo({ id: '', size: 0, label: 'NoVideo' });
+    
+    if (aList.length > 0) setSelectedAudio({ id: aList[0].id, size: aList[0].size, label: aList[0].label });
+    else setSelectedAudio({ id: '', size: 0, label: 'PreMerged' });
+  };
+
   const handleAnalyze = async (url) => {
     if (!url) return showToast("Please paste a URL first.", "error");
     
-    setIsAnalyzing(true);
-    setMetadata(null);
+    // SPAM PREVENTION: Ignore subsequent clicks if we are already analyzing
+    if (isAnalyzingRef.current) return;
+    
     setDownloadJob(null);
     setProgress('0%');
     setJobStatus('');
+
+    // INSTANT CACHE HIT: If analyzed during this session, restore instantly!
+    if (sessionCacheRef.current.has(url)) {
+      applyMetadata(sessionCacheRef.current.get(url), url);
+      return;
+    }
+    
+    // NETWORK FETCH
+    isAnalyzingRef.current = true;
+    setIsAnalyzing(true);
+    setMetadata(null); // Unmounts the current card, triggers loading UI
     
     try {
       const res = await fetch('/api/analyze', {
@@ -66,31 +105,15 @@ function App() {
       
       if (data.error) throw new Error(data.error);
       
-      setMetadata({ ...data, url });
+      // Store in memory for instant reuse later
+      sessionCacheRef.current.set(url, data);
       
-      setHistory(prev => {
-        const filtered = prev.filter(r => r.url !== url);
-        const next = [{ title: data.title, thumb: data.thumbnail, url }, ...filtered];
-        return next.slice(0, 8); // Keep compact history
-      });
-      
-      const vList = data.formats.filter(f => f.vcodec).sort((a,b) => (b.height - a.height) || ((a.size || Infinity) - (b.size || Infinity)));
-      const aList = data.formats.filter(f => f.acodec && !f.vcodec).sort((a,b) => {
-        const abrA = parseInt(a.abr) || 0;
-        const abrB = parseInt(b.abr) || 0;
-        if (abrA !== abrB) return abrB - abrA;
-        return (a.size || Infinity) - (b.size || Infinity);
-      });
-      
-      if (vList.length > 0) setSelectedVideo({ id: vList[0].id, size: vList[0].size, label: vList[0].label });
-      else setSelectedVideo({ id: '', size: 0, label: 'NoVideo' });
-      
-      if (aList.length > 0) setSelectedAudio({ id: aList[0].id, size: aList[0].size, label: aList[0].label });
-      else setSelectedAudio({ id: '', size: 0, label: 'PreMerged' });
+      applyMetadata(data, url);
 
     } catch (e) {
       showToast(e.message || "Network error.", "error");
     } finally {
+      isAnalyzingRef.current = false;
       setIsAnalyzing(false);
     }
   };
@@ -210,7 +233,21 @@ function App() {
         </motion.div>
 
         <AnimatePresence mode="wait">
-          {metadata && (
+          {isAnalyzing ? (
+            <motion.div 
+              key="loading"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="mt-16 flex flex-col items-center justify-center gap-4 text-slate-400 dark:text-slate-500"
+            >
+              <div className="relative">
+                <div className="w-12 h-12 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin" />
+                <div className="absolute inset-0 bg-indigo-500/10 blur-xl rounded-full animate-pulse" />
+              </div>
+              <span className="text-sm font-bold tracking-widest uppercase mt-2 text-indigo-500/70">Scanning Media...</span>
+            </motion.div>
+          ) : metadata ? (
             <CompactResultPanel
               key="result-panel"
               metadata={metadata}
@@ -224,7 +261,7 @@ function App() {
               progress={progress}
               status={jobStatus}
             />
-          )}
+          ) : null}
         </AnimatePresence>
 
         <RecentHistory 
