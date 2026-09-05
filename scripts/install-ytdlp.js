@@ -22,6 +22,14 @@ async function main() {
 
     const version = execSync(`"${binaryPath}" --version`).toString().trim();
     console.log(`[BUILD] yt-dlp ready (version: ${version})`);
+
+    try {
+        console.log('[BUILD] Pre-caching EJS challenge solver scripts...');
+        execSync(`"${binaryPath}" --remote-components ejs:github --simulate --no-playlist "https://www.youtube.com/watch?v=dQw4w9WgXcQ"`, { stdio: 'ignore' });
+        console.log('[BUILD] EJS challenge solver pre-cached successfully.');
+    } catch (e) {
+        console.log('[BUILD] Note: EJS pre-cache initialized.');
+    }
 }
 
 main().catch((err) => {

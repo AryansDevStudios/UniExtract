@@ -25,6 +25,28 @@ if (!fs.existsSync(TEMP_DIR)) {
 const jobs = {};
 let selectedEncoder = 'libx264';
 
+// --- IN-MEMORY METADATA CACHE ---
+const analysisCache = new Map();
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+const getCachedAnalysis = (url) => {
+    const entry = analysisCache.get(url);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+        analysisCache.delete(url);
+        return null;
+    }
+    return entry.data;
+};
+
+const setCachedAnalysis = (url, data) => {
+    if (analysisCache.size > 200) {
+        const oldestKey = analysisCache.keys().next().value;
+        analysisCache.delete(oldestKey);
+    }
+    analysisCache.set(url, { timestamp: Date.now(), data });
+};
+
 // --- SYSTEM LOGGER HELPER ---
 const logger = (jobId, message, type = 'INFO') => {
     const timestamp = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '');
@@ -160,10 +182,17 @@ app.post('/api/analyze', async (req, res) => {
     const cleanedUrl = cleanMediaUrl(url); // Sanitize the URL to prevent playlist crashes
     logger(null, `Incoming analysis for URL: ${url}`);
 
+    // Check memory cache first (instant response if previously requested)
+    const cached = getCachedAnalysis(cleanedUrl);
+    if (cached) {
+        logger(null, `Serving cached analysis for: "${cached.title}" (instant)`);
+        return res.json(cached);
+    }
+
     try {
         await ensureYtDlp();
         const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
-        const info = await ytdlp.getInfoAsync(cleanedUrl, { cookies: COOKIES });
+        const info = await ytdlp.getInfoAsync(cleanedUrl, { cookies: COOKIES, noPlaylist: true });
         logger(null, `Metadata retrieved for: "${info.title}"`);
 
         // Graceful error handling to prevent backend crash if a playlist still slips through
@@ -236,7 +265,9 @@ app.post('/api/analyze', async (req, res) => {
             };
         });
 
-        res.json({ title: info.title, thumbnail: info.thumbnail, formats });
+        const responseData = { title: info.title, thumbnail: info.thumbnail, formats };
+        setCachedAnalysis(cleanedUrl, responseData);
+        res.json(responseData);
     } catch (err) {
         logger(null, `Analysis failed: ${err.message}`, "ERROR");
         res.status(500).json({ error: err.message });
