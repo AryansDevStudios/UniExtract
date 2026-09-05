@@ -408,7 +408,7 @@ app.post('/api/download', async (req, res) => {
 
                         let embedArgs = [];
                         if (isAudioOnly) {
-                            // Inject album art into MP3 file
+                            // Inject album art into MP3 file while preserving global metadata
                             embedArgs = [
                                 '-y',
                                 '-i', finalFile,
@@ -416,13 +416,14 @@ app.post('/api/download', async (req, res) => {
                                 '-map', '0:0',
                                 '-map', '1:0',
                                 '-c', 'copy',
+                                '-map_metadata', '0',
                                 '-id3v2_version', '3',
                                 '-metadata:s:v', 'title="Album cover"',
                                 '-metadata:s:v', 'comment="Cover (front)"',
                                 embeddedFile
                             ];
                         } else {
-                            // Inject thumbnail into MP4 video file
+                            // Inject thumbnail into MP4 video file while preserving global metadata
                             embedArgs = [
                                 '-y',
                                 '-i', finalFile,
@@ -430,6 +431,7 @@ app.post('/api/download', async (req, res) => {
                                 '-map', '0',
                                 '-map', '1',
                                 '-c', 'copy',
+                                '-map_metadata', '0',
                                 '-c:v:1', 'mjpeg',
                                 '-disposition:v:1', 'attached_pic',
                                 embeddedFile
