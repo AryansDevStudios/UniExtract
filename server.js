@@ -163,22 +163,7 @@ app.post('/api/analyze', async (req, res) => {
     try {
         await ensureYtDlp();
         const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
-        let info;
-        try {
-            info = await ytdlp.getInfoAsync(cleanedUrl, {
-                cookies: COOKIES,
-                extractorArgs: { youtube: ['player_client=web_embedded,android,ios,mweb'] }
-            });
-        } catch (initialErr) {
-            if (initialErr.message && initialErr.message.includes('Sign in to confirm you’re not a bot')) {
-                logger(null, `Bot challenge detected with cookies, retrying with embedded client without cookies...`, "WARN");
-                info = await ytdlp.getInfoAsync(cleanedUrl, {
-                    extractorArgs: { youtube: ['player_client=web_embedded,android'] }
-                });
-            } else {
-                throw initialErr;
-            }
-        }
+        const info = await ytdlp.getInfoAsync(cleanedUrl, { cookies: COOKIES });
         logger(null, `Metadata retrieved for: "${info.title}"`);
 
         // Graceful error handling to prevent backend crash if a playlist still slips through
@@ -312,7 +297,6 @@ app.post('/api/download', async (req, res) => {
 
     // TASK 1: Re-encode to MP4 and download the thumbnail safely (No embedding yet)
     let ffmpegArgs = [
-        '--extractor-args', 'youtube:player_client=web_embedded,android,ios,mweb',
         '--merge-output-format', extension,
         '--recode-video', extension,
         '--postprocessor-args', `VideoConvertor:-c:V ${selectedEncoder} -preset fast -c:a aac -b:a 192k`,
