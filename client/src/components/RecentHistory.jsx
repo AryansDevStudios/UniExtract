@@ -24,7 +24,7 @@ export default function RecentHistory({ history, onSelect, onDelete }) {
               exit={{ opacity: 0, scale: 0.9 }}
               layout
               onClick={() => onSelect(item.url)}
-              className="flex items-center gap-3 p-2 pr-4 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md rounded-full shadow-sm border border-slate-200/50 dark:border-slate-700/50 cursor-pointer hover:bg-white dark:hover:bg-slate-800 transition-colors group max-w-[200px]"
+              className="flex items-center gap-3 p-2 pr-4 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md rounded-full shadow-sm border border-slate-200/50 dark:border-slate-700/50 cursor-pointer hover:bg-white dark:hover:bg-slate-800 hover:shadow-md transition-all duration-300 group max-w-[200px]"
             >
               <img src={item.thumb} alt="thumb" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
               <h4 className="font-medium text-xs text-slate-700 dark:text-slate-300 truncate w-full group-hover:text-indigo-500 transition-colors">

@@ -93,18 +93,20 @@ export default function CompactResultPanel({
   if (!metadata) return null;
 
   const vFormats = useMemo(() => {
-    // Sort by height descending, then size ASCENDING so standard users get the smallest, most efficient codec per resolution
-    let list = metadata.formats
-      .filter(f => f.vcodec)
-      .sort((a, b) => (b.height - a.height) || ((a.size || Infinity) - (b.size || Infinity)));
+    let list = metadata.formats.filter(f => f.vcodec);
     
     if (!advancedMode) {
+      // Standard mode: smallest file per resolution
+      list = list.sort((a, b) => (b.height - a.height) || ((a.size || Infinity) - (b.size || Infinity)));
       const seen = new Set();
       list = list.filter(f => {
         if (seen.has(f.resolution)) return false;
         seen.add(f.resolution);
         return true;
       });
+    } else {
+      // Advanced mode: largest file per resolution first (descending)
+      list = list.sort((a, b) => (b.height - a.height) || ((b.size || 0) - (a.size || 0)));
     }
 
     return list.map(f => ({
@@ -116,22 +118,30 @@ export default function CompactResultPanel({
   }, [metadata, advancedMode]);
 
   const aFormats = useMemo(() => {
-    let list = metadata.formats
-      .filter(f => f.acodec && !f.vcodec)
-      .sort((a, b) => {
+    let list = metadata.formats.filter(f => f.acodec && !f.vcodec);
+      
+    if (!advancedMode) {
+      // Standard mode: smallest file per bitrate
+      list = list.sort((a, b) => {
         const abrA = parseInt(a.abr) || 0;
         const abrB = parseInt(b.abr) || 0;
-        if (abrA !== abrB) return abrB - abrA; // Highest bitrate first
-        return (a.size || Infinity) - (b.size || Infinity); // Smallest file first for same bitrate
+        if (abrA !== abrB) return abrB - abrA;
+        return (a.size || Infinity) - (b.size || Infinity);
       });
-    
-    if (!advancedMode) {
       const seen = new Set();
       list = list.filter(f => {
         const key = f.abr || 'High Quality';
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
+      });
+    } else {
+      // Advanced mode: largest file per bitrate first (descending)
+      list = list.sort((a, b) => {
+        const abrA = parseInt(a.abr) || 0;
+        const abrB = parseInt(b.abr) || 0;
+        if (abrA !== abrB) return abrB - abrA;
+        return (b.size || 0) - (a.size || 0);
       });
     }
 
@@ -151,10 +161,10 @@ export default function CompactResultPanel({
       initial={{ opacity: 0, y: 15, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -15, scale: 0.98 }}
-      className="mt-6 w-full bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 rounded-[2rem] p-3 md:p-4 shadow-xl flex flex-col md:flex-row gap-4 md:gap-6"
+      className="mt-6 relative z-50 w-full bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 rounded-[2rem] p-3 md:p-4 shadow-xl flex flex-col md:flex-row gap-4 md:gap-6"
     >
       {/* LEFT: THUMBNAIL (Uncropped, natural aspect ratio, tight wrap) */}
-      <div className="relative flex-shrink-0 group rounded-2xl md:rounded-3xl overflow-hidden shadow-inner self-start w-full md:w-fit mx-auto md:mx-0">
+      <div className="relative flex-shrink-0 group rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50 self-start w-full md:w-fit mx-auto md:mx-0">
         <img 
           src={metadata.thumbnail} 
           alt="Thumbnail" 
