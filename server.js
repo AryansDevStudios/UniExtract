@@ -214,13 +214,20 @@ app.post('/api/analyze', async (req, res) => {
             }
         }
 
-        // Safely map formats (Supports YT, FB, IG, TT, Snap natively now)
-        const formats = rawFormats.map(f => {
+        // Safely filter and map formats (exclude internal HLS manifests and empty storyboards)
+        const validFormats = rawFormats.filter(f => {
+            if (f.format_note === 'storyboard' || f.protocol === 'm3u8_native') return false;
+            const hasRealVideo = f.vcodec && f.vcodec !== 'none';
+            const hasRealAudio = f.acodec && f.acodec !== 'none';
+            const isDirectFallback = !f.vcodec && !f.acodec && (f.ext === 'mp4' || f.ext === 'webm');
+            return hasRealVideo || hasRealAudio || isDirectFallback;
+        });
+
+        const formats = validFormats.map(f => {
             let label = "SD";
 
-            // Fix: Treat missing codec fields as present unless explicitly flagged as 'none' (fixes Snapchat/IG)
-            const hasVideo = f.vcodec !== 'none' && f.video_ext !== 'none';
-            const hasAudio = f.acodec !== 'none' && f.audio_ext !== 'none';
+            const hasVideo = f.vcodec ? f.vcodec !== 'none' : (!f.acodec && (f.ext === 'mp4' || f.ext === 'webm'));
+            const hasAudio = f.acodec ? f.acodec !== 'none' : (!f.vcodec && (f.ext === 'mp4' || f.ext === 'webm'));
 
             // Smart orientation detection for vertical videos (TikTok, Shorts, Reels)
             const width = f.width || 0;

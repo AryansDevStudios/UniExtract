@@ -118,7 +118,8 @@ export default function CompactResultPanel({
   }, [metadata, advancedMode]);
 
   const aFormats = useMemo(() => {
-    let list = metadata.formats.filter(f => f.acodec && !f.vcodec);
+    // Filter out audio streams that have no bitrate and no filesize (e.g. invalid manifest fragments)
+    let list = metadata.formats.filter(f => f.acodec && !f.vcodec && (f.abr || f.size > 0));
       
     if (!advancedMode) {
       // Standard mode: smallest file per bitrate
@@ -130,7 +131,7 @@ export default function CompactResultPanel({
       });
       const seen = new Set();
       list = list.filter(f => {
-        const key = f.abr || 'High Quality';
+        const key = f.abr || 'Audio';
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
