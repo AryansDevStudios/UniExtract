@@ -6,7 +6,7 @@ function formatBytes(bytes) {
   if (!bytes) return '-- MB';
   const mb = bytes / (1024 * 1024);
   if (mb >= 1024) {
-    return `${(mb / 1024).toFixed(2)} GB`;
+    return `${(mb / 1024).toFixed(2)} GB (${mb.toFixed(1)} MB)`;
   }
   return `${mb.toFixed(1)} MB`;
 }
@@ -133,12 +133,12 @@ export default function CompactResultPanel({
       exit={{ opacity: 0, y: -15, scale: 0.98 }}
       className="mt-6 w-full bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 rounded-[2rem] p-3 md:p-4 shadow-xl flex flex-col md:flex-row gap-4 md:gap-6"
     >
-      {/* LEFT: THUMBNAIL (Uncropped, natural aspect ratio) */}
-      <div className="relative w-full md:w-1/3 lg:w-[280px] flex-shrink-0 group rounded-2xl md:rounded-3xl overflow-hidden bg-black/5 shadow-inner flex items-center justify-center min-h-[160px] md:min-h-full">
+      {/* LEFT: THUMBNAIL (Uncropped, natural aspect ratio, tight wrap) */}
+      <div className="relative flex-shrink-0 group rounded-2xl md:rounded-3xl overflow-hidden shadow-inner self-start w-full md:w-fit mx-auto md:mx-0">
         <img 
           src={metadata.thumbnail} 
           alt="Thumbnail" 
-          className="w-full h-auto max-h-[360px] object-contain transition-transform duration-700 group-hover:scale-105" 
+          className="w-full md:w-auto h-auto md:max-w-[280px] lg:max-w-[320px] max-h-[360px] object-contain transition-transform duration-700 group-hover:scale-105 block" 
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-[2px]">
           <button 
