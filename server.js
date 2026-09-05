@@ -349,10 +349,27 @@ app.post('/api/download', async (req, res) => {
     const hash = Buffer.from(cleanedUrl).toString('base64url');
     const infoJsonPath = path.join(CACHE_DIR, `${hash}.info.json`);
     
+    // EXPLICIT METADATA EXTRACTION FOR WINDOWS/APPLE COMPATIBILITY
+    let metaTitle = title || "Unknown Title";
+    let metaArtist = "Unknown Artist";
+    let metaDate = "";
+
     if (fs.existsSync(infoJsonPath)) {
         ffmpegArgs.push('--load-info-json', infoJsonPath);
         logger(jobId, "Bypassing network extraction phase using cached metadata (Instant Start)", "SPEED");
+        
+        try {
+            const infoData = JSON.parse(fs.readFileSync(infoJsonPath, 'utf8'));
+            if (infoData.title) metaTitle = infoData.title;
+            if (infoData.uploader || infoData.channel) metaArtist = infoData.uploader || infoData.channel;
+            if (infoData.upload_date) metaDate = infoData.upload_date.substring(0, 4);
+        } catch (e) {}
     }
+    
+    // Store metadata explicitly in the job to use during Task 2 Thumbnail Injection
+    jobs[jobId].metaTitle = metaTitle;
+    jobs[jobId].metaArtist = metaArtist;
+    jobs[jobId].metaDate = metaDate;
     
     if (isAudioOnly) {
         // Extract audio and convert directly to MP3
@@ -360,7 +377,7 @@ app.post('/api/download', async (req, res) => {
             '--extract-audio',
             '--audio-format', 'mp3',
             '--audio-quality', '0',
-            '--add-metadata',
+            '--add-metadata', // yt-dlp first pass
             '--write-thumbnail', // Save cover art
             '--convert-thumbnails', 'jpg',
             '-o', `${jobId}.%(ext)s`
@@ -372,7 +389,7 @@ app.post('/api/download', async (req, res) => {
             '--recode-video', extension,
             '--postprocessor-args', `VideoConvertor:-c:v ${selectedEncoder} -preset ultrafast -c:a aac -b:a 192k`,
             '--postprocessor-args', `Merger:-c:v ${selectedEncoder} -preset ultrafast -c:a aac -b:a 192k`,
-            '--add-metadata',
+            '--add-metadata', // yt-dlp first pass
             '--write-thumbnail',
             '--convert-thumbnails', 'jpg',
             '-o', `${jobId}.%(ext)s`
@@ -406,9 +423,13 @@ app.post('/api/download', async (req, res) => {
                         logger(jobId, `Task 2: Injecting high-res thumbnail into ${extension.toUpperCase()}...`, "THUMB");
                         const embeddedFile = baseName + '_with_thumb.' + extension;
 
+                        const mTitle = jobs[jobId].metaTitle;
+                        const mArtist = jobs[jobId].metaArtist;
+                        const mDate = jobs[jobId].metaDate;
+
                         let embedArgs = [];
                         if (isAudioOnly) {
-                            // Inject album art into MP3 file while preserving global metadata
+                            // Inject album art into MP3 file while preserving global metadata and explicitly setting ID3
                             embedArgs = [
                                 '-y',
                                 '-i', finalFile,
@@ -418,12 +439,16 @@ app.post('/api/download', async (req, res) => {
                                 '-c', 'copy',
                                 '-map_metadata', '0',
                                 '-id3v2_version', '3',
+                                '-metadata', `title=${mTitle}`,
+                                '-metadata', `artist=${mArtist}`,
+                                '-metadata', `album=${mArtist} (YouTube)`,
+                                '-metadata', `date=${mDate}`,
                                 '-metadata:s:v', 'title="Album cover"',
                                 '-metadata:s:v', 'comment="Cover (front)"',
                                 embeddedFile
                             ];
                         } else {
-                            // Inject thumbnail into MP4 video file while preserving global metadata
+                            // Inject thumbnail into MP4 video file while preserving global metadata and explicitly setting atoms
                             embedArgs = [
                                 '-y',
                                 '-i', finalFile,
@@ -432,6 +457,10 @@ app.post('/api/download', async (req, res) => {
                                 '-map', '1',
                                 '-c', 'copy',
                                 '-map_metadata', '0',
+                                '-metadata', `title=${mTitle}`,
+                                '-metadata', `artist=${mArtist}`,
+                                '-metadata', `album=${mArtist} (YouTube)`,
+                                '-metadata', `date=${mDate}`,
                                 '-c:v:1', 'mjpeg',
                                 '-disposition:v:1', 'attached_pic',
                                 embeddedFile
