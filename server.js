@@ -834,9 +834,11 @@ const warmUpYtDlp = () => {
         logger(null, `Initial yt-dlp setup warning: ${err.message}`, "WARN");
     }
 
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
         console.log("\n" + "=".repeat(50));
         console.log(`[SERVER] Universal Media Extractor Server running on port ${PORT}`);
+        console.log(`[LOCAL]  http://localhost:${PORT}`);
+        console.log(`[LAN]    http://0.0.0.0:${PORT}`);
         console.log(`[TEMP] Temp Folder: ${TEMP_DIR}`);
         console.log(`[CACHE] Cache Folder: ${CACHE_DIR}`);
         console.log("=".repeat(50) + "\n");
