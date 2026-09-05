@@ -1,5 +1,5 @@
 const express = require('express');
-const { YtDlp } = require('ytdlp-nodejs');
+const { YtDlp, helpers } = require('ytdlp-nodejs');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
@@ -7,19 +7,12 @@ const { execSync, spawn, spawnSync } = require('child_process');
 const cors = require('cors');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const COOKIES = path.join(__dirname, 'cookies.txt');
 const TEMP_DIR = path.join(__dirname, 'temp');
 
 // --- INITIALIZATION ---
-let ytDlpPath = 'yt-dlp';
-try {
-    const checkCmd = process.platform === 'win32' ? 'where yt-dlp' : 'which yt-dlp';
-    ytDlpPath = execSync(checkCmd).toString().trim().split(/\r?\n/)[0].trim();
-} catch (e) {
-    // Fall back to default PATH executable
-}
-console.log(`[SYSTEM] Using yt-dlp binary at: ${ytDlpPath}`);
+let ytDlpPath = null;
 
 app.use(cors());
 app.use(express.json());
@@ -38,6 +31,45 @@ const logger = (jobId, message, type = 'INFO') => {
     const idTag = jobId ? `[Job: ${jobId.substring(0, 8)}]` : '[SYSTEM]';
     const typeTag = `[${type}]`.padEnd(8);
     console.log(`${timestamp} ${idTag} ${typeTag} ${message}`);
+};
+
+// --- ENSURE YT-DLP BINARY ---
+const ensureYtDlp = async () => {
+    if (ytDlpPath && fs.existsSync(ytDlpPath)) {
+        return ytDlpPath;
+    }
+
+    // 1. Check if ytdlp-nodejs already has a downloaded binary
+    try {
+        const bundled = helpers.findYtdlpBinary();
+        if (bundled && fs.existsSync(bundled)) {
+            ytDlpPath = bundled;
+            logger(null, `Using bundled yt-dlp binary at: ${ytDlpPath}`);
+            return ytDlpPath;
+        }
+    } catch (e) {}
+
+    // 2. Check if yt-dlp is available in system PATH
+    try {
+        const checkCmd = process.platform === 'win32' ? 'where yt-dlp' : 'which yt-dlp';
+        const systemPath = execSync(checkCmd).toString().trim().split(/\r?\n/)[0].trim();
+        if (systemPath && fs.existsSync(systemPath)) {
+            ytDlpPath = systemPath;
+            logger(null, `Using system yt-dlp binary at: ${ytDlpPath}`);
+            return ytDlpPath;
+        }
+    } catch (e) {}
+
+    // 3. Automatically download yt-dlp binary if missing
+    logger(null, `yt-dlp binary not found locally or in PATH. Downloading yt-dlp...`, "WARN");
+    try {
+        ytDlpPath = await helpers.downloadYtDlp();
+        logger(null, `yt-dlp downloaded successfully to: ${ytDlpPath}`);
+        return ytDlpPath;
+    } catch (err) {
+        logger(null, `Failed to download yt-dlp binary: ${err.message}`, "CRITICAL");
+        throw err;
+    }
 };
 
 // --- URL SANITIZER ---
@@ -122,7 +154,8 @@ app.post('/api/analyze', async (req, res) => {
     logger(null, `Incoming analysis for URL: ${url}`);
 
     try {
-        const ytdlp = new YtDlp({ binaryPath: ytDlpPath });
+        await ensureYtDlp();
+        const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
         const info = await ytdlp.getInfoAsync(cleanedUrl, { cookies: COOKIES, additionalOptions: ['--js-runtimes', 'node'] });
         logger(null, `Metadata retrieved for: "${info.title}"`);
 
@@ -251,7 +284,8 @@ app.post('/api/download', async (req, res) => {
 
     logger(jobId, `Download initiated for "${title}"`, "START");
 
-    const ytdlp = new YtDlp({ binaryPath: ytDlpPath });
+    await ensureYtDlp();
+    const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
     let formatSelection = (vId && aId) ? `${vId}+${aId}` : (vId || aId);
 
     // TASK 1: Re-encode to MP4 and download the thumbnail safely (No embedding yet)
@@ -376,9 +410,18 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
-    console.log("\n" + "=".repeat(50));
-    console.log(`[SERVER] YouTubeExtract Server running on http://localhost:${PORT}`);
-    console.log(`[TEMP] Temp Folder: ${TEMP_DIR}`);
-    console.log("=".repeat(50) + "\n");
-});
+// --- START SERVER ---
+(async () => {
+    try {
+        await ensureYtDlp();
+    } catch (err) {
+        logger(null, `Initial yt-dlp setup warning: ${err.message}`, "WARN");
+    }
+
+    app.listen(PORT, () => {
+        console.log("\n" + "=".repeat(50));
+        console.log(`[SERVER] Universal Media Extractor Server running on port ${PORT}`);
+        console.log(`[TEMP] Temp Folder: ${TEMP_DIR}`);
+        console.log("=".repeat(50) + "\n");
+    });
+})();
