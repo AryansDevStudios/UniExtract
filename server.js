@@ -321,28 +321,48 @@ app.post('/api/download', async (req, res) => {
     const { url, vId, aId, vLabel, aLabel, title } = req.body;
     const cleanedUrl = cleanMediaUrl(url);
     const jobId = uuidv4();
-    const extension = 'mp4';
+    
+    // Determine dynamic extension based on user selection
+    const isAudioOnly = !vId && !!aId;
+    const extension = isAudioOnly ? 'mp3' : 'mp4';
+    
     const namingTag = `${vLabel || 'NoVideo'}_${aLabel || 'NoAudio'}`;
 
-    jobs[jobId] = { status: 'downloading', progress: '0%', file: null, customTag: namingTag, title };
+    jobs[jobId] = { status: 'downloading', progress: '0%', file: null, customTag: namingTag, title, extension };
 
-    logger(jobId, `Download initiated for "${title}"`, "START");
+    logger(jobId, `Download initiated for "${title}" [Format: ${extension.toUpperCase()}]`, "START");
 
     await ensureYtDlp();
     const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
     let formatSelection = (vId && aId) ? `${vId}+${aId}` : (vId || aId);
 
-    // TASK 1: Re-encode to MP4 and download the thumbnail safely (No embedding yet)
-    let ffmpegArgs = [
-        '--merge-output-format', extension,
-        '--recode-video', extension,
-        '--postprocessor-args', `VideoConvertor:-c:V ${selectedEncoder} -preset fast -c:a aac -b:a 192k`,
-        '--postprocessor-args', `Merger:-c:V ${selectedEncoder} -preset fast -c:a aac -b:a 192k`,
-        '--add-metadata',
-        '--write-thumbnail',    // Forces yt-dlp to save the thumbnail alongside the video
-        '--convert-thumbnails', 'jpg', // Guarantees the thumbnail is cleanly converted to JPG
-        '-o', `${jobId}.%(ext)s`
-    ];
+    // TASK 1: Build the specific FFmpeg instructions based on media type
+    let ffmpegArgs = [];
+    
+    if (isAudioOnly) {
+        // Extract audio and convert directly to MP3
+        ffmpegArgs = [
+            '--extract-audio',
+            '--audio-format', 'mp3',
+            '--audio-quality', '0',
+            '--add-metadata',
+            '--write-thumbnail', // Save cover art
+            '--convert-thumbnails', 'jpg',
+            '-o', `${jobId}.%(ext)s`
+        ];
+    } else {
+        // Merge Video + Audio and ensure MP4 container
+        ffmpegArgs = [
+            '--merge-output-format', extension,
+            '--recode-video', extension,
+            '--postprocessor-args', `VideoConvertor:-c:V ${selectedEncoder} -preset fast -c:a aac -b:a 192k`,
+            '--postprocessor-args', `Merger:-c:V ${selectedEncoder} -preset fast -c:a aac -b:a 192k`,
+            '--add-metadata',
+            '--write-thumbnail',
+            '--convert-thumbnails', 'jpg',
+            '-o', `${jobId}.%(ext)s`
+        ];
+    }
 
     ytdlp.download(cleanedUrl)
         .cookies(COOKIES)
@@ -368,21 +388,40 @@ app.post('/api/download', async (req, res) => {
                 // TASK 2: Use an isolated FFmpeg operation to natively embed the thumbnail
                 if (thumbFile && fs.existsSync(finalFile)) {
                     try {
-                        logger(jobId, `Task 2: Injecting high-res thumbnail into MP4...`, "THUMB");
+                        logger(jobId, `Task 2: Injecting high-res thumbnail into ${extension.toUpperCase()}...`, "THUMB");
                         const embeddedFile = baseName + '_with_thumb.' + extension;
 
-                        // -c copy ensures we don't re-encode the video again, we just inject the picture
-                        spawnSync('ffmpeg', [
-                            '-y',
-                            '-i', finalFile,
-                            '-i', thumbFile,
-                            '-map', '0',
-                            '-map', '1',
-                            '-c', 'copy',
-                            '-c:v:1', 'mjpeg',
-                            '-disposition:v:1', 'attached_pic',
-                            embeddedFile
-                        ]);
+                        let embedArgs = [];
+                        if (isAudioOnly) {
+                            // Inject album art into MP3 file
+                            embedArgs = [
+                                '-y',
+                                '-i', finalFile,
+                                '-i', thumbFile,
+                                '-map', '0:0',
+                                '-map', '1:0',
+                                '-c', 'copy',
+                                '-id3v2_version', '3',
+                                '-metadata:s:v', 'title="Album cover"',
+                                '-metadata:s:v', 'comment="Cover (front)"',
+                                embeddedFile
+                            ];
+                        } else {
+                            // Inject thumbnail into MP4 video file
+                            embedArgs = [
+                                '-y',
+                                '-i', finalFile,
+                                '-i', thumbFile,
+                                '-map', '0',
+                                '-map', '1',
+                                '-c', 'copy',
+                                '-c:v:1', 'mjpeg',
+                                '-disposition:v:1', 'attached_pic',
+                                embeddedFile
+                            ];
+                        }
+
+                        spawnSync('ffmpeg', embedArgs);
 
                         // Replace the original with our newly embedded version
                         if (fs.existsSync(embeddedFile)) {
@@ -423,8 +462,9 @@ app.get('/api/file/:jobId/:title', (req, res) => {
     const filePath = path.join(TEMP_DIR, job.file);
     const safeTitle = req.params.title.replace(/[^a-z0-9]/gi, '_');
 
-    // Strictly force the .mp4 extension for maximum compatibility delivery
-    const finalName = `${safeTitle}_${job.customTag}.mp4`;
+    // Dynamically use the correct extension (MP4 or MP3)
+    const finalExt = job.extension || 'mp4';
+    const finalName = `${safeTitle}_${job.customTag}.${finalExt}`;
 
     logger(req.params.jobId, `Transmitting file to client: ${finalName}`, "SEND");
 
