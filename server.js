@@ -164,24 +164,64 @@ const formatSecondsToClock = (seconds) => {
     return `${hours}:${minutes}:${secs}`;
 };
 
+const cleanLanguageName = (rawLang, note = '') => {
+    let langName = '';
+    if (rawLang && rawLang !== 'und' && rawLang !== 'unknown') {
+        try {
+            langName = new Intl.DisplayNames(['en'], { type: 'language' }).of(rawLang) || '';
+        } catch (e) {}
+    }
+
+    let cleanNote = note.trim()
+        .replace(/,\s*(low|medium|high|ultra|tiny|small).*$/i, '')
+        .replace(/\b(low|medium|high)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (cleanNote) {
+        cleanNote = cleanNote
+            .replace(/original\s*\(default\)/i, '(Original)')
+            .replace(/original/i, '(Original)')
+            .replace(/dubbed/i, '(Dubbed)')
+            .replace(/default/i, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        return cleanNote;
+    }
+
+    return langName || (rawLang ? rawLang.toUpperCase() : 'Audio');
+};
+
 const collectAudioTracks = (info) => {
     const map = new Map();
     const allFormats = Array.isArray(info?.formats) ? info.formats : [];
 
     for (const fmt of allFormats) {
         if (!fmt || (!fmt.acodec || fmt.acodec === 'none')) continue;
-        const id = fmt.format_id || `${fmt.ext}-${fmt.abr || 'audio'}`;
-        const language = fmt.language || fmt.language_code || 'Unknown';
-        if (map.has(id)) continue;
-        map.set(id, {
-            id,
-            language,
-            label: fmt.format_note || fmt.ext?.toUpperCase() || 'Audio',
-            ext: fmt.ext || 'audio'
-        });
+
+        // Group by language code, or by language name embedded in note if language code is missing
+        const rawLang = (fmt.language || fmt.language_code || '').toLowerCase().trim();
+        const note = fmt.format_note || '';
+        
+        // Skip formats without identifiable language info
+        const displayLabel = cleanLanguageName(rawLang, note);
+        const langKey = rawLang || displayLabel.toLowerCase();
+
+        const abr = fmt.abr || fmt.tbr || 0;
+        const existing = map.get(langKey);
+
+        // Keep the best audio stream format_id for each language
+        if (!existing || abr > existing.abr) {
+            map.set(langKey, {
+                id: fmt.format_id,
+                language: displayLabel,
+                abr,
+                ext: fmt.ext || 'audio'
+            });
+        }
     }
 
-    return [...map.values()].slice(0, 50);
+    return [...map.values()];
 };
 
 const collectSubtitleOptions = (info) => {

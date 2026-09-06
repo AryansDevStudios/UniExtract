@@ -16,7 +16,7 @@ export default function LanguagePanel({
   const subtitles = metadata?.subtitles || [];
 
   const audioOptions = audioTracks.length > 1
-    ? audioTracks.map(track => ({ id: track.id, display: `${track.language || 'Audio'}${track.label ? ` • ${track.label}` : ''}` }))
+    ? audioTracks.map(track => ({ id: track.id, display: track.language || 'Audio' }))
     : [];
 
   const subtitleOptions = subtitles.map(sub => {
@@ -60,6 +60,10 @@ export default function LanguagePanel({
       setTimeout(() => setIsSubDownloading(false), 2000);
     }
   };
+
+  if (audioOptions.length <= 1 && subtitleOptions.length === 0) {
+    return null;
+  }
 
   return (
     <div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40 p-4 backdrop-blur-md shadow-sm">
