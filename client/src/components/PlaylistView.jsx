@@ -254,6 +254,10 @@ export default function PlaylistView({ playlist, onToast }) {
       return availableMasterVideoPresets.filter(p => p.id !== 'best' && p.id !== 'none');
     }
     const supportedSet = new Set(caps.videoResolutions);
+    // Always include 240p and 144p — every YouTube video has them,
+    // but older cached format data may not list them.
+    supportedSet.add('240p');
+    supportedSet.add('144p');
     return ALL_VIDEO_PRESETS.filter(p => {
       if (p.id === 'best' || p.id === 'none') return false;
       return supportedSet.has(p.id);
@@ -897,7 +901,7 @@ export default function PlaylistView({ playlist, onToast }) {
       </div>
 
       {/* 3. SCROLLABLE VIDEO LIST WITH PER-VIDEO FORMAT OVERRIDES */}
-      <div className="space-y-2.5 max-h-[560px] overflow-y-auto custom-scroll pr-1">
+      <div className="space-y-1.5 max-h-[600px] overflow-y-auto custom-scroll pr-1">
         {filteredItems.map((item) => {
           const isSelected = selectedIds.has(item.id);
           const itemOv = overrides[item.id] || {};
@@ -949,35 +953,35 @@ export default function PlaylistView({ playlist, onToast }) {
             ? 'No Audio (Muted Video)'
             : (audioPreset ? audioPreset.label : computedAudio.toUpperCase());
 
-          // Format Summary Tag (Clean, simple, no clutter)
+          // Format Summary Tag — compact inline badge
           let formatTag = '';
           if (computedVideo === 'none' && computedAudio === 'none') {
-            formatTag = '⚠️ No Media Selected';
+            formatTag = 'No Media';
           } else if (computedVideo === 'none') {
             const aBadge = audioPreset?.badge || computedAudio.toUpperCase();
-            formatTag = `🎵 Audio (${aBadge})`;
+            formatTag = `Audio ${aBadge}`;
           } else if (computedAudio === 'none' || !videoHasAudio) {
             const vBadge = videoPreset?.badge || computedVideo.toUpperCase();
-            formatTag = `🎬 ${vBadge} (Muted)`;
+            formatTag = `${vBadge} Muted`;
           } else {
             const vBadge = videoPreset?.badge || computedVideo.toUpperCase();
             const aBadge = audioPreset?.badge || computedAudio.toUpperCase();
-            formatTag = `🎬 ${vBadge} + 🎵 ${aBadge}`;
+            formatTag = `${vBadge} + ${aBadge}`;
           }
 
           return (
             <div
               key={item.id}
-              className={`flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 p-3.5 rounded-2xl transition-all border ${
+              className={`flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-xl transition-all border ${
                 isCurrentActive
                   ? 'bg-indigo-50/10 border-indigo-500/40 shadow-md ring-1 ring-indigo-500/20'
                   : isSelected
-                  ? 'bg-white/90 dark:bg-slate-800/80 border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300'
+                  ? 'bg-white/90 dark:bg-slate-800/80 border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
                   : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200/40 dark:border-slate-800/50 opacity-60'
               }`}
             >
-              {/* Left: Checkbox, Index, Thumbnail, Title, Quality Badges */}
-              <div className="flex items-center gap-3 min-w-0 flex-1">
+              {/* Left: Checkbox + Index + Thumb + Info */}
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <button
                   type="button"
                   disabled={batchState.isDownloading}
@@ -985,20 +989,20 @@ export default function PlaylistView({ playlist, onToast }) {
                   className="flex-shrink-0 text-slate-400 hover:text-indigo-500 transition-colors"
                 >
                   {isSelected ? (
-                    <CheckSquare size={19} className="text-indigo-600 dark:text-indigo-400" />
+                    <CheckSquare size={17} className="text-indigo-600 dark:text-indigo-400" />
                   ) : (
-                    <Square size={19} className="text-slate-300 dark:text-slate-600" />
+                    <Square size={17} className="text-slate-300 dark:text-slate-600" />
                   )}
                 </button>
 
-                <span className="text-xs font-mono font-bold text-slate-400 w-6 text-right flex-shrink-0">
-                  #{item.index}
+                <span className="text-[10px] font-mono font-bold text-slate-400 w-5 text-right flex-shrink-0">
+                  {item.index}
                 </span>
 
-                <div className="relative w-24 h-14 rounded-lg overflow-hidden bg-slate-200 dark:bg-slate-800 flex-shrink-0 shadow-sm">
-                  <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover" />
+                <div className="relative w-20 h-11 rounded-lg overflow-hidden bg-slate-200 dark:bg-slate-800 flex-shrink-0">
+                  <img src={item.thumbnail} alt="" className="w-full h-full object-cover" />
                   {item.durationText && (
-                    <span className="absolute bottom-1 right-1 text-[9px] font-mono font-bold bg-black/75 text-white px-1 rounded">
+                    <span className="absolute bottom-0.5 right-0.5 text-[8px] font-mono font-bold bg-black/80 text-white px-1 rounded">
                       {item.durationText}
                     </span>
                   )}
@@ -1006,153 +1010,135 @@ export default function PlaylistView({ playlist, onToast }) {
                     const badgeText = caps?.qualityBadge || item.qualityHint || 'HD';
                     const isHighEnd = badgeText.includes('8K') || badgeText.includes('4K');
                     return (
-                      <div className="absolute top-1 left-1 flex items-center gap-1">
-                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm ${
-                          isHighEnd
-                            ? 'bg-amber-500 text-black font-extrabold'
-                            : 'bg-indigo-600 text-white'
-                        }`}>
-                          {badgeText}
-                        </span>
-                        {!videoHasAudio && (
-                          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm bg-red-500/90 text-white">
-                            Muted
-                          </span>
-                        )}
-                      </div>
+                      <span className={`absolute top-0.5 left-0.5 text-[7px] font-black px-1 py-px rounded ${
+                        isHighEnd
+                          ? 'bg-amber-500 text-black'
+                          : 'bg-indigo-600/90 text-white'
+                      }`}>
+                        {badgeText}
+                      </span>
                     );
                   })()}
+                  {!videoHasAudio && (
+                    <span className="absolute top-0.5 right-0.5 text-[7px] font-bold px-1 py-px rounded bg-red-500/90 text-white">
+                      <VolumeX size={8} />
+                    </span>
+                  )}
                 </div>
 
-                <div className="min-w-0 flex-1 pr-2 space-y-1">
+                <div className="min-w-0 flex-1 space-y-0.5">
                   <a
                     href={item.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs md:text-sm font-bold text-slate-800 dark:text-slate-100 hover:text-indigo-500 transition-colors line-clamp-1 flex items-center gap-1.5"
+                    className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 hover:text-indigo-500 transition-colors line-clamp-1 block"
                     title={item.title}
                   >
                     {item.title}
-                    <ExternalLink size={11} className="opacity-0 hover:opacity-100 flex-shrink-0" />
                   </a>
-
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[11px] text-slate-400 truncate">
-                      {item.uploader || playlist.uploader}
-                    </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                      {formatTag}
-                    </span>
-                    <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold">
-                      {computedVideo !== 'none' && (
-                        <span className="px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                          🎬 ~{itemSizes.videoFormatted}
+                  <div className="flex items-center gap-2 text-[10px] text-slate-400 overflow-hidden">
+                    <span className="truncate max-w-[120px]">{item.uploader || playlist.uploader}</span>
+                    <span className="text-slate-300 dark:text-slate-600">·</span>
+                    <span className="font-medium text-slate-500 dark:text-slate-400 truncate">{formatTag}</span>
+                    {itemSizes.totalBytes > 0 && (
+                      <>
+                        <span className="text-slate-300 dark:text-slate-600">·</span>
+                        <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                          ~{itemSizes.totalFormatted}
                         </span>
-                      )}
-                      {computedAudio !== 'none' && videoHasAudio && (
-                        <span className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                          🎵 ~{itemSizes.audioFormatted}
-                        </span>
-                      )}
-                      <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800">
-                        Total: ~{itemSizes.totalFormatted}
-                      </span>
-                    </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Right: Individual Overrides (Video & Audio) & Status Badge */}
-              <div className="flex items-center gap-2.5 flex-wrap lg:flex-nowrap sm:flex-shrink-0 self-end lg:self-center">
+              {/* Right: Status + Selectors */}
+              <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-center pl-7 sm:pl-0">
                 {/* Status Indicator */}
                 {statusObj?.status === 'downloading' ? (
-                  <div className="flex items-center gap-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2.5 py-1 rounded-lg text-xs font-mono font-bold">
-                    <Loader2 size={13} className="animate-spin" />
+                  <div className="flex items-center gap-1 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded-lg text-[11px] font-mono font-bold">
+                    <Loader2 size={12} className="animate-spin" />
                     <span>{statusObj.progress || '0%'}</span>
                   </div>
                 ) : statusObj?.status === 'completed' ? (
-                  <div className="flex items-center gap-1.5 text-emerald-500 bg-emerald-500/10 px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap">
-                    <CheckCircle2 size={14} />
+                  <div className="flex items-center gap-1 text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap">
+                    <CheckCircle2 size={12} />
                     <span>{statusObj.resolvedFormat || 'Done'}</span>
                   </div>
                 ) : statusObj?.status === 'error' ? (
-                  <div className="flex items-center gap-1.5 text-red-500 bg-red-500/10 px-2.5 py-1 rounded-lg text-xs font-bold">
-                    <AlertCircle size={14} />
+                  <div className="flex items-center gap-1 text-red-500 bg-red-500/10 px-2 py-1 rounded-lg text-[11px] font-bold">
+                    <AlertCircle size={12} />
                     <span>Failed</span>
                   </div>
                 ) : statusObj?.status === 'queued' ? (
-                  <span className="text-[11px] font-medium text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                  <span className="text-[10px] font-medium text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                     Queued
                   </span>
                 ) : null}
 
                 {/* Per-Video Video Selector */}
-                <div className="flex items-center gap-1">
-                  <select
-                    value={itemOv.video || ''}
-                    disabled={batchState.isDownloading}
-                    onChange={(e) => setItemVideoOverride(item.id, e.target.value)}
-                    title={`Video Quality: ${defaultVideoLabel}`}
-                    className={`text-xs rounded-xl px-2.5 py-1.5 border font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors cursor-pointer ${
-                      itemOv.video
-                        ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 font-bold'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold'
-                    }`}
-                  >
-                    {(() => {
-                      const allowed = getItemVideoPresets(item.id);
-                      return (
-                        <>
-                          <option value="">{defaultVideoLabel} • ~{itemSizes.videoFormatted}</option>
-                          {allowed.map(p => {
-                            const pSize = estimateItemSizes(item.duration, p.id, 'none', caps).videoFormatted;
-                            return (
-                              <option key={p.id} value={p.id}>{p.label} • ~{pSize}</option>
-                            );
-                          })}
-                          <option value="none">No Video (Audio Only)</option>
-                        </>
-                      );
-                    })()}
-                  </select>
-                </div>
+                <select
+                  value={itemOv.video || ''}
+                  disabled={batchState.isDownloading}
+                  onChange={(e) => setItemVideoOverride(item.id, e.target.value)}
+                  title={`Video: ${defaultVideoLabel}`}
+                  className={`text-[11px] rounded-lg px-2 py-1.5 border focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer max-w-[180px] ${
+                    itemOv.video
+                      ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 font-bold'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium'
+                  }`}
+                >
+                  {(() => {
+                    const allowed = getItemVideoPresets(item.id);
+                    return (
+                      <>
+                        <option value="">{defaultVideoLabel} • ~{itemSizes.videoFormatted}</option>
+                        {allowed.map(p => {
+                          const pSize = estimateItemSizes(item.duration, p.id, 'none', caps).videoFormatted;
+                          return (
+                            <option key={p.id} value={p.id}>{p.label} • ~{pSize}</option>
+                          );
+                        })}
+                        <option value="none">No Video (Audio Only)</option>
+                      </>
+                    );
+                  })()}
+                </select>
 
                 {/* Per-Video Audio Selector */}
-                <div className="flex items-center gap-1">
-                  <select
-                    value={itemOv.audio || ''}
-                    disabled={batchState.isDownloading || !videoHasAudio}
-                    onChange={(e) => setItemAudioOverride(item.id, e.target.value)}
-                    title={videoHasAudio ? `Audio Quality: ${defaultAudioLabel}` : 'This video stream has no audio tracks'}
-                    className={`text-xs rounded-xl px-2.5 py-1.5 border font-medium focus:outline-none focus:ring-1 focus:ring-purple-500 transition-colors cursor-pointer ${
-                      !videoHasAudio
-                        ? 'bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-400 cursor-not-allowed'
-                        : itemOv.audio
-                        ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold'
-                    }`}
-                  >
-                    {!videoHasAudio ? (
-                      <option value="">No Audio (Muted Video)</option>
-                    ) : (
-                      (() => {
-                        const allowedAudio = getItemAudioPresets(item.id);
-                        return (
-                          <>
-                            <option value="">{defaultAudioLabel}{videoHasAudio ? ` • ~${itemSizes.audioFormatted}` : ''}</option>
-                            {allowedAudio.map(p => {
-                              const aSize = estimateItemSizes(item.duration, 'none', p.id, caps).audioFormatted;
-                              return (
-                                <option key={p.id} value={p.id}>{p.label} • ~{aSize}</option>
-                              );
-                            })}
-                            <option value="none">No Audio (Muted Video)</option>
-                          </>
-                        );
-                      })()
-                    )}
-                  </select>
-                </div>
+                <select
+                  value={itemOv.audio || ''}
+                  disabled={batchState.isDownloading || !videoHasAudio}
+                  onChange={(e) => setItemAudioOverride(item.id, e.target.value)}
+                  title={videoHasAudio ? `Audio: ${defaultAudioLabel}` : 'No audio tracks'}
+                  className={`text-[11px] rounded-lg px-2 py-1.5 border focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer max-w-[180px] ${
+                    !videoHasAudio
+                      ? 'bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-400 cursor-not-allowed'
+                      : itemOv.audio
+                      ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium'
+                  }`}
+                >
+                  {!videoHasAudio ? (
+                    <option value="">Muted Video</option>
+                  ) : (
+                    (() => {
+                      const allowedAudio = getItemAudioPresets(item.id);
+                      return (
+                        <>
+                          <option value="">{defaultAudioLabel} • ~{itemSizes.audioFormatted}</option>
+                          {allowedAudio.map(p => {
+                            const aSize = estimateItemSizes(item.duration, 'none', p.id, caps).audioFormatted;
+                            return (
+                              <option key={p.id} value={p.id}>{p.label} • ~{aSize}</option>
+                            );
+                          })}
+                          <option value="none">No Audio (Muted)</option>
+                        </>
+                      );
+                    })()
+                  )}
+                </select>
               </div>
             </div>
           );
