@@ -5,10 +5,19 @@
   "main": "electron/main.js",
   "scripts": {
     "postinstall": "node scripts/install-ytdlp.js",
-    "build": "npm run build --prefix client",
     "start": "node server.js",
     "dev": "nodemon server.js",
     "server": "node server.js",
+    "build": "npm run build --prefix client",
+    "backend:install": "npm install --omit=dev",
+    "backend:start": "node server.js",
+    "backend:dev": "nodemon server.js",
+    "frontend:install": "npm install --prefix client",
+    "frontend:dev": "npm run dev --prefix client",
+    "frontend:build": "npm run build --prefix client",
+    "fullstack:install": "npm install && npm run frontend:install",
+    "fullstack:build": "npm run frontend:build",
+    "fullstack:start": "npm run frontend:build && node server.js",
     "client:dev": "npm run dev --prefix client",
     "client:build": "npm run build --prefix client",
     "electron": "electron .",
@@ -44,10 +53,11 @@
       "electron/**",
       "client/dist/**",
       "public/**",
-      "cookies.txt",
+      "cookies.txt*",
       "favicon.ico",
       "package.json"
     ],
+
     "asarUnpack": [
       "node_modules/ytdlp-nodejs/**"
     ],
