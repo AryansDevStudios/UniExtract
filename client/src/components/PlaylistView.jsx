@@ -330,11 +330,45 @@ export default function PlaylistView({ playlist, onToast }) {
     });
   };
 
+  // Helper to determine the master default configuration for an item without overrides
+  const getMasterDefault = (itemId) => {
+    const caps = formatCapabilities[itemId];
+    const itemMaxRes = caps?.maxRes || '1080p';
+    const audioCaps = caps?.audio;
+    const hasAudio = audioCaps ? audioCaps.hasAudio !== false : true;
+    const itemMaxAudio = audioCaps?.maxAudioRes || '320k';
+
+    let video;
+    if (masterVideo === 'none') {
+      video = 'none';
+    } else if (masterVideo === 'best') {
+      video = itemMaxRes;
+    } else {
+      const masterH = RESOLUTION_HEIGHT_MAP[masterVideo] || 1080;
+      const itemH = caps?.maxHeight || 1080;
+      video = masterH > itemH ? itemMaxRes : masterVideo;
+    }
+
+    let audio;
+    if (!hasAudio || masterAudio === 'none') {
+      audio = 'none';
+    } else if (masterAudio === 'best') {
+      audio = itemMaxAudio;
+    } else {
+      const masterAbr = AUDIO_BITRATE_MAP[masterAudio] || 320;
+      const itemAbr = AUDIO_BITRATE_MAP[itemMaxAudio] || 320;
+      audio = masterAbr > itemAbr ? itemMaxAudio : masterAudio;
+    }
+
+    return { defaultVideo: video, defaultAudio: audio };
+  };
+
   const setItemVideoOverride = (id, val) => {
     setOverrides(prev => {
       const cur = prev[id] || {};
       const next = { ...cur };
-      if (!val || val === 'inherit') {
+      const { defaultVideo } = getMasterDefault(id);
+      if (!val || val === 'inherit' || val === defaultVideo) {
         delete next.video;
       } else {
         next.video = val;
@@ -352,7 +386,8 @@ export default function PlaylistView({ playlist, onToast }) {
     setOverrides(prev => {
       const cur = prev[id] || {};
       const next = { ...cur };
-      if (!val || val === 'inherit') {
+      const { defaultAudio } = getMasterDefault(id);
+      if (!val || val === 'inherit' || val === defaultAudio) {
         delete next.audio;
       } else {
         next.audio = val;
@@ -369,39 +404,11 @@ export default function PlaylistView({ playlist, onToast }) {
   // Helper to determine effective configuration for an item
   const getEffectiveConfig = (itemId) => {
     const itemOv = overrides[itemId] || {};
-    const caps = formatCapabilities[itemId];
-    const itemMaxRes = caps?.maxRes || '1080p';
-    const audioCaps = caps?.audio;
-    const hasAudio = audioCaps ? audioCaps.hasAudio !== false : true;
-    const itemMaxAudio = audioCaps?.maxAudioRes || '320k';
-
-    let video = itemOv.video;
-    if (!video) {
-      if (masterVideo === 'none') {
-        video = 'none';
-      } else if (masterVideo === 'best') {
-        video = itemMaxRes;
-      } else {
-        const masterH = RESOLUTION_HEIGHT_MAP[masterVideo] || 1080;
-        const itemH = caps?.maxHeight || 1080;
-        video = masterH > itemH ? itemMaxRes : masterVideo;
-      }
-    }
-
-    let audio = itemOv.audio;
-    if (!audio) {
-      if (!hasAudio || masterAudio === 'none') {
-        audio = 'none';
-      } else if (masterAudio === 'best') {
-        audio = itemMaxAudio;
-      } else {
-        const masterAbr = AUDIO_BITRATE_MAP[masterAudio] || 320;
-        const itemAbr = AUDIO_BITRATE_MAP[itemMaxAudio] || 320;
-        audio = masterAbr > itemAbr ? itemMaxAudio : masterAudio;
-      }
-    }
-
-    return { video, audio };
+    const { defaultVideo, defaultAudio } = getMasterDefault(itemId);
+    return {
+      video: itemOv.video || defaultVideo,
+      audio: itemOv.audio || defaultAudio
+    };
   };
 
   // Calculate collective estimated download sizes across all selected items
@@ -1099,7 +1106,7 @@ export default function PlaylistView({ playlist, onToast }) {
 
                 {/* Per-Video Video Selector */}
                 <select
-                  value={itemOv.video || ''}
+                  value={computedVideo}
                   disabled={batchState.isDownloading}
                   onChange={(e) => setItemVideoOverride(item.id, e.target.value)}
                   title={`Video: ${defaultVideoLabel}`}
@@ -1111,10 +1118,13 @@ export default function PlaylistView({ playlist, onToast }) {
                 >
                   {(() => {
                     const allowed = getItemVideoPresets(item.id);
+                    const hasCurrent = computedVideo === 'none' || allowed.some(p => p.id === computedVideo);
+                    const presetsToShow = hasCurrent
+                      ? allowed
+                      : [{ id: computedVideo, label: defaultVideoLabel }, ...allowed];
                     return (
                       <>
-                        <option value="">{defaultVideoLabel} • ~{itemSizes.videoFormatted}</option>
-                        {allowed.map(p => {
+                        {presetsToShow.map(p => {
                           const pSize = estimateItemSizes(item.duration, p.id, 'none', caps).videoFormatted;
                           return (
                             <option key={p.id} value={p.id}>{p.label} • ~{pSize}</option>
@@ -1128,7 +1138,7 @@ export default function PlaylistView({ playlist, onToast }) {
 
                 {/* Per-Video Audio Selector */}
                 <select
-                  value={itemOv.audio || ''}
+                  value={computedAudio}
                   disabled={batchState.isDownloading || !videoHasAudio}
                   onChange={(e) => setItemAudioOverride(item.id, e.target.value)}
                   title={videoHasAudio ? `Audio: ${defaultAudioLabel}` : 'No audio tracks'}
@@ -1141,14 +1151,17 @@ export default function PlaylistView({ playlist, onToast }) {
                   }`}
                 >
                   {!videoHasAudio ? (
-                    <option value="">Muted Video</option>
+                    <option value="none">Muted Video</option>
                   ) : (
                     (() => {
                       const allowedAudio = getItemAudioPresets(item.id);
+                      const hasCurrent = computedAudio === 'none' || allowedAudio.some(p => p.id === computedAudio);
+                      const presetsToShow = hasCurrent
+                        ? allowedAudio
+                        : [{ id: computedAudio, label: defaultAudioLabel }, ...allowedAudio];
                       return (
                         <>
-                          <option value="">{defaultAudioLabel} • ~{itemSizes.audioFormatted}</option>
-                          {allowedAudio.map(p => {
+                          {presetsToShow.map(p => {
                             const aSize = estimateItemSizes(item.duration, 'none', p.id, caps).audioFormatted;
                             return (
                               <option key={p.id} value={p.id}>{p.label} • ~{aSize}</option>
