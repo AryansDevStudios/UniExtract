@@ -58,6 +58,26 @@ jobs:
         with:
           node-version: 22
 
+      - name: Determine Release Tag & Synchronize Version
+        id: get_tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag_name }}" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          elif [[ "$GITHUB_REF" =~ refs/tags/(.*) ]]; then
+            TAG="${BASH_REMATCH[1]}"
+          else
+            TAG="v$(node -p "require('./package.json').version")"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          
+          # Clean version string (remove leading 'v' e.g. v2.5.0 -> 2.5.0)
+          CLEAN_VERSION="${TAG#v}"
+          echo "version=$CLEAN_VERSION" >> $GITHUB_OUTPUT
+          echo "Synchronizing package.json version to '$CLEAN_VERSION'..."
+          npm version "$CLEAN_VERSION" --no-git-tag-version --allow-same-version
+          npm version "$CLEAN_VERSION" --prefix client --no-git-tag-version --allow-same-version
+
       - name: Install Linux Build Dependencies
         if: runner.os == 'Linux'
         run: |
@@ -76,19 +96,6 @@ jobs:
         run: ${{ matrix.build-cmd }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Determine Release Tag
-        id: get_tag
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag_name }}" ]; then
-            TAG="${{ github.event.inputs.tag_name }}"
-          elif [[ "$GITHUB_REF" =~ refs/tags/(.*) ]]; then
-            TAG="${BASH_REMATCH[1]}"
-          else
-            TAG="v$(node -p "require('./package.json').version")"
-          fi
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Upload Artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
