@@ -44,12 +44,12 @@
       "electron/**",
       "client/dist/**",
       "public/**",
-      "cache/**",
-      "temp/**",
       "cookies.txt",
       "favicon.ico",
-      "package.json",
-      "node_modules/**"
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/ytdlp-nodejs/**"
     ],
     "win": {
       "target": [
