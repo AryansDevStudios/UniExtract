@@ -20,12 +20,28 @@ export default function LanguagePanel({
     : [];
 
   const subtitleOptions = subtitles.map(sub => {
-    let tag = '';
-    if (sub.isOrig || sub.lang.includes('orig')) tag = ' [Original]';
-    else if (sub.isAuto) tag = ' [Auto]';
+    let label = sub.name || '';
+    if (!label) {
+      const base = sub.lang.replace(/-(orig|auto)$/i, '');
+      try {
+        label = new Intl.DisplayNames(['en'], { type: 'language' }).of(base) || base.toUpperCase();
+      } catch (e) {
+        label = base.toUpperCase();
+      }
+    }
+
+    const isOrig = sub.isOrig || sub.lang.includes('orig');
+    const isAuto = sub.isAuto;
+
+    if (isOrig && !label.toLowerCase().includes('original')) {
+      label = `${label} (Original)`;
+    } else if (isAuto && !label.toLowerCase().includes('auto') && !label.toLowerCase().includes('original')) {
+      label = `${label} (Auto)`;
+    }
+
     return {
       id: sub.lang,
-      display: `${sub.lang.toUpperCase()} • ${sub.name || 'Subtitle'}${tag}`
+      display: label
     };
   });
 

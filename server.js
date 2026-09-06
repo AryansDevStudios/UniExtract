@@ -192,6 +192,44 @@ const cleanLanguageName = (rawLang, note = '') => {
     return langName || (rawLang ? rawLang.toUpperCase() : 'Audio');
 };
 
+const ISO639_TO_3 = {
+    'hi': 'hin', 'en': 'eng', 'es': 'spa', 'fr': 'fra', 'de': 'deu',
+    'it': 'ita', 'pt': 'por', 'ru': 'rus', 'ja': 'jpn', 'ko': 'kor',
+    'zh': 'zho', 'ar': 'ara', 'bn': 'ben', 'pa': 'pan', 'te': 'tel',
+    'ta': 'tam', 'mr': 'mar', 'ur': 'urd', 'gu': 'guj', 'kn': 'kan',
+    'ml': 'mal', 'tr': 'tur', 'vi': 'vie', 'pl': 'pol', 'uk': 'ukr',
+    'nl': 'nld', 'el': 'ell', 'th': 'tha', 'id': 'ind', 'sv': 'swe',
+    'no': 'nor', 'da': 'dan', 'fi': 'fin', 'cs': 'ces', 'ro': 'ron',
+    'hu': 'hun', 'fa': 'fas', 'he': 'heb'
+};
+
+const getIso3 = (code) => {
+    if (!code) return 'und';
+    const base = code.toLowerCase().split(/[-_]/)[0];
+    return ISO639_TO_3[base] || (base.length === 3 ? base : 'und');
+};
+
+const getSubtitleTrackTitle = (code) => {
+    if (!code) return 'Subtitles';
+    const clean = code.toLowerCase().trim();
+    const base = clean.replace(/-(orig|auto)$/i, '').split(/[-_]/)[0];
+    const isOrig = clean.includes('orig');
+    const isAuto = clean.includes('auto');
+
+    let name = '';
+    try {
+        name = new Intl.DisplayNames(['en'], { type: 'language' }).of(base);
+    } catch (e) {}
+
+    if (!name) {
+        name = base.toUpperCase();
+    }
+
+    if (isOrig) return `${name} (Original)`;
+    if (isAuto) return `${name} (Auto)`;
+    return name;
+};
+
 const collectAudioTracks = (info) => {
     const map = new Map();
     const allFormats = Array.isArray(info?.formats) ? info.formats : [];
@@ -1520,8 +1558,8 @@ app.post('/api/download', async (req, res) => {
                             let subCodecArgs = [];
                             if (subInputIdx !== -1) {
                                 const sLang = (jobs[jobId].subLang || 'en').toLowerCase();
-                                const sLang3 = sLang.startsWith('en') ? 'eng' : sLang.slice(0, 3);
-                                const sTitle = sLang.includes('orig') ? 'English (Original)' : sLang.toUpperCase();
+                                const sLang3 = getIso3(sLang);
+                                const sTitle = getSubtitleTrackTitle(sLang);
 
                                 if (targetExt === 'mp4' || targetExt === 'm4v') {
                                     subCodecArgs = ['-c:s', 'mov_text', '-metadata:s:s:0', `language=${sLang3}`, '-metadata:s:s:0', `title=${sTitle}`];
