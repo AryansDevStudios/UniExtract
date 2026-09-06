@@ -361,7 +361,7 @@ export default function AuthModal({ isOpen, onClose, cookieStatus, onCookieUpdat
               Portable & Export Tips
             </div>
             <p>
-              • <b>Portable App:</b> Place <code>cookies.txt</code> in the exact same folder as <code>UniversalMediaExtractor-Portable-2.0.0.exe</code> on your USB drive for instant plug-and-play cookies anywhere.
+              • <b>Portable Edition:</b> Place <code>cookies.txt</code> in the same folder as the portable application (<code>.exe</code>) on your USB drive or folder for instant plug-and-play cookies anywhere.
             </p>
             <p>
               • <b>How to get cookies:</b> Use browser extensions like <i>"Get cookies.txt locally"</i> or <i>"Cookie-Editor"</i> while logged into YouTube, Instagram, or Snapchat.
