@@ -50,7 +50,7 @@ const RESOLUTION_HEIGHT_MAP = {
 };
 
 const AUDIO_PRESETS = [
-  { id: 'best', label: 'Best Available Audio', badge: 'BEST', desc: 'Original high-bitrate source audio' },
+  { id: 'best', label: 'Best Available (Source HQ)', badge: 'BEST', desc: 'Original pristine source audio (Lossless Copy)' },
   { id: '320k', label: '320 kbps (Studio MP3 / High AAC)', badge: '320K', desc: 'Audiophile grade maximum fidelity' },
   { id: '256k', label: '256 kbps (High Quality)', badge: '256K', desc: 'Clean sound with low file size' },
   { id: '192k', label: '192 kbps (Standard Quality)', badge: '192K', desc: 'Standard high-definition audio' },
@@ -85,7 +85,7 @@ const AUDIO_BITRATES = {
   '256k': 256000,    // 256 kbps = 32 KB/s
   '192k': 192000,    // 192 kbps = 24 KB/s
   '128k': 128000,    // 128 kbps = 16 KB/s
-  'best': 160000,    // ~160 kbps Opus / 128 kbps AAC
+  'best': 143000,    // ~143 kbps Opus / 128 kbps AAC source copy
   'none': 0
 };
 
@@ -110,15 +110,19 @@ function estimateItemSizes(duration, effectiveVideo, effectiveAudio, caps) {
   }
   
   let aKey = effectiveAudio;
+  let aBitrate;
   if (aKey === 'best') {
-    aKey = caps?.audio?.maxAudioRes || '320k';
+    // Deliver original source stream with ZERO re-encoding loss
+    const nativeAbr = caps?.audio?.maxAbr;
+    aBitrate = nativeAbr && nativeAbr > 0 ? nativeAbr * 1000 : 143000;
+  } else {
+    aBitrate = AUDIO_BITRATES[aKey] !== undefined ? AUDIO_BITRATES[aKey] : 320000;
   }
   
   const vBitrate = VIDEO_BITRATES[vKey] !== undefined ? VIDEO_BITRATES[vKey] : 2500000;
-  const aBitrate = AUDIO_BITRATES[aKey] !== undefined ? AUDIO_BITRATES[aKey] : 320000;
   
   const videoBytes = Math.round((vBitrate * dur) / 8);
-  const audioBytes = Math.round((aBitrate * dur) / 8);
+  const audioBytes = aKey === 'none' ? 0 : Math.round((aBitrate * dur) / 8);
   const totalBytes = videoBytes + audioBytes;
   
   return {
@@ -291,13 +295,22 @@ export default function PlaylistView({ playlist, onToast }) {
     if (audioCaps && audioCaps.hasAudio === false) {
       return [];
     }
+    const nativeAbr = audioCaps?.maxAbr;
+    const bestLabel = nativeAbr ? `Best Source (${nativeAbr}k Lossless)` : 'Best Available (Source HQ)';
     if (!audioCaps || !audioCaps.audioQualities || audioCaps.audioQualities.length === 0) {
-      return availableMasterAudioPresets.filter(p => p.id !== 'best' && p.id !== 'none');
+      return availableMasterAudioPresets.filter(p => p.id !== 'none').map(p => {
+        if (p.id === 'best') return { ...p, label: bestLabel };
+        return p;
+      });
     }
     const supportedSet = new Set(audioCaps.audioQualities);
     return AUDIO_PRESETS.filter(p => {
-      if (p.id === 'best' || p.id === 'none') return false;
+      if (p.id === 'none') return false;
+      if (p.id === 'best') return true;
       return supportedSet.has(p.id);
+    }).map(p => {
+      if (p.id === 'best') return { ...p, label: bestLabel };
+      return p;
     });
   };
 
