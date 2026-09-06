@@ -28,11 +28,23 @@ To bundle the application into production Windows executables:
 npm run dist:win
 ```
 
-This will:
-1. Compile the React client into static production assets (`client/dist`).
-2. Package the app via `electron-builder` into `dist-electron/`:
-   - **NSIS Setup Installer**: `UniversalMediaExtractor-2.0.0-x64.exe`
-   - **Standalone Portable Executable**: `UniversalMediaExtractor-Portable-2.0.0.exe`
+### 🤖 Automated GitHub Release Workflow
+
+You do not need to build binaries locally on your personal machine to publish updates. When you are ready to publish a new release:
+
+```bash
+git tag v2.0.0
+git push origin v2.0.0
+```
+
+GitHub Actions (`.github/workflows/release.yml`) will automatically:
+1. Spin up a clean Windows virtual machine runner (`windows-latest`).
+2. Fetch dependencies, bundle `ffmpeg-static` and `yt-dlp`.
+3. Package the NSIS installer and Portable executable.
+4. Calculate SHA-256 checksums for security verification.
+5. Publish a official **GitHub Release** with download links attached.
+
+You can also trigger builds manually anytime from the GitHub repository by going to **Actions** → **Build & Release Windows App** → **Run workflow**.
 
 ---
 
