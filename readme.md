@@ -4,6 +4,17 @@ A modern, high-performance, multi-platform media extraction and transcoding engi
 
 ---
 
+### 📚 Documentation & Guides
+
+| Document | Link | Description |
+|---|---|---|
+| 🚀 **Deployment Modes & Pairing** | [docs/DEPLOYMENT_MODES.md](docs/DEPLOYMENT_MODES.md) | Architectural pairing scenarios (Netlify + Render/VPS, PWA, Headless API, systemd setup) |
+| 💻 **Electron Desktop App** | [docs/ELECTRON.md](docs/ELECTRON.md) | Windows NSIS installer, standalone portable build, and self-contained binary packaging |
+| ⚡ **Modular Quick Start** | [Quick Start Guide](#-modular-download--quick-start) | Sparse-checkout commands to download only what you need without cloning full repository |
+| 📡 **REST API Reference** | [API Reference](#-rest-api-reference) | Complete JSON API specification for extraction, streaming, and conversion endpoints |
+
+---
+
 ## ✨ Key Features
 
 - 🎥 **Multi-Platform Support**: High-fidelity extraction for **YouTube**, **TikTok**, **Instagram Reels**, **Snapchat Spotlight**, **Facebook Video**, **Twitter / X**, **Twitch**, **SoundCloud**, **Vimeo**, **Reddit**, and 1,000+ more sites supported by `yt-dlp`.
@@ -197,6 +208,8 @@ Open `http://localhost:3000`. You can install it as a Progressive Web App (PWA) 
 ---
 
 ### 2. Electron Desktop App
+
+> 📖 **Complete Desktop Guide**: See [docs/ELECTRON.md](docs/ELECTRON.md) for full instructions on building installers, portable executables, and bundled FFmpeg architecture.
 
 **Run in Electron Development Mode:**
 ```bash
