@@ -48,4 +48,5 @@ This will:
 
 - The Electron main process (`electron/main.js`) starts the bundled Node.js server automatically upon launch.
 - Child processes are automatically terminated when the application window is closed.
+- Both **FFmpeg** (`ffmpeg-static`) and **yt-dlp** binaries are automatically bundled and unpacked via `asarUnpack`, making the desktop application 100% self-contained with zero external software or PATH requirements on the end user's machine.
 - Temporary files and yt-dlp binary caches are isolated into system temp and app data directories.

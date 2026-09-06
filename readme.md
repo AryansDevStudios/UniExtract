@@ -115,7 +115,7 @@ Deploy `client/dist` to Netlify, Vercel, or GitHub Pages. Open the in-app **Serv
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) (v18 or higher recommended)
-- [FFmpeg](https://ffmpeg.org/) installed and available in system `PATH`
+- **FFmpeg**: Automatically provided out-of-the-box via `ffmpeg-static`! (System FFmpeg in `PATH` is also automatically detected and used as fallback)
 - [Python 3](https://www.python.org/) (optional, yt-dlp binary is automatically downloaded by `scripts/install-ytdlp.js`)
 
 ### Installation (Standard Git Clone)

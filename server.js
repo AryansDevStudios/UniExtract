@@ -503,12 +503,78 @@ const cleanMediaUrl = (rawUrl) => {
     }
 };
 
+// --- ENSURE FFMPEG BINARY (Node.js package, local bin, or system PATH) ---
+let resolvedFfmpegPath = process.env.FFMPEG_PATH || null;
+
+const ensureFfmpeg = () => {
+    if (resolvedFfmpegPath && fs.existsSync(resolvedFfmpegPath)) {
+        return resolvedFfmpegPath;
+    }
+
+    const candidatePaths = [
+        process.env.FFMPEG_PATH,
+        (() => {
+            try {
+                const p = require('ffmpeg-static');
+                return p ? p.replace('app.asar', 'app.asar.unpacked') : null;
+            } catch (e) { return null; }
+        })(),
+        path.join(__dirname, '..', 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'),
+        path.join(__dirname, 'node_modules', 'ffmpeg-static', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'),
+        (() => {
+            try {
+                const installer = require('@ffmpeg-installer/ffmpeg');
+                return installer && installer.path ? installer.path.replace('app.asar', 'app.asar.unpacked') : null;
+            } catch (e) { return null; }
+        })()
+    ];
+
+    for (const candidate of candidatePaths) {
+        if (candidate && fs.existsSync(candidate)) {
+            resolvedFfmpegPath = candidate;
+            break;
+        }
+    }
+
+    // Fallback: Check system PATH
+    if (!resolvedFfmpegPath) {
+        try {
+            const checkCmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
+            const sysPath = execSync(checkCmd).toString().trim().split(/\r?\n/)[0].trim();
+            if (sysPath && fs.existsSync(sysPath)) {
+                resolvedFfmpegPath = sysPath;
+            }
+        } catch (e) {}
+    }
+
+    if (resolvedFfmpegPath) {
+        const ffmpegDir = path.dirname(resolvedFfmpegPath);
+        // Prepend binary directory to PATH so yt-dlp and child_process.spawn find it automatically
+        const currentPath = process.env.PATH || '';
+        const pathParts = currentPath.split(path.delimiter);
+        if (!pathParts.includes(ffmpegDir)) {
+            process.env.PATH = `${ffmpegDir}${path.delimiter}${currentPath}`;
+        }
+        process.env.FFMPEG_PATH = resolvedFfmpegPath;
+        logger(null, `FFmpeg binary active: ${resolvedFfmpegPath}`);
+    } else {
+        logger(null, `WARNING: FFmpeg binary not found in Node.js packages or PATH!`, "WARN");
+    }
+
+    return resolvedFfmpegPath;
+};
+
 // --- HARDWARE DETECTION ENGINE ---
 const detectHardware = () => {
     console.log("\n" + "=".repeat(50));
     logger(null, "Probing Hardware Acceleration Capabilities...");
+    ensureFfmpeg();
     try {
         const encoders = execSync('ffmpeg -encoders').toString();
+        try {
+            const verLine = execSync('ffmpeg -version').toString().split(/\r?\n/)[0].trim();
+            logger(null, `FFmpeg Engine: ${verLine}`);
+        } catch (e) {}
 
         if (encoders.includes('h264_qsv')) {
             selectedEncoder = 'h264_qsv';
@@ -1793,6 +1859,9 @@ app.post('/api/download', async (req, res) => {
     }
 
     ffmpegArgs.push('--no-playlist');
+    if (resolvedFfmpegPath) {
+        ffmpegArgs.push('--ffmpeg-location', path.dirname(resolvedFfmpegPath));
+    }
 
     const download = ytdlp.download(cleanedUrl);
     jobs[jobId].downloadInstance = download;

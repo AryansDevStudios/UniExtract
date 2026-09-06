@@ -30,6 +30,7 @@
     "archiver": "^8.0.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "ffmpeg-static": "^5.3.0",
     "uuid": "^13.0.0",
     "ytdlp-nodejs": "^3.4.4"
   },
@@ -58,9 +59,9 @@
       "favicon.ico",
       "package.json"
     ],
-
     "asarUnpack": [
-      "node_modules/ytdlp-nodejs/**"
+      "node_modules/ytdlp-nodejs/**",
+      "node_modules/ffmpeg-static/**"
     ],
     "win": {
       "target": [
