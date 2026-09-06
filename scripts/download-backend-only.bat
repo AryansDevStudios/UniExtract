@@ -17,7 +17,7 @@ if %errorlevel% neq 0 (
 
 git clone --depth 1 --filter=blob:none --sparse https://github.com/AryansDevStudios/Universal-Media-Extractor.git "%TARGET_DIR%"
 cd /d "%TARGET_DIR%"
-git sparse-checkout set server.js scripts package.json yt-dlp.conf .env.example
+git sparse-checkout set server.js scripts package.json yt-dlp.conf .env.example public
 
 echo [2/4] Initializing environment configuration (.env)...
 if not exist .env (

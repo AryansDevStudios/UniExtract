@@ -47,7 +47,7 @@ UniversalMediaExtractor/
 ├── electron/                   # Native Windows desktop host (Electron)
 │   └── main.js                 # Electron main process, auto server spawning, persistent cookies
 ├── scripts/                    # Build, installation, and end-to-end verification scripts
-├── public/                     # Lightweight fallback HTML/JS web GUI
+├── public/                     # Pre-built modern React production distribution (dist)
 ├── server.js                   # High-throughput Express + yt-dlp + FFmpeg engine
 └── package.json                # Project scripts & Electron builder configuration
 ```
@@ -62,7 +62,7 @@ Universal Media Extractor is designed to be **fully decoupled**. You do **not** 
 | **2** | **Backend Only (Headless Media API)** | `server.js`, `package.json`, `scripts/` (~50KB) | Render, Railway, Fly.io, Linux VPS, Docker | Headless media extraction, FFmpeg transcoding, and REST API. Zero frontend or Electron dependencies. |
 | **3** | **Frontend Only (Static Web Client)** | `client/` folder only | Netlify, Vercel, Cloudflare Pages | Pure static React + Vite SPA. Zero Node backend needed on host. Connects to any remote backend. |
 | **4** | **Native Desktop (Electron)** | Full Repository | Windows 10/11 | Bundled `.exe` (NSIS installer or Portable). Auto-manages backend and persistent desktop cookies. |
-| **5** | **Ultra-Light Fallback GUI** | `server.js` + `public/` | Low-RAM nodes, Raspberry Pi | Single-file vanilla HTML/Tailwind CDN web GUI with zero frontend npm build step. |
+| **5** | **Pre-Built Static GUI** | `server.js` + `public/` | Low-RAM nodes, Raspberry Pi, Home Servers | Complete pre-compiled modern React production bundle in `public/`. Zero frontend build step or memory overhead required on device. |
 
 > 📖 **Complete Documentation**: Read [docs/DEPLOYMENT_MODES.md](docs/DEPLOYMENT_MODES.md) for full pairing combinations, VPS systemd setup, and cross-platform guide. For native Windows app builds, see [docs/ELECTRON.md](docs/ELECTRON.md).
 
@@ -91,7 +91,7 @@ cd ume-backend && npm run backend:start
 ```cmd
 git clone --depth 1 --filter=blob:none --sparse https://github.com/AryansDevStudios/Universal-Media-Extractor.git ume-backend
 cd ume-backend
-git sparse-checkout set server.js scripts package.json yt-dlp.conf .env.example
+git sparse-checkout set server.js scripts package.json yt-dlp.conf .env.example public
 npm install --omit=dev
 npm run backend:start
 ```

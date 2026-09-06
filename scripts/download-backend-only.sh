@@ -19,7 +19,7 @@ if command -v git >/dev/null 2>&1; then
     echo "[1/4] Cloning backend files via Git Sparse Checkout..."
     git clone --depth 1 --filter=blob:none --sparse "$REPO_URL" "$TARGET_DIR"
     cd "$TARGET_DIR"
-    git sparse-checkout set server.js scripts package.json yt-dlp.conf .env.example
+    git sparse-checkout set server.js scripts package.json yt-dlp.conf .env.example public
 else
     echo "[ERROR] git is required to download backend files."
     exit 1

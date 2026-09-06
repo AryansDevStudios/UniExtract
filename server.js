@@ -2272,16 +2272,22 @@ setInterval(() => {
 
 // --- SERVE THE UI ---
 const clientDist = path.join(__dirname, 'client', 'dist');
-if (fs.existsSync(clientDist)) {
-    app.use(express.static(clientDist));
+const publicDir = path.join(__dirname, 'public');
+
+// Prioritize client/dist if present, otherwise serve pre-built public/ dist product
+const staticDir = (fs.existsSync(clientDist) && fs.existsSync(path.join(clientDist, 'index.html')))
+    ? clientDist
+    : (fs.existsSync(publicDir) && fs.existsSync(path.join(publicDir, 'index.html')) ? publicDir : null);
+
+if (staticDir) {
+    app.use(express.static(staticDir));
     app.use((req, res, next) => {
         if (req.path.startsWith('/api')) return next();
-        res.sendFile(path.join(clientDist, 'index.html'));
-    });
-} else {
-    app.use(express.static(path.join(__dirname, 'public')));
-    app.get('/', (req, res) => {
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+        const indexPath = path.join(staticDir, 'index.html');
+        if (fs.existsSync(indexPath)) {
+            return res.sendFile(indexPath);
+        }
+        next();
     });
 }
 
