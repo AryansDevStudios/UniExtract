@@ -78,15 +78,29 @@ const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
     }, 4000);
 };
 
-// Automatic watchdog: if client stops polling for > 10 seconds (e.g. closed browser / killed app), drop the download immediately
+// Automatic watchdog: if client stops polling for > 60 seconds (e.g. closed browser / killed app), drop the download
+// Uses a 60s timeout, a 45s startup grace period, and active-progress protection to prevent false aborts
+// when tabs are backgrounded (browser timer throttling) or when downloading large previous files.
+const WATCHDOG_TIMEOUT_MS = 60000;
+const STARTUP_GRACE_PERIOD_MS = 45000;
+
 setInterval(() => {
     const now = Date.now();
     Object.entries(jobs).forEach(([jobId, job]) => {
-        if (job.status === 'downloading' && job.lastPoll && (now - job.lastPoll > 10000)) {
-            abortJob(jobId, 'Client stopped polling (browser tab closed or refreshed)');
+        if (job.status !== 'downloading') return;
+        
+        // 1. Never abort during the initial startup grace period (yt-dlp launch + stream negotiation)
+        if (job.createdAt && (now - job.createdAt < STARTUP_GRACE_PERIOD_MS)) return;
+        
+        // 2. Never abort if yt-dlp is actively downloading chunks right now (< 20s ago)
+        if (job.lastProgressTime && (now - job.lastProgressTime < 20000)) return;
+        
+        // 3. Only abort if client has completely ceased polling for > 60 seconds
+        if (job.lastPoll && (now - job.lastPoll > WATCHDOG_TIMEOUT_MS)) {
+            abortJob(jobId, 'Client stopped polling for > 60s (browser tab closed or unreachable)');
         }
     });
-}, 3000);
+}, 5000);
 
 // --- IN-MEMORY METADATA CACHE ---
 const analysisCache = new Map();
@@ -850,7 +864,9 @@ app.post('/api/download', async (req, res) => {
         targetVideo: targetVideo || (isAudioOnly ? 'none' : 'best'),
         targetAudio: targetAudio || (isMuted ? 'none' : 'best'),
         resolvedFormat: null,
+        createdAt: Date.now(),
         lastPoll: Date.now(),
+        lastProgressTime: Date.now(),
         downloadInstance: null,
         activeFfmpeg: null,
         baseName: null
@@ -907,6 +923,7 @@ app.post('/api/download', async (req, res) => {
     download.on('progress', (p) => {
         if (jobs[jobId] && jobs[jobId].status === 'downloading') {
             jobs[jobId].progress = p.percentage_str || '0%';
+            jobs[jobId].lastProgressTime = Date.now();
             const pInt = parseInt(p.percentage_str);
             if (pInt % 25 === 0) logger(jobId, `Progress: ${p.percentage_str}`, "PROGRESS");
         }

@@ -436,6 +436,7 @@ export default function PlaylistView({ playlist, onToast }) {
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = downloadUrl;
+    a.setAttribute('download', `${title}.mp4`);
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -553,10 +554,21 @@ export default function PlaylistView({ playlist, onToast }) {
         setBatchState(prev => ({ ...prev, activeJobId: jobId }));
 
         const jobResult = await new Promise((resolve) => {
-          pollTimerRef.current = setInterval(async () => {
-            if (isCancelledRef.current) {
+          let hasResolved = false;
+          const finish = (result) => {
+            if (hasResolved) return;
+            hasResolved = true;
+            if (pollTimerRef.current) {
               clearInterval(pollTimerRef.current);
-              return resolve({ status: 'cancelled' });
+              pollTimerRef.current = null;
+            }
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+            resolve(result);
+          };
+
+          const checkStatus = async () => {
+            if (isCancelledRef.current) {
+              return finish({ status: 'cancelled' });
             }
 
             try {
@@ -564,8 +576,7 @@ export default function PlaylistView({ playlist, onToast }) {
               const data = await statusRes.json();
 
               if (data.status === 'cancelled') {
-                clearInterval(pollTimerRef.current);
-                return resolve({ status: 'cancelled' });
+                return finish({ status: 'cancelled' });
               }
 
               if (data.progress) {
@@ -577,8 +588,7 @@ export default function PlaylistView({ playlist, onToast }) {
               }
 
               if (data.status === 'completed') {
-                clearInterval(pollTimerRef.current);
-                return resolve({ 
+                return finish({ 
                   status: 'completed', 
                   jobId, 
                   resolvedFormat: data.resolvedFormat 
@@ -586,18 +596,29 @@ export default function PlaylistView({ playlist, onToast }) {
               }
 
               if (data.status === 'error') {
-                clearInterval(pollTimerRef.current);
-                return resolve({ status: 'error' });
+                return finish({ status: 'error' });
               }
             } catch (err) {
               // Network blip, will retry next poll
             }
-          }, 1000);
+          };
+
+          const onVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+              checkStatus();
+            }
+          };
+
+          document.addEventListener('visibilitychange', onVisibilityChange);
+          // Immediate initial poll (0ms) so server receives a poll instantly
+          checkStatus();
+          pollTimerRef.current = setInterval(checkStatus, 1000);
         });
 
         activeJobIdRef.current = null;
 
-        if (isCancelledRef.current || jobResult.status === 'cancelled') {
+        // Only break out of the entire batch loop if the USER explicitly clicked Stop
+        if (isCancelledRef.current) {
           break;
         }
 

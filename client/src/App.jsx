@@ -196,8 +196,17 @@ function App() {
             setJobStatus('completed');
             setProgress('100%');
             showToast("File ready! Downloading...", "success");
-            window.location.href = `/api/file/${jobId}/${encodeURIComponent(metadata.title)}`;
-            setTimeout(() => setDownloadJob(null), 3000);
+            const downloadUrl = `/api/file/${jobId}/${encodeURIComponent(metadata.title)}`;
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = downloadUrl;
+            a.setAttribute('download', `${metadata.title}.mp4`);
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+              if (document.body.contains(a)) document.body.removeChild(a);
+              setDownloadJob(null);
+            }, 3000);
           } else if (s.status === 'error') {
             clearInterval(pollIntervalRef.current);
             activeJobIdRef.current = null;
