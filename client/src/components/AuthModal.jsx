@@ -10,7 +10,10 @@ import {
   CheckCircle2, 
   AlertTriangle,
   Info,
-  Sparkles
+  Sparkles,
+  Lock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { apiFetch } from '../utils/api';
 
@@ -20,6 +23,8 @@ export default function AuthModal({ isOpen, onClose, cookieStatus, onCookieUpdat
   const [selectedFileName, setSelectedFileName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [password, setPassword] = useState(() => localStorage.getItem('umx_cookie_pwd') || '');
+  const [showPassword, setShowPassword] = useState(false);
   const fileInputRef = useRef(null);
 
   if (!isOpen) return null;
@@ -65,16 +70,24 @@ export default function AuthModal({ isOpen, onClose, cookieStatus, onCookieUpdat
 
     setIsProcessing(true);
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (password.trim()) {
+        headers['x-cookie-password'] = password.trim();
+      }
+
       const res = await apiFetch('/api/auth-tokens', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: pastedContent })
+        headers,
+        body: JSON.stringify({ content: pastedContent, password: password.trim() })
       });
 
       const data = await res.json();
       if (!res.ok || !data.success) {
         onToast?.(data.error || 'Failed to save cookies.', 'error');
       } else {
+        if (password.trim()) {
+          localStorage.setItem('umx_cookie_pwd', password.trim());
+        }
         onToast?.(data.message || 'Cookies saved and filtered successfully!', 'success');
         setPastedContent('');
         setSelectedFileName('');
@@ -91,7 +104,16 @@ export default function AuthModal({ isOpen, onClose, cookieStatus, onCookieUpdat
     if (!window.confirm('Are you sure you want to clear stored media cookies?')) return;
     setIsProcessing(true);
     try {
-      const res = await apiFetch('/api/auth-tokens', { method: 'DELETE' });
+      const headers = { 'Content-Type': 'application/json' };
+      if (password.trim()) {
+        headers['x-cookie-password'] = password.trim();
+      }
+
+      const res = await apiFetch('/api/auth-tokens', {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({ password: password.trim() })
+      });
       const data = await res.json();
       if (res.ok && data.success) {
         onToast?.('Cookies cleared successfully.', 'info');
@@ -288,6 +310,48 @@ export default function AuthModal({ isOpen, onClose, cookieStatus, onCookieUpdat
                 </p>
               </div>
             )}
+          </div>
+
+          {/* SERVER PASSWORD SECTION */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Lock size={14} className={cookieStatus?.requiresPassword ? "text-amber-500" : "text-slate-400"} />
+                Server Access Password
+              </label>
+              {cookieStatus?.requiresPassword ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                  Password Required
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-400">
+                  Optional (Local / Unsecured)
+                </span>
+              )}
+            </div>
+
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={cookieStatus?.requiresPassword ? "Enter server COOKIE_PASSWORD..." : "Leave blank if server has no password..."}
+                className="w-full text-xs font-mono pl-3.5 pr-10 py-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                title={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500">
+              {cookieStatus?.requiresPassword 
+                ? "This server requires the COOKIE_PASSWORD configured in its environment to save or delete cookies."
+                : "If your backend server has COOKIE_PASSWORD set in its .env, provide it here."}
+            </p>
           </div>
 
           {/* PORTABLE GUIDE & TIPS */}

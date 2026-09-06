@@ -7,8 +7,33 @@ const { execSync, spawn, spawnSync, exec } = require('child_process');
 const cors = require('cors');
 const archiver = require('archiver');
 
+// --- LOAD .ENV VARIABLES IF PRESENT ---
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+    try {
+        const envContent = fs.readFileSync(envPath, 'utf8');
+        envContent.split(/\r?\n/).forEach(line => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) return;
+            const eqIdx = trimmed.indexOf('=');
+            if (eqIdx !== -1) {
+                const key = trimmed.substring(0, eqIdx).trim();
+                let val = trimmed.substring(eqIdx + 1).trim();
+                if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                    val = val.slice(1, -1);
+                }
+                if (!process.env[key]) {
+                    process.env[key] = val;
+                }
+            }
+        });
+    } catch (e) {}
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || (process.env.RENDER ? '0.0.0.0' : '127.0.0.1');
+const COOKIE_PASSWORD = (process.env.COOKIE_PASSWORD || process.env.ADMIN_PASSWORD || '').trim();
 const COOKIES = process.env.COOKIES_PATH || path.join(__dirname, 'cookies.txt');
 const TEMP_DIR = process.env.TEMP_DIR || path.join(__dirname, 'temp');
 const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, 'cache');
@@ -685,8 +710,8 @@ function getCookiesSummary() {
             count: 0,
             domains: [],
             isYouTubeAuthed: false,
-            path: COOKIES,
-            isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR
+            isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR,
+            requiresPassword: !!COOKIE_PASSWORD
         };
     }
 
@@ -698,8 +723,8 @@ function getCookiesSummary() {
                 count: 0,
                 domains: [],
                 isYouTubeAuthed: false,
-                path: COOKIES,
-                isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR
+                isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR,
+                requiresPassword: !!COOKIE_PASSWORD
             };
         }
 
@@ -740,8 +765,8 @@ function getCookiesSummary() {
             count,
             domains: Array.from(domainsSet),
             isYouTubeAuthed,
-            path: COOKIES,
-            isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR
+            isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR,
+            requiresPassword: !!COOKIE_PASSWORD
         };
     } catch (err) {
         return {
@@ -750,10 +775,17 @@ function getCookiesSummary() {
             domains: [],
             isYouTubeAuthed: false,
             error: err.message,
-            path: COOKIES,
-            isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR
+            isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR,
+            requiresPassword: !!COOKIE_PASSWORD
         };
     }
+}
+
+// --- PASSWORD VERIFICATION HELPER ---
+function verifyCookiePassword(req) {
+    if (!COOKIE_PASSWORD) return true; // No password configured; unauthenticated mode
+    const clientPassword = (req.body?.password || req.headers['x-cookie-password'] || '').trim();
+    return clientPassword === COOKIE_PASSWORD;
 }
 
 // --- ROUTES: AUTH TOKENS & COOKIE MANAGEMENT ---
@@ -762,6 +794,14 @@ const handleGetTokens = (req, res) => {
 };
 
 const handlePostTokens = (req, res) => {
+    if (!verifyCookiePassword(req)) {
+        logger(null, 'Unauthorized attempt to update cookies (invalid or missing password)', 'WARN');
+        return res.status(401).json({
+            success: false,
+            error: 'Authentication failed: Incorrect or missing server password.'
+        });
+    }
+
     const { content } = req.body;
     if (!content) {
         return res.status(400).json({ success: false, error: 'No cookie content provided.' });
@@ -797,6 +837,14 @@ const handlePostTokens = (req, res) => {
 };
 
 const handleDeleteTokens = (req, res) => {
+    if (!verifyCookiePassword(req)) {
+        logger(null, 'Unauthorized attempt to clear cookies (invalid or missing password)', 'WARN');
+        return res.status(401).json({
+            success: false,
+            error: 'Authentication failed: Incorrect or missing server password.'
+        });
+    }
+
     try {
         if (fs.existsSync(COOKIES)) {
             fs.writeFileSync(COOKIES, '# Netscape HTTP Cookie File\n# Cookies cleared by user\n', 'utf8');
@@ -2192,13 +2240,22 @@ const warmUpYtDlp = () => {
         logger(null, `Initial yt-dlp setup warning: ${err.message}`, "WARN");
     }
 
-    app.listen(PORT, '0.0.0.0', () => {
+    if (!COOKIE_PASSWORD) {
+        console.log("\x1b[1;31m" + "=".repeat(65) + "\x1b[0m");
+        console.log("\x1b[1;31m[SECURITY WARNING] COOKIE_PASSWORD is not configured in .env!\x1b[0m");
+        console.log("\x1b[1;31mCookie uploads on this server are UNPROTECTED without authentication.\x1b[0m");
+        console.log("\x1b[33mFor remote deployments (e.g. Render / VPS), define COOKIE_PASSWORD in your .env or host settings to prevent unauthorized cookie modifications.\x1b[0m");
+        console.log("\x1b[1;31m" + "=".repeat(65) + "\x1b[0m\n");
+    } else {
+        console.log(`[SECURITY] Cookie password protection: \x1b[1;32mENABLED\x1b[0m`);
+    }
+
+    app.listen(PORT, HOST, () => {
         console.log("\n" + "=".repeat(50));
         console.log(`[SERVER] Universal Media Extractor Server running on port ${PORT}`);
-        console.log(`[LOCAL]  http://localhost:${PORT}`);
-        console.log(`[LAN]    http://0.0.0.0:${PORT}`);
-        console.log(`[TEMP] Temp Folder: ${TEMP_DIR}`);
-        console.log(`[CACHE] Cache Folder: ${CACHE_DIR}`);
+        console.log(`[ACCESS] Bound to: http://${HOST}:${PORT}`);
+        console.log(`[TEMP]   Temp Folder: ${TEMP_DIR}`);
+        console.log(`[CACHE]  Cache Folder: ${CACHE_DIR}`);
         console.log("=".repeat(50) + "\n");
 
         // Non-blocking: prime the yt-dlp disk cache while server is already accepting requests
