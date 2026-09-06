@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v2.0.0 - leave empty to use package.json version)'
+        description: 'Release Tag (e.g. v2.6.1 - leave empty to use package.json version)'
         required: false
         default: ''
       draft:
@@ -33,7 +33,10 @@ jobs:
           - os: windows-latest
             platform: Windows
             build-cmd: npm run dist:win
-            artifacts: dist-electron/*.exe
+            artifacts: |
+              dist-electron/*.exe
+              certs/AryansDevStudios.cer
+              scripts/trust-publisher.bat
           - os: ubuntu-latest
             platform: Linux
             build-cmd: npm run dist:linux
@@ -96,6 +99,8 @@ jobs:
         run: ${{ matrix.build-cmd }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIN_CSC_LINK: certs/AryansDevStudios.pfx
+          WIN_CSC_KEY_PASSWORD: aryansdevstudios
 
       - name: Upload Artifacts to GitHub Release
         uses: softprops/action-gh-release@v2

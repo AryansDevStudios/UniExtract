@@ -649,9 +649,10 @@ app.get('/favfavicon.ico', (req, res) => {
 
 // --- HEALTH CHECK ENDPOINT ---
 app.get('/api/health', (req, res) => {
+    const appVersion = require('./package.json').version || '2.6.1';
     res.json({
         status: 'ok',
-        version: '2.0.0',
+        version: appVersion,
         uptime: Math.floor(process.uptime()),
         timestamp: Date.now()
     });
@@ -693,7 +694,7 @@ app.get('/api/updates/active-jobs', (req, res) => {
 
 // Full update check endpoint
 app.get('/api/updates', async (req, res) => {
-    const currentVersion = require('./package.json').version || '2.0.0';
+    const currentVersion = require('./package.json').version || '2.6.1';
     const force = req.query.force === 'true';
     const now = Date.now();
 
@@ -711,7 +712,7 @@ app.get('/api/updates', async (req, res) => {
     try {
         const response = await fetch('https://api.github.com/repos/AryansDevStudios/UniExtract/releases/latest', {
             headers: {
-                'User-Agent': 'UniExtract-UpdateChecker/2.0.0',
+                'User-Agent': `UniExtract-UpdateChecker/${currentVersion}`,
                 'Accept': 'application/vnd.github.v3+json'
             }
         });

@@ -7,6 +7,7 @@ import RecentHistory from './components/RecentHistory';
 import AuthModal from './components/AuthModal';
 import ServerModal from './components/ServerModal';
 import UpdateModal from './components/UpdateModal';
+import SettingsModal from './components/SettingsModal';
 import { apiUrl, apiFetch, getCustomServerUrl, shouldShowServerSelector } from './utils/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -44,6 +45,7 @@ function App() {
   const [customServerUrl, setCustomServerUrlState] = useState(() => getCustomServerUrl());
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
 
   const fetchCookieStatus = async () => {
     try {
@@ -117,11 +119,13 @@ function App() {
   const applyMetadata = (data, url) => {
     setMetadata({ ...data, url });
     
-    setHistory(prev => {
-      const filtered = prev.filter(r => r.url !== url);
-      const next = [{ title: data.title, thumb: data.thumbnail, url }, ...filtered];
-      return next.slice(0, 8); // Keep compact history
-    });
+    if (localStorage.getItem('umx_pref_remember_history') !== 'false') {
+      setHistory(prev => {
+        const filtered = prev.filter(r => r.url !== url);
+        const next = [{ title: data.title, thumb: data.thumbnail, url }, ...filtered];
+        return next.slice(0, 8); // Keep compact history
+      });
+    }
     
     if (data.isPlaylist) {
       return;
@@ -141,12 +145,17 @@ function App() {
     if (aList.length > 0) setSelectedAudio({ id: aList[0].id, size: aList[0].size, label: aList[0].label });
     else setSelectedAudio({ id: '', size: 0, label: 'PreMerged' });
     
-    setSelectedContainer('default');
-    setSplitChapters(false);
+    const prefContainer = localStorage.getItem('umx_pref_container') || 'default';
+    const prefEmbedSubs = localStorage.getItem('umx_pref_embed_subs') === 'true';
+    const prefSplitChapters = localStorage.getItem('umx_pref_split_chapters') === 'true';
+    const prefAudioLang = localStorage.getItem('umx_pref_audio_lang') || 'default';
+
+    setSelectedContainer(prefContainer);
+    setSplitChapters(prefSplitChapters);
     setClipStart('00:00:00');
     setClipEnd('');
-    setAudioLang('default');
-    setEmbedSubs(false);
+    setAudioLang(prefAudioLang);
+    setEmbedSubs(prefEmbedSubs);
     setSubLang((data.subtitles && data.subtitles[0]?.lang) || 'en');
   };
 
@@ -377,6 +386,7 @@ function App() {
         showServerSelector={shouldShowServerSelector()}
         updateInfo={updateInfo}
         onOpenUpdate={() => setUpdateModalOpen(true)}
+        onOpenSettings={() => setSettingsModalOpen(true)}
       />
 
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
@@ -444,17 +454,8 @@ function App() {
         />
       </main>
 
-      <footer className="w-full py-8 text-center flex flex-col items-center justify-center space-y-2 opacity-80 hover:opacity-100 transition-opacity">
-        <div className="text-slate-800 dark:text-slate-300 text-xs font-medium">
-          © 2026 
-          <span className="bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent font-black tracking-wide ml-1.5">
-            AryansDevStudios
-          </span>
-        </div>
-        <a href="https://github.com/AryansDevStudios/Universal-Media-Extractor" target="_blank" rel="noreferrer" className="text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 text-[10px] uppercase tracking-widest font-bold transition-colors">
-          Open-Source & Free
-        </a>
-      </footer>
+      {/* Spacer replacing homepage footer credits */}
+      <div className="w-full py-4" />
 
       <AuthModal 
         isOpen={cookieModalOpen}
@@ -476,6 +477,20 @@ function App() {
         updateInfo={updateInfo}
         onRefreshUpdate={() => fetchUpdateInfo(true)}
         activeJobsCount={downloadJob ? 1 : (updateInfo?.activeJobsCount || 0)}
+      />
+
+      <SettingsModal 
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+        isDark={isDark}
+        toggleTheme={() => setIsDark(!isDark)}
+        history={history}
+        onClearHistory={() => setHistory([])}
+        onOpenCookies={() => setCookieModalOpen(true)}
+        onOpenServer={() => setServerModalOpen(true)}
+        onOpenUpdate={() => setUpdateModalOpen(true)}
+        updateInfo={updateInfo}
+        onToast={showToast}
       />
     </div>
   );
