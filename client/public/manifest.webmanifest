@@ -1,0 +1,26 @@
+{
+  \ name\: \Universal Media Extractor\,
+  \short_name\: \MediaExtractor\,
+  \description\: \High-fidelity Extractor\",
+ \"short_name\": \"MediaExtractor\",
+ \"description\": \"High-fidelity, multi-platform media downloader with 8K, 4K, MP3 transcoding, playlist batching, and custom clipping.\,
+  \start_url\: \/\,
+  \display\: \standalone\,
+  \background_color\: \#090d16\,
+  \theme_color\: \#4f46e5\,
+  \orientation\: \any\,
+  \icons\: [
+    {
+      \src\: \/icon-192.png\,
+      \sizes\: \192x192\,
+      \type\: \image/png\,
+      \purpose\: \any maskable\
+    },
+    {
+      \src\: \/icon-512.png\,
+      \sizes\: \512x512\,
+      \type\: \image/png\,
+      \purpose\: \any maskable\
+    }
+  ]
+}

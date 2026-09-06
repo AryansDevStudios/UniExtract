@@ -1,13 +1,19 @@
 const puppeteer = require('puppeteer-core');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawnSync } = require('child_process');
 
-const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const DOWNLOAD_DIR = 'C:\\Users\\aryan\\Downloads';
-const TARGET_URL = 'http://localhost:5173';
+const CHROME_PATH = process.env.CHROME_PATH || (
+  process.platform === 'win32'
+    ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+    : (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '/usr/bin/google-chrome')
+);
+const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(os.homedir(), 'Downloads');
+const TARGET_URL = process.env.TARGET_URL || 'http://localhost:5173';
 const VIDEO_URL = 'https://www.youtube.com/watch?v=BfM86k78AO0';
 const PLAYLIST_URL = 'https://www.youtube.com/watch?v=AyFOei2TO7E&list=PLPXwi5T3lqH42GzCEqhltQF5HycT7icmG';
+
 
 async function waitForNewDownload(clickTime, timeoutMs = 300000) {
   console.log(`Waiting for file in Downloads folder (timeout: ${timeoutMs / 1000}s)...`);
