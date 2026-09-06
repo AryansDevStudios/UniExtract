@@ -36,8 +36,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
 
       - name: Install Dependencies
         run: |
@@ -75,7 +74,7 @@ jobs:
             $tag = "v$pkgVersion"
           }
           Write-Host "Active Release Tag: $tag"
-          "tag=$tag" >> $env:GITHUB_OUTPUT
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "tag=$tag"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
