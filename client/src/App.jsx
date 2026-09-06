@@ -5,6 +5,8 @@ import CompactResultPanel from './components/CompactResultPanel';
 import PlaylistView from './components/PlaylistView';
 import RecentHistory from './components/RecentHistory';
 import CookieModal from './components/CookieModal';
+import ServerModal from './components/ServerModal';
+import { apiUrl, apiFetch, getCustomServerUrl } from './utils/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function App() {
@@ -37,10 +39,12 @@ function App() {
   const [toasts, setToasts] = useState([]);
   const [cookieModalOpen, setCookieModalOpen] = useState(false);
   const [cookieStatus, setCookieStatus] = useState(null);
+  const [serverModalOpen, setServerModalOpen] = useState(false);
+  const [customServerUrl, setCustomServerUrlState] = useState(() => getCustomServerUrl());
 
   const fetchCookieStatus = async () => {
     try {
-      const res = await fetch('/api/cookies');
+      const res = await apiFetch('/api/cookies');
       if (res.ok) {
         const data = await res.json();
         setCookieStatus(data);
@@ -52,6 +56,13 @@ function App() {
 
   useEffect(() => {
     fetchCookieStatus();
+
+    const handleServerChange = () => {
+      setCustomServerUrlState(getCustomServerUrl());
+      fetchCookieStatus();
+    };
+    window.addEventListener('umx-server-changed', handleServerChange);
+    return () => window.removeEventListener('umx-server-changed', handleServerChange);
   }, []);
 
   useEffect(() => {
@@ -137,7 +148,7 @@ function App() {
     setMetadata(null); // Unmounts the current card, triggers loading UI
     
     try {
-      const res = await fetch('/api/analyze', {
+      const res = await apiFetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
@@ -162,7 +173,7 @@ function App() {
   const handleDownloadThumbnail = () => {
     if (!metadata?.thumbnail) return showToast("No thumbnail available", "error");
     showToast("Converting high-res thumbnail...", "info");
-    const url = `/api/thumbnail?imgUrl=${encodeURIComponent(metadata.thumbnail)}&title=${encodeURIComponent(metadata.title)}`;
+    const url = apiUrl(`/api/thumbnail?imgUrl=${encodeURIComponent(metadata.thumbnail)}&title=${encodeURIComponent(metadata.title)}`);
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
@@ -185,7 +196,7 @@ function App() {
 
     if (jobId) {
       try {
-        await fetch(`/api/cancel/${jobId}`, { method: 'POST' });
+        await apiFetch(`/api/cancel/${jobId}`, { method: 'POST' });
         showToast("Download cancelled. Server bandwidth freed.", "info");
       } catch (e) {}
     }
@@ -201,7 +212,7 @@ function App() {
     setDownloadJob(true);
 
     try {
-      const res = await fetch('/api/download', {
+      const res = await apiFetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -228,7 +239,7 @@ function App() {
 
       pollIntervalRef.current = setInterval(async () => {
         try {
-          const s = await (await fetch(`/api/status/${jobId}`)).json();
+          const s = await (await apiFetch(`/api/status/${jobId}`)).json();
           if (s.status === 'cancelled') {
             clearInterval(pollIntervalRef.current);
             activeJobIdRef.current = null;
@@ -251,7 +262,7 @@ function App() {
             setDownloadSpeed('');
             setDownloadEta('');
             showToast("File ready! Downloading...", "success");
-            const downloadUrl = `/api/file/${jobId}/${encodeURIComponent(metadata.title)}`;
+            const downloadUrl = apiUrl(`/api/file/${jobId}/${encodeURIComponent(metadata.title)}`);
             const a = document.createElement('a');
             a.style.display = 'none';
             a.href = downloadUrl;
@@ -285,7 +296,7 @@ function App() {
     const handleUnload = () => {
       const jobId = activeJobIdRef.current;
       if (jobId) {
-        navigator.sendBeacon(`/api/cancel/${jobId}`);
+        navigator.sendBeacon(apiUrl(`/api/cancel/${jobId}`));
       }
     };
     window.addEventListener('beforeunload', handleUnload);
@@ -337,6 +348,8 @@ function App() {
         toggleTheme={() => setIsDark(!isDark)} 
         cookieStatus={cookieStatus}
         onOpenCookies={() => setCookieModalOpen(true)}
+        onOpenServer={() => setServerModalOpen(true)}
+        customServerUrl={customServerUrl}
       />
 
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
@@ -421,6 +434,12 @@ function App() {
         onClose={() => setCookieModalOpen(false)}
         cookieStatus={cookieStatus}
         onCookieUpdated={fetchCookieStatus}
+        onToast={showToast}
+      />
+
+      <ServerModal 
+        isOpen={serverModalOpen}
+        onClose={() => setServerModalOpen(false)}
         onToast={showToast}
       />
     </div>

@@ -20,6 +20,7 @@ import {
   VolumeX,
   SlidersHorizontal
 } from 'lucide-react';
+import { apiUrl, apiFetch } from '../utils/api';
 
 const ALL_VIDEO_PRESETS = [
   { id: 'best', label: 'Best Available', badge: 'BEST', desc: 'Highest resolution across videos', minHeight: 0 },
@@ -179,7 +180,7 @@ export default function PlaylistView({ playlist, onToast }) {
     let isMounted = true;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/playlist-formats/${playlist.id}`);
+        const res = await apiFetch(`/api/playlist-formats/${playlist.id}`);
         const data = await res.json();
         if (!isMounted) return;
 
@@ -239,7 +240,7 @@ export default function PlaylistView({ playlist, onToast }) {
     const handleUnload = () => {
       const jobId = activeJobIdRef.current;
       if (jobId) {
-        navigator.sendBeacon(`/api/cancel/${jobId}`);
+        navigator.sendBeacon(apiUrl(`/api/cancel/${jobId}`));
       }
     };
     window.addEventListener('beforeunload', handleUnload);
@@ -467,7 +468,7 @@ export default function PlaylistView({ playlist, onToast }) {
 
   // Trigger browser file download
   const triggerDownload = (jobId, title) => {
-    const downloadUrl = `/api/file/${jobId}/${encodeURIComponent(title)}`;
+    const downloadUrl = apiUrl(`/api/file/${jobId}/${encodeURIComponent(title)}`);
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = downloadUrl;
@@ -489,7 +490,7 @@ export default function PlaylistView({ playlist, onToast }) {
 
     if (currentJobId) {
       try {
-        await fetch(`/api/cancel/${currentJobId}`, { method: 'POST' });
+        await apiFetch(`/api/cancel/${currentJobId}`, { method: 'POST' });
       } catch (e) {}
     }
 
@@ -566,7 +567,7 @@ export default function PlaylistView({ playlist, onToast }) {
       }));
 
       try {
-        const res = await fetch('/api/download', {
+        const res = await apiFetch('/api/download', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -583,7 +584,7 @@ export default function PlaylistView({ playlist, onToast }) {
         const { jobId } = await res.json();
         
         if (isCancelledRef.current) {
-          await fetch(`/api/cancel/${jobId}`, { method: 'POST' });
+          await apiFetch(`/api/cancel/${jobId}`, { method: 'POST' });
           break;
         }
 
@@ -609,7 +610,7 @@ export default function PlaylistView({ playlist, onToast }) {
             }
 
             try {
-              const statusRes = await fetch(`/api/status/${jobId}`);
+              const statusRes = await apiFetch(`/api/status/${jobId}`);
               const data = await statusRes.json();
 
               if (data.status === 'cancelled') {

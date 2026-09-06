@@ -493,6 +493,16 @@ app.get('/favfavicon.ico', (req, res) => {
     }
 });
 
+// --- HEALTH CHECK ENDPOINT ---
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        version: '2.0.0',
+        uptime: Math.floor(process.uptime()),
+        timestamp: Date.now()
+    });
+});
+
 // --- COOKIE MANAGEMENT & INTELLIGENT FILTERING SYSTEM ---
 const ALLOWED_MEDIA_DOMAINS = [
     'youtube.com',

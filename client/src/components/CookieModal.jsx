@@ -12,6 +12,7 @@ import {
   Info,
   Sparkles
 } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 export default function CookieModal({ isOpen, onClose, cookieStatus, onCookieUpdated, onToast }) {
   const [activeTab, setActiveTab] = useState('upload'); // 'upload' | 'paste'
@@ -64,7 +65,7 @@ export default function CookieModal({ isOpen, onClose, cookieStatus, onCookieUpd
 
     setIsProcessing(true);
     try {
-      const res = await fetch('/api/cookies', {
+      const res = await apiFetch('/api/cookies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: pastedContent })
@@ -90,7 +91,7 @@ export default function CookieModal({ isOpen, onClose, cookieStatus, onCookieUpd
     if (!window.confirm('Are you sure you want to clear stored media cookies?')) return;
     setIsProcessing(true);
     try {
-      const res = await fetch('/api/cookies', { method: 'DELETE' });
+      const res = await apiFetch('/api/cookies', { method: 'DELETE' });
       const data = await res.json();
       if (res.ok && data.success) {
         onToast?.('Cookies cleared successfully.', 'info');

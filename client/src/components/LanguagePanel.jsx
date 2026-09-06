@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Globe2, Languages, Download, FileText, Sparkles, Check, Loader2 } from 'lucide-react';
+import { apiUrl } from '../utils/api';
 
 export default function LanguagePanel({
   metadata,
@@ -63,7 +64,7 @@ export default function LanguagePanel({
     setIsSubDownloading(true);
 
     try {
-      const downloadUrl = `/api/subtitle?url=${encodeURIComponent(metadata.url)}&lang=${encodeURIComponent(targetLang)}&format=${encodeURIComponent(subFormat)}&title=${encodeURIComponent(metadata.title || 'subtitle')}`;
+      const downloadUrl = apiUrl(`/api/subtitle?url=${encodeURIComponent(metadata.url)}&lang=${encodeURIComponent(targetLang)}&format=${encodeURIComponent(subFormat)}&title=${encodeURIComponent(metadata.title || 'subtitle')}`);
       const link = document.createElement('a');
       link.href = downloadUrl;
       link.setAttribute('download', '');
