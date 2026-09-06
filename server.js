@@ -1571,7 +1571,7 @@ app.post('/api/download', async (req, res) => {
                                 }
                             } else {
                                 const isTranscode = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy';
-                                const audioCodecArgs = isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio, '-ac', '2'] : ['-c:a', 'copy'];
+                                const audioCodecArgs = isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio] : ['-c:a', 'copy'];
 
                                 const streamMaps = ['-map', '0:v:0', '-map', '0:a:0?'];
                                 if (subInputIdx !== -1) streamMaps.push('-map', `${subInputIdx}:0`);
