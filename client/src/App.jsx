@@ -4,7 +4,7 @@ import SearchBox from './components/SearchBox';
 import CompactResultPanel from './components/CompactResultPanel';
 import PlaylistView from './components/PlaylistView';
 import RecentHistory from './components/RecentHistory';
-import CookieModal from './components/CookieModal';
+import AuthModal from './components/AuthModal';
 import ServerModal from './components/ServerModal';
 import { apiUrl, apiFetch, getCustomServerUrl } from './utils/api';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -44,7 +44,7 @@ function App() {
 
   const fetchCookieStatus = async () => {
     try {
-      const res = await apiFetch('/api/cookies');
+      const res = await apiFetch('/api/auth-tokens');
       if (res.ok) {
         const data = await res.json();
         setCookieStatus(data);
@@ -429,7 +429,7 @@ function App() {
         </a>
       </footer>
 
-      <CookieModal 
+      <AuthModal 
         isOpen={cookieModalOpen}
         onClose={() => setCookieModalOpen(false)}
         cookieStatus={cookieStatus}

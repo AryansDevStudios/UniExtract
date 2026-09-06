@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../utils/api';
 
-export default function CookieModal({ isOpen, onClose, cookieStatus, onCookieUpdated, onToast }) {
+export default function AuthModal({ isOpen, onClose, cookieStatus, onCookieUpdated, onToast }) {
   const [activeTab, setActiveTab] = useState('upload'); // 'upload' | 'paste'
   const [pastedContent, setPastedContent] = useState('');
   const [selectedFileName, setSelectedFileName] = useState('');
@@ -65,7 +65,7 @@ export default function CookieModal({ isOpen, onClose, cookieStatus, onCookieUpd
 
     setIsProcessing(true);
     try {
-      const res = await apiFetch('/api/cookies', {
+      const res = await apiFetch('/api/auth-tokens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: pastedContent })
@@ -91,7 +91,7 @@ export default function CookieModal({ isOpen, onClose, cookieStatus, onCookieUpd
     if (!window.confirm('Are you sure you want to clear stored media cookies?')) return;
     setIsProcessing(true);
     try {
-      const res = await apiFetch('/api/cookies', { method: 'DELETE' });
+      const res = await apiFetch('/api/auth-tokens', { method: 'DELETE' });
       const data = await res.json();
       if (res.ok && data.success) {
         onToast?.('Cookies cleared successfully.', 'info');

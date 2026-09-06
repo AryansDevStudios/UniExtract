@@ -756,12 +756,12 @@ function getCookiesSummary() {
     }
 }
 
-// --- ROUTES: COOKIE MANAGEMENT & AUTHENTICATION ---
-app.get('/api/cookies', (req, res) => {
+// --- ROUTES: AUTH TOKENS & COOKIE MANAGEMENT ---
+const handleGetTokens = (req, res) => {
     res.json(getCookiesSummary());
-});
+};
 
-app.post('/api/cookies', (req, res) => {
+const handlePostTokens = (req, res) => {
     const { content } = req.body;
     if (!content) {
         return res.status(400).json({ success: false, error: 'No cookie content provided.' });
@@ -778,14 +778,14 @@ app.post('/api/cookies', (req, res) => {
             fs.mkdirSync(dir, { recursive: true });
         }
         fs.writeFileSync(COOKIES, result.netscapeText, 'utf8');
-        logger(null, `Updated cookies at: ${COOKIES} (${result.keptCount} kept, ${result.droppedCount} junk cookies filtered out)`);
+        logger(null, `Updated auth tokens at: ${COOKIES} (${result.keptCount} kept, ${result.droppedCount} junk cookies filtered out)`);
 
         warmUpYtDlp();
 
         const summary = getCookiesSummary();
         res.json({
             success: true,
-            message: `Successfully saved ${result.keptCount} media cookies (${result.droppedCount} junk/tracking cookies filtered out).`,
+            message: `Successfully saved ${result.keptCount} media tokens (${result.droppedCount} junk/tracking cookies filtered out).`,
             ...summary,
             keptCount: result.keptCount,
             droppedCount: result.droppedCount
@@ -794,9 +794,9 @@ app.post('/api/cookies', (req, res) => {
         logger(null, `Failed to write cookies file: ${err.message}`, 'ERROR');
         res.status(500).json({ success: false, error: `Failed to save cookies: ${err.message}` });
     }
-});
+};
 
-app.delete('/api/cookies', (req, res) => {
+const handleDeleteTokens = (req, res) => {
     try {
         if (fs.existsSync(COOKIES)) {
             fs.writeFileSync(COOKIES, '# Netscape HTTP Cookie File\n# Cookies cleared by user\n', 'utf8');
@@ -806,7 +806,11 @@ app.delete('/api/cookies', (req, res) => {
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
-});
+};
+
+app.get(['/api/auth-tokens', '/api/cookies'], handleGetTokens);
+app.post(['/api/auth-tokens', '/api/cookies'], handlePostTokens);
+app.delete(['/api/auth-tokens', '/api/cookies'], handleDeleteTokens);
 
 // --- FORMAT EXTRACTION & PLAYLIST ENRICHMENT ENGINE ---
 const formatMemoryCache = new Map();
