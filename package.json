@@ -53,6 +53,7 @@
   "build": {
     "appId": "com.aryansdev.uniextract",
     "productName": "Uni Extract",
+    "copyright": "Copyright © 2026 AryansDevStudios. All rights reserved.",
     "artifactName": "UniExtract-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist-electron"
@@ -75,6 +76,17 @@
       "node_modules/ffmpeg-static/**"
     ],
     "win": {
+      "legalTrademarks": "Uni Extract™ is a trademark of AryansDevStudios",
+      "requestedExecutionLevel": "asInvoker",
+      "signtoolOptions": {
+        "certificateFile": "certs/AryansDevStudios.pfx",
+        "certificatePassword": "aryansdevstudios",
+        "publisherName": "AryansDevStudios",
+        "rfc3161TimeStampServer": "http://timestamp.digicert.com",
+        "signingHashAlgorithms": [
+          "sha256"
+        ]
+      },
       "target": [
         {
           "target": "nsis",
