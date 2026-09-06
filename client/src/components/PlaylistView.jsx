@@ -243,8 +243,27 @@ export default function PlaylistView({ playlist, onToast }) {
   // Helper to determine effective configuration for an item
   const getEffectiveConfig = (itemId) => {
     const itemOv = overrides[itemId] || {};
-    const video = itemOv.video !== undefined ? itemOv.video : masterVideo;
-    const audio = itemOv.audio !== undefined ? itemOv.audio : masterAudio;
+    const caps = formatCapabilities[itemId];
+    const itemMaxRes = caps?.maxRes || '1080p';
+
+    let video = itemOv.video;
+    if (!video) {
+      if (masterVideo === 'none') {
+        video = 'none';
+      } else if (masterVideo === 'best') {
+        video = itemMaxRes;
+      } else {
+        const masterH = RESOLUTION_HEIGHT_MAP[masterVideo] || 1080;
+        const itemH = caps?.maxHeight || 1080;
+        video = masterH > itemH ? itemMaxRes : masterVideo;
+      }
+    }
+
+    let audio = itemOv.audio;
+    if (!audio) {
+      audio = masterAudio;
+    }
+
     return { video, audio };
   };
 
@@ -689,21 +708,39 @@ export default function PlaylistView({ playlist, onToast }) {
           const caps = formatCapabilities[item.id];
           const itemMaxRes = caps?.maxRes || '1080p';
 
-          // Format Summary Tag
+          // Clean, un-cluttered effective resolution and audio
+          let computedVideo = itemOv.video;
+          if (!computedVideo) {
+            if (masterVideo === 'none') {
+              computedVideo = 'none';
+            } else if (masterVideo === 'best') {
+              computedVideo = itemMaxRes;
+            } else {
+              const masterH = RESOLUTION_HEIGHT_MAP[masterVideo] || 1080;
+              const itemH = caps?.maxHeight || 1080;
+              computedVideo = masterH > itemH ? itemMaxRes : masterVideo;
+            }
+          }
+
+          let computedAudio = itemOv.audio || masterAudio;
+
+          const videoPreset = ALL_VIDEO_PRESETS.find(p => p.id === computedVideo);
+          const defaultVideoLabel = videoPreset ? videoPreset.label : computedVideo.toUpperCase();
+
+          const audioPreset = AUDIO_PRESETS.find(p => p.id === computedAudio);
+          const defaultAudioLabel = audioPreset ? audioPreset.label : computedAudio.toUpperCase();
+
+          // Format Summary Tag (Clean, simple, no clutter)
           let formatTag = '';
-          if (effectiveVideo === 'none') {
-            formatTag = `🎵 Audio (${effectiveAudio === 'best' ? 'HQ' : effectiveAudio.toUpperCase()})`;
-          } else if (effectiveAudio === 'none') {
-            const itemH = caps?.maxHeight || 1080;
-            const effH = RESOLUTION_HEIGHT_MAP[effectiveVideo] || 1080;
-            const vLabel = effectiveVideo === 'best' ? itemMaxRes.toUpperCase() : (effH > itemH ? itemMaxRes.toUpperCase() : effectiveVideo.toUpperCase());
-            formatTag = `🎬 ${vLabel} (Muted)`;
+          if (computedVideo === 'none') {
+            formatTag = `🎵 Audio (${computedAudio === 'best' ? 'Best Audio' : computedAudio.toUpperCase()})`;
+          } else if (computedAudio === 'none') {
+            const vBadge = videoPreset?.badge || computedVideo.toUpperCase();
+            formatTag = `🎬 ${vBadge} (Muted)`;
           } else {
-            const itemH = caps?.maxHeight || 1080;
-            const effH = RESOLUTION_HEIGHT_MAP[effectiveVideo] || 1080;
-            const vLabel = effectiveVideo === 'best' ? itemMaxRes.toUpperCase() : (effH > itemH ? itemMaxRes.toUpperCase() : effectiveVideo.toUpperCase());
-            const aLabel = effectiveAudio === 'best' ? 'HQ' : effectiveAudio.toUpperCase();
-            formatTag = `🎬 ${vLabel} + 🎵 ${aLabel}`;
+            const vBadge = videoPreset?.badge || computedVideo.toUpperCase();
+            const aBadge = computedAudio === 'best' ? 'Best Audio' : computedAudio.toUpperCase();
+            formatTag = `🎬 ${vBadge} + 🎵 ${aBadge}`;
           }
 
           return (
@@ -805,32 +842,24 @@ export default function PlaylistView({ playlist, onToast }) {
                   </span>
                 ) : null}
 
-                {/* Per-Video Video Override Selector */}
+                {/* Per-Video Video Selector */}
                 <div className="flex items-center gap-1">
                   <select
                     value={itemOv.video || ''}
                     disabled={batchState.isDownloading}
                     onChange={(e) => setItemVideoOverride(item.id, e.target.value)}
-                    title="Override Video Quality for this video"
+                    title={`Video Quality: ${defaultVideoLabel}`}
                     className={`text-xs rounded-xl px-2.5 py-1.5 border font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors cursor-pointer ${
                       itemOv.video
                         ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 font-bold'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold'
                     }`}
                   >
                     {(() => {
-                      const masterH = RESOLUTION_HEIGHT_MAP[masterVideo] || 1080;
-                      const itemH = caps?.maxHeight || 1080;
-                      const isFallback = masterVideo !== 'none' && masterVideo !== 'best' && masterH > itemH;
-                      const placeholder = isFallback
-                        ? `Video (Master: ${masterVideo.toUpperCase()} [${itemMaxRes.toUpperCase()}])`
-                        : `Video (Master: ${masterVideo.toUpperCase()})`;
                       const allowed = getItemVideoPresets(item.id);
-
                       return (
                         <>
-                          <option value="">{placeholder}</option>
-                          <option value="best">Best Available ({itemMaxRes.toUpperCase()})</option>
+                          <option value="">{defaultVideoLabel}</option>
                           {allowed.map(p => (
                             <option key={p.id} value={p.id}>{p.label}</option>
                           ))}
@@ -841,26 +870,23 @@ export default function PlaylistView({ playlist, onToast }) {
                   </select>
                 </div>
 
-                {/* Per-Video Audio Override Selector */}
+                {/* Per-Video Audio Selector */}
                 <div className="flex items-center gap-1">
                   <select
                     value={itemOv.audio || ''}
                     disabled={batchState.isDownloading}
                     onChange={(e) => setItemAudioOverride(item.id, e.target.value)}
-                    title="Override Audio Quality for this video"
+                    title={`Audio Quality: ${defaultAudioLabel}`}
                     className={`text-xs rounded-xl px-2.5 py-1.5 border font-medium focus:outline-none focus:ring-1 focus:ring-purple-500 transition-colors cursor-pointer ${
                       itemOv.audio
                         ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold'
                     }`}
                   >
-                    <option value="">Audio (Master: {masterAudio.toUpperCase()})</option>
-                    <option value="best">Best Audio</option>
-                    <option value="320k">320 kbps MP3</option>
-                    <option value="256k">256 kbps</option>
-                    <option value="192k">192 kbps</option>
-                    <option value="128k">128 kbps</option>
-                    <option value="none">No Audio (Muted)</option>
+                    <option value="">{defaultAudioLabel}</option>
+                    {AUDIO_PRESETS.map(p => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
                   </select>
                 </div>
               </div>
