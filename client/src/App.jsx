@@ -6,7 +6,7 @@ import PlaylistView from './components/PlaylistView';
 import RecentHistory from './components/RecentHistory';
 import AuthModal from './components/AuthModal';
 import ServerModal from './components/ServerModal';
-import { apiUrl, apiFetch, getCustomServerUrl } from './utils/api';
+import { apiUrl, apiFetch, getCustomServerUrl, shouldShowServerSelector } from './utils/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function App() {
@@ -350,6 +350,7 @@ function App() {
         onOpenCookies={() => setCookieModalOpen(true)}
         onOpenServer={() => setServerModalOpen(true)}
         customServerUrl={customServerUrl}
+        showServerSelector={shouldShowServerSelector()}
       />
 
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
