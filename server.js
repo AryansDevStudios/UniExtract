@@ -523,6 +523,13 @@ const ensureFfmpeg = () => {
         path.join(__dirname, 'node_modules', 'ffmpeg-static', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'),
         (() => {
             try {
+                const pkgPath = require.resolve('ffmpeg-static/package.json');
+                const exe = path.join(path.dirname(pkgPath), process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg').replace('app.asar', 'app.asar.unpacked');
+                return fs.existsSync(exe) ? exe : null;
+            } catch (e) { return null; }
+        })(),
+        (() => {
+            try {
                 const installer = require('@ffmpeg-installer/ffmpeg');
                 return installer && installer.path ? installer.path.replace('app.asar', 'app.asar.unpacked') : null;
             } catch (e) { return null; }

@@ -25,8 +25,23 @@ This command:
 To bundle the application into production Windows executables:
 
 ```bash
+# Build both x64 and ARM64 (default):
 npm run dist:win
+
+# Or build a specific architecture:
+npm run dist:win:x64     # Standard Intel/AMD PCs
+npm run dist:win:arm64   # Native Windows on ARM (Snapdragon X Elite / Surface Copilot+)
 ```
+
+The compiled executables will be generated in `dist-electron/`:
+- **x64 (Intel/AMD)**:
+  - `UniversalMediaExtractor-2.0.0-x64-Setup.exe` (NSIS Installer)
+  - `UniversalMediaExtractor-Portable-2.0.0-x64.exe` (Standalone Portable)
+- **ARM64 (Snapdragon / Copilot+ PCs)**:
+  - `UniversalMediaExtractor-2.0.0-arm64-Setup.exe` (Native ARM64 NSIS Installer)
+  - `UniversalMediaExtractor-Portable-2.0.0-arm64.exe` (Native ARM64 Portable)
+
+---
 
 ### 🤖 Automated GitHub Release Workflow
 
@@ -40,9 +55,9 @@ git push origin v2.0.0
 GitHub Actions (`.github/workflows/release.yml`) will automatically:
 1. Spin up a clean Windows virtual machine runner (`windows-latest`).
 2. Fetch dependencies, bundle `ffmpeg-static` and `yt-dlp`.
-3. Package the NSIS installer and Portable executable.
-4. Calculate SHA-256 checksums for security verification.
-5. Publish a official **GitHub Release** with download links attached.
+3. Package both **x64** and **ARM64** NSIS installers and Portable executables.
+4. Calculate SHA-256 checksums for all four binaries.
+5. Publish a official **GitHub Release** with direct download links attached.
 
 You can also trigger builds manually anytime from the GitHub repository by going to **Actions** → **Build & Release Windows App** → **Run workflow**.
 

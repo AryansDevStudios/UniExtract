@@ -216,13 +216,14 @@ Open `http://localhost:3000`. You can install it as a Progressive Web App (PWA) 
 npm run electron:dev
 ```
 
-**Package for Windows (NSIS Installer & Portable Executable):**
+**Package for Windows (NSIS Installers & Portable Executables):**
 ```bash
-npm run dist:win
+npm run dist:win         # Builds both x64 and ARM64
+# Or targeted: npm run dist:win:x64 / npm run dist:win:arm64
 ```
 The compiled executables will be generated in `dist-electron/`:
-- `UniversalMediaExtractor-2.0.0-x64.exe` (NSIS Installer)
-- `UniversalMediaExtractor-Portable-2.0.0.exe` (Standalone Portable)
+- **x64 (Intel / AMD)**: `UniversalMediaExtractor-2.0.0-x64-Setup.exe` & `UniversalMediaExtractor-Portable-2.0.0-x64.exe`
+- **ARM64 (Snapdragon / Copilot+)**: `UniversalMediaExtractor-2.0.0-arm64-Setup.exe` & `UniversalMediaExtractor-Portable-2.0.0-arm64.exe`
 
 In portable mode, placing a `cookies.txt` next to the executable keeps your authentication persistent across runs.
 
