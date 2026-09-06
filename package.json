@@ -24,13 +24,13 @@
     "electron": "electron .",
     "electron:dev": "concurrently -k \"npm run server\" \"npm run client:dev\" \"wait-on http://localhost:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
     "electron:prod": "npm run client:build && cross-env ELECTRON_START_URL=http://localhost:3000 electron .",
-    "dist:win": "npm run client:build && electron-builder --win",
-    "dist:win:x64": "npm run client:build && electron-builder --win --x64",
-    "dist:win:arm64": "npm run client:build && electron-builder --win --arm64",
-    "dist:win:all": "npm run client:build && electron-builder --win --x64 --arm64",
-    "dist:linux": "npm run client:build && electron-builder --linux",
-    "dist:mac": "npm run client:build && electron-builder --mac",
-    "dist:all": "npm run client:build && electron-builder -mwl"
+    "dist:win": "npm run client:build && electron-builder --win --publish never",
+    "dist:win:x64": "npm run client:build && electron-builder --win --x64 --publish never",
+    "dist:win:arm64": "npm run client:build && electron-builder --win --arm64 --publish never",
+    "dist:win:all": "npm run client:build && electron-builder --win --x64 --arm64 --publish never",
+    "dist:linux": "npm run client:build && electron-builder --linux --publish never",
+    "dist:mac": "npm run client:build && electron-builder --mac --publish never",
+    "dist:all": "npm run client:build && electron-builder -mwl --publish never"
   },
   "dependencies": {
     "archiver": "^8.0.0",
@@ -147,6 +147,8 @@
       ],
       "icon": "public/icon-512.png",
       "category": "Video",
+      "desktopName": "UniExtract",
+      "maintainer": "AryansDevStudios <aryansdevstudios@gmail.com>",
       "artifactName": "UniExtract-${version}-${arch}.${ext}"
     }
   },
@@ -160,6 +162,10 @@
     "ffmpeg",
     "media-extractor"
   ],
-  "author": "AryansDevStudios",
+  "author": {
+    "name": "AryansDevStudios",
+    "email": "aryansdevstudios@gmail.com",
+    "url": "https://github.com/AryansDevStudios"
+  },
   "license": "MIT"
 }
