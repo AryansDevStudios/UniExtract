@@ -68,9 +68,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || (process.env.RENDER ? '0.0.0.0' : '127.0.0.1');
 const COOKIE_PASSWORD = (process.env.COOKIE_PASSWORD || process.env.ADMIN_PASSWORD || '').trim();
-const COOKIES = process.env.COOKIES_PATH || path.join(__dirname, 'cookies.txt');
-const TEMP_DIR = process.env.TEMP_DIR || path.join(__dirname, 'temp');
-const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, 'cache');
+const os = require('os');
+const isAsar = __dirname.includes('app.asar');
+const defaultTemp = isAsar ? path.join(os.tmpdir(), 'uniextract-temp') : path.join(__dirname, 'temp');
+const defaultCache = isAsar ? path.join(os.tmpdir(), 'uniextract-cache') : path.join(__dirname, 'cache');
+const COOKIES = process.env.COOKIES_PATH || (isAsar ? path.join(os.tmpdir(), 'cookies.txt') : path.join(__dirname, 'cookies.txt'));
+const TEMP_DIR = process.env.TEMP_DIR || defaultTemp;
+const CACHE_DIR = process.env.CACHE_DIR || defaultCache;
 
 // --- INITIALIZATION ---
 let ytDlpPath = null;
@@ -80,13 +84,17 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 if (!fs.existsSync(TEMP_DIR)) {
-    console.log(`[SYSTEM] Creating temporary directory at: ${TEMP_DIR}`);
-    fs.mkdirSync(TEMP_DIR);
+    try {
+        console.log(`[SYSTEM] Creating temporary directory at: ${TEMP_DIR}`);
+        fs.mkdirSync(TEMP_DIR, { recursive: true });
+    } catch (e) {}
 }
 
 if (!fs.existsSync(CACHE_DIR)) {
-    console.log(`[SYSTEM] Creating yt-dlp cache directory at: ${CACHE_DIR}`);
-    fs.mkdirSync(CACHE_DIR);
+    try {
+        console.log(`[SYSTEM] Creating yt-dlp cache directory at: ${CACHE_DIR}`);
+        fs.mkdirSync(CACHE_DIR, { recursive: true });
+    } catch (e) {}
 }
 
 const jobs = {};
@@ -427,10 +435,17 @@ const ensureYtDlp = async () => {
     // 1. Check if ytdlp-nodejs already has a downloaded binary
     try {
         const bundled = helpers.findYtdlpBinary();
-        if (bundled && fs.existsSync(bundled)) {
-            ytDlpPath = bundled;
-            logger(null, `Using bundled yt-dlp binary at: ${ytDlpPath}`);
-            return ytDlpPath;
+        if (bundled) {
+            const unpackedBundled = bundled.replace('app.asar', 'app.asar.unpacked');
+            if (fs.existsSync(unpackedBundled)) {
+                ytDlpPath = unpackedBundled;
+                logger(null, `Using bundled yt-dlp binary at: ${ytDlpPath}`);
+                return ytDlpPath;
+            } else if (fs.existsSync(bundled)) {
+                ytDlpPath = bundled;
+                logger(null, `Using bundled yt-dlp binary at: ${ytDlpPath}`);
+                return ytDlpPath;
+            }
         }
     } catch (e) {}
 

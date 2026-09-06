@@ -73,42 +73,32 @@ function getCookiesPath() {
 }
 
 function startServer() {
-  const rootDir = path.join(__dirname, '..');
-  const serverScript = path.join(rootDir, 'server.js');
+  if (process.env.ELECTRON_START_URL) {
+    console.log('[ELECTRON] Development mode: using external dev server at', process.env.ELECTRON_START_URL);
+    return;
+  }
+
   const isProd = app.isPackaged;
   const cookiesPath = getCookiesPath();
 
-  const env = {
-    ...process.env,
-    NODE_ENV: 'production',
-    TEMP_DIR: path.join(app.getPath('temp'), 'uniextract-temp'),
-    CACHE_DIR: path.join(app.getPath('userData'), 'cache'),
-    COOKIES_PATH: cookiesPath,
-    IS_ELECTRON: 'true',
-    ELECTRON_IS_PACKAGED: isProd ? 'true' : 'false',
-    ELECTRON_PORTABLE: process.env.PORTABLE_EXECUTABLE_DIR ? 'true' : 'false',
-    ELECTRON_APP_VERSION: app.getVersion()
-  };
+  process.env.NODE_ENV = 'production';
+  process.env.TEMP_DIR = path.join(app.getPath('temp'), 'uniextract-temp');
+  process.env.CACHE_DIR = path.join(app.getPath('userData'), 'cache');
+  process.env.COOKIES_PATH = cookiesPath;
+  process.env.IS_ELECTRON = 'true';
+  process.env.ELECTRON_IS_PACKAGED = isProd ? 'true' : 'false';
+  process.env.ELECTRON_PORTABLE = process.env.PORTABLE_EXECUTABLE_DIR ? 'true' : 'false';
+  process.env.ELECTRON_APP_VERSION = app.getVersion();
 
-  if (isProd) {
-    serverProcess = spawn(process.execPath, [serverScript], {
-      cwd: rootDir,
-      env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
-      stdio: 'ignore',
-      detached: false
-    });
-  } else {
-    serverProcess = spawn('node', [serverScript], {
-      cwd: rootDir,
-      env,
-      stdio: 'ignore',
-      detached: false
-    });
+  try {
+    const rootDir = path.join(__dirname, '..');
+    const serverScript = path.join(rootDir, 'server.js');
+    console.log('[ELECTRON] Starting embedded backend server from:', serverScript);
+    require(serverScript);
+    console.log('[ELECTRON] Embedded backend server initialized.');
+  } catch (err) {
+    console.error('[ELECTRON] Failed to start embedded backend server:', err);
   }
-
-  serverProcess.on('error', (err) => {
-    console.error('Failed to start bundled server:', err);
-  });
 }
 
 // Query local server to inspect active in-flight downloads / transcoding
@@ -273,18 +263,20 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.setMenu(null);
 
-  const startUrl = process.env.ELECTRON_START_URL || 'http://localhost:3000';
+  const startUrl = process.env.ELECTRON_START_URL || 'http://127.0.0.1:3000';
   
   let retryCount = 0;
-  const maxRetries = 30;
+  const maxRetries = 60;
   const tryLoad = () => {
-    mainWindow.loadURL(startUrl).catch(() => {});
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadURL(startUrl).catch(() => {});
+    }
   };
 
   mainWindow.webContents.on('did-fail-load', () => {
     if (retryCount < maxRetries) {
       retryCount++;
-      setTimeout(tryLoad, 500);
+      setTimeout(tryLoad, 300);
     }
   });
 
