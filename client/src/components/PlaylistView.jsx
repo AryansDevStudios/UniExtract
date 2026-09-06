@@ -51,6 +51,11 @@ const RESOLUTION_HEIGHT_MAP = {
 
 const AUDIO_PRESETS = [
   { id: 'best', label: 'Best Available (Source HQ)', badge: 'BEST', desc: 'Original pristine source audio (Lossless Copy)' },
+  { id: 'flac', label: 'Uncompressed (FLAC)', badge: 'FLAC', desc: 'Studio quality uncompressed flac' },
+  { id: 'wav', label: 'Uncompressed (WAV)', badge: 'WAV', desc: 'Studio quality uncompressed wav' },
+  { id: 'opus', label: 'Lossless Wrapper (OPUS)', badge: 'OPUS', desc: 'Lossless copy in opus' },
+  { id: 'm4a', label: 'Lossless Wrapper (M4A)', badge: 'M4A', desc: 'Lossless copy in m4a' },
+  { id: 'mkv', label: 'Matroska Audio (MKV)', badge: 'MKV', desc: 'Advanced mkv container' },
   { id: '320k', label: '320 kbps (Studio MP3 / High AAC)', badge: '320K', desc: 'Audiophile grade maximum fidelity' },
   { id: '256k', label: '256 kbps (High Quality)', badge: '256K', desc: 'Clean sound with low file size' },
   { id: '192k', label: '192 kbps (Standard Quality)', badge: '192K', desc: 'Standard high-definition audio' },
@@ -59,6 +64,11 @@ const AUDIO_PRESETS = [
 ];
 
 const AUDIO_BITRATE_MAP = {
+  'flac': 9999,
+  'wav': 9999,
+  'opus': 9999,
+  'm4a': 9999,
+  'mkv': 9999,
   '320k': 320,
   '256k': 256,
   '192k': 192,
@@ -81,6 +91,11 @@ const VIDEO_BITRATES = {
 };
 
 const AUDIO_BITRATES = {
+  'flac': 1411000,
+  'wav': 1411000,
+  'opus': 143000,
+  'm4a': 143000,
+  'mkv': 143000,
   '320k': 320000,    // 320 kbps = 40 KB/s
   '256k': 256000,    // 256 kbps = 32 KB/s
   '192k': 192000,    // 192 kbps = 24 KB/s
@@ -306,7 +321,7 @@ export default function PlaylistView({ playlist, onToast }) {
     const supportedSet = new Set(audioCaps.audioQualities);
     return AUDIO_PRESETS.filter(p => {
       if (p.id === 'none') return false;
-      if (p.id === 'best') return true;
+      if (['best', 'flac', 'wav', 'opus', 'm4a', 'mkv'].includes(p.id)) return true;
       return supportedSet.has(p.id);
     }).map(p => {
       if (p.id === 'best') return { ...p, label: bestLabel };
@@ -557,6 +572,8 @@ export default function PlaylistView({ playlist, onToast }) {
           body: JSON.stringify({
             url: item.url,
             title: item.title,
+            thumbnail: item.thumbnail,
+            artist: item.artist || item.uploader || playlist.author || 'YouTube',
             videoQuality: video,
             audioQuality: audio
           })
@@ -1082,12 +1099,14 @@ export default function PlaylistView({ playlist, onToast }) {
                     <span className="text-slate-300 dark:text-slate-600">·</span>
                     <span className="font-medium text-slate-500 dark:text-slate-400 truncate">{formatTag}</span>
                     {itemSizes.totalBytes > 0 && (
-                      <>
+                      <div className="flex items-center gap-1.5 ml-1 flex-wrap">
                         <span className="text-slate-300 dark:text-slate-600">·</span>
-                        <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
-                          ~{itemSizes.totalFormatted}
+                        {itemSizes.videoBytes > 0 && <span className="font-mono font-semibold text-indigo-500 whitespace-nowrap">🎬 {itemSizes.videoFormatted}</span>}
+                        {itemSizes.audioBytes > 0 && <span className="font-mono font-semibold text-purple-500 whitespace-nowrap">🎵 {itemSizes.audioFormatted}</span>}
+                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                          (Total: {itemSizes.totalFormatted})
                         </span>
-                      </>
+                      </div>
                     )}
                   </div>
                 </div>

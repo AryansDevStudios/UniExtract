@@ -18,6 +18,7 @@ function App() {
   
   const [selectedVideo, setSelectedVideo] = useState({ id: '', size: 0, label: '' });
   const [selectedAudio, setSelectedAudio] = useState({ id: '', size: 0, label: '' });
+  const [selectedContainer, setSelectedContainer] = useState('default');
   
   const [downloadJob, setDownloadJob] = useState(null);
   const [progress, setProgress] = useState('0%');
@@ -75,14 +76,10 @@ function App() {
     if (vList.length > 0) setSelectedVideo({ id: vList[0].id, size: vList[0].size, label: vList[0].label });
     else setSelectedVideo({ id: '', size: 0, label: 'NoVideo' });
     
-    if (aList.length > 0) setSelectedAudio({ 
-      id: aList[0].id, 
-      size: aList[0].size, 
-      label: aList[0].label,
-      abr: aList[0].abr,
-      acodec: aList[0].acodec || aList[0].codec_info
-    });
+    if (aList.length > 0) setSelectedAudio({ id: aList[0].id, size: aList[0].size, label: aList[0].label });
     else setSelectedAudio({ id: '', size: 0, label: 'PreMerged' });
+    
+    setSelectedContainer('default');
   };
 
   const handleAnalyze = async (url) => {
@@ -176,9 +173,10 @@ function App() {
           aId: selectedAudio.id,
           vLabel: selectedVideo.label || 'NoVideo',
           aLabel: selectedAudio.label || 'NoAudio',
-          audioAbr: selectedAudio.abr,
-          audioCodec: selectedAudio.acodec,
-          title: metadata.title
+          title: metadata.title,
+          container: selectedContainer !== 'default' 
+            ? selectedContainer 
+            : (!selectedVideo.id ? (selectedAudio.id === 'm4a' ? 'm4a' : 'mp3') : undefined)
         })
       });
       
@@ -208,7 +206,7 @@ function App() {
             const a = document.createElement('a');
             a.style.display = 'none';
             a.href = downloadUrl;
-            a.setAttribute('download', `${metadata.title}.mp4`);
+            a.setAttribute('download', '');
             document.body.appendChild(a);
             a.click();
             setTimeout(() => {
@@ -285,7 +283,7 @@ function App() {
 
       <Header isDark={isDark} toggleTheme={() => setIsDark(!isDark)} />
 
-      <main className="flex-1 w-full max-w-5xl mx-auto px-4 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
+      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
         
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
@@ -321,10 +319,9 @@ function App() {
               <CompactResultPanel
                 key="result-panel"
                 metadata={metadata}
-                selectedVideo={selectedVideo}
-                setSelectedVideo={setSelectedVideo}
-                selectedAudio={selectedAudio}
-                setSelectedAudio={setSelectedAudio}
+                selectedVideo={selectedVideo} setSelectedVideo={setSelectedVideo}
+                selectedAudio={selectedAudio} setSelectedAudio={setSelectedAudio}
+                selectedContainer={selectedContainer} setSelectedContainer={setSelectedContainer}
                 onDownloadThumb={handleDownloadThumbnail}
                 onDownloadMedia={startDownload}
                 onCancelDownload={cancelDownload}

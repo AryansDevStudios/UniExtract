@@ -717,6 +717,8 @@ app.post('/api/analyze', async (req, res) => {
                 size: f.filesize || f.filesize_approx || 0,
                 abr: f.abr ? `${Math.round(f.abr)}kbps` : null,
                 label: label,
+                fps: f.fps || null,
+                audio_channels: f.audio_channels || 2,
                 codec_info: hasVideo ? (f.vcodec ? f.vcodec.split('.')[0] : 'VID') : (hasAudio ? (f.acodec ? f.acodec.split('.')[0] : 'AUD') : 'RAW')
             };
         });
@@ -774,7 +776,7 @@ app.get('/api/thumbnail', (req, res) => {
 
 // --- API: DOWNLOAD & PROCESS ---
 app.post('/api/download', async (req, res) => {
-    const { url, vId, aId, vLabel, aLabel, title, qualityPreset, videoQuality, audioQuality } = req.body;
+    const { url, vId, aId, vLabel, aLabel, title, qualityPreset, videoQuality, audioQuality, thumbnail, artist, container } = req.body;
     const cleanedUrl = cleanMediaUrl(url);
     const jobId = uuidv4();
     
@@ -845,10 +847,46 @@ app.post('/api/download', async (req, res) => {
                 : 'bestvideo+bestaudio/best';
             namingTag = `${v.toUpperCase()}_${a === 'best' ? 'HQ' : a.toUpperCase()}`;
         }
+        if (container && container !== 'default') {
+            extension = container;
+        }
     } else {
         isAudioOnly = !vId && !!aId;
         extension = isAudioOnly ? 'mp3' : 'mp4';
-        formatSelection = (vId && aId) ? `${vId}+${aId}` : (vId || aId || 'best');
+
+        if (isAudioOnly) {
+            if (container && container !== 'default') {
+                extension = container;
+                targetAudio = container;
+                if (container === 'm4a') {
+                    formatSelection = (aId && aId !== 'm4a' && aId !== 'mp3') ? aId : 'bestaudio[ext=m4a]/bestaudio/best';
+                } else if (container === 'opus') {
+                    formatSelection = (aId && aId !== 'm4a' && aId !== 'mp3') ? aId : 'bestaudio[acodec=opus]/bestaudio/best';
+                } else if (container === 'mp3') {
+                    formatSelection = (aId && aId !== 'm4a' && aId !== 'mp3') ? aId : 'bestaudio/best';
+                    targetAudio = '320k';
+                } else {
+                    formatSelection = (aId && aId !== 'm4a' && aId !== 'mp3') ? aId : 'bestaudio/best';
+                }
+            } else if (aId === 'mp3' || aId === 'm4a') {
+                if (aId === 'mp3') {
+                    formatSelection = 'bestaudio/best';
+                    targetAudio = '320k';
+                    extension = 'mp3';
+                } else if (aId === 'm4a') {
+                    formatSelection = 'bestaudio[ext=m4a]/bestaudio/best';
+                    targetAudio = 'm4a';
+                    extension = 'm4a';
+                }
+            } else {
+                formatSelection = aId || 'bestaudio/best';
+            }
+        } else {
+            formatSelection = (vId && aId) ? `${vId}+${aId}` : (vId || aId || 'best');
+            if (container && container !== 'default') {
+                extension = container;
+            }
+        }
         namingTag = `${vLabel || 'NoVideo'}_${aLabel || 'NoAudio'}`;
     }
 
@@ -886,18 +924,26 @@ app.post('/api/download', async (req, res) => {
     
     // EXPLICIT METADATA EXTRACTION FOR WINDOWS/APPLE COMPATIBILITY
     let metaTitle = title || "Unknown Title";
-    let metaArtist = "Unknown Artist";
+    let metaArtist = artist || "Unknown Artist";
     let metaDate = "";
-    let metaThumb = "";
+    let metaThumb = thumbnail || "";
 
     if (fs.existsSync(infoJsonPath)) {
         try {
             const infoData = JSON.parse(fs.readFileSync(infoJsonPath, 'utf8'));
-            if (infoData.title) metaTitle = infoData.title;
-            if (infoData.uploader || infoData.channel) metaArtist = infoData.uploader || infoData.channel;
+            if (infoData.title && !title) metaTitle = infoData.title;
+            if (infoData.uploader || infoData.channel) metaArtist = artist || infoData.uploader || infoData.channel;
             if (infoData.upload_date) metaDate = infoData.upload_date.substring(0, 4);
-            if (infoData.thumbnail) metaThumb = infoData.thumbnail;
+            if (infoData.thumbnail && !metaThumb) metaThumb = infoData.thumbnail;
         } catch (e) {}
+    }
+
+    // Resilient fallback for YouTube thumbnail if missing
+    if (!metaThumb) {
+        const vidMatch = cleanedUrl.match(/(?:v=|\/|youtu\.be\/)([0-9A-Za-z_-]{11})/);
+        if (vidMatch) {
+            metaThumb = `https://i.ytimg.com/vi/${vidMatch[1]}/hqdefault.jpg`;
+        }
     }
     
     // Store metadata explicitly in the job to use during Task 2 Thumbnail Injection
@@ -906,6 +952,17 @@ app.post('/api/download', async (req, res) => {
     jobs[jobId].metaDate = metaDate;
     jobs[jobId].metaThumb = metaThumb;
     
+    // Pre-fetch thumbnail in background parallel to yt-dlp download
+    const manualThumb = path.join(TEMP_DIR, `${jobId.substring(0, 8)}_manual.jpg`);
+    let thumbFetchPromise = null;
+    if (metaThumb) {
+        thumbFetchPromise = new Promise((resolve) => {
+            const p = spawn('ffmpeg', ['-y', '-i', metaThumb, '-vframes', '1', manualThumb, '-hide_banner', '-loglevel', 'error']);
+            p.on('close', () => resolve(fs.existsSync(manualThumb) ? manualThumb : null));
+            p.on('error', () => resolve(null));
+        });
+    }
+
     if (isAudioOnly) {
         ffmpegArgs.push('--no-playlist');
     } else {
@@ -916,7 +973,7 @@ app.post('/api/download', async (req, res) => {
     jobs[jobId].downloadInstance = download;
     download.cookies(COOKIES);
     download.format(formatSelection);
-    download.output(TEMP_DIR);
+    download.setOutputTemplate(path.join(TEMP_DIR, `${jobId.substring(0, 8)}_%(${'title'})s.%(${'ext'})s`));
     if (ffmpegArgs.length > 0) {
         download.addArgs(...ffmpegArgs);
     }
@@ -946,157 +1003,165 @@ app.post('/api/download', async (req, res) => {
                 const mDate = jobs[jobId].metaDate;
                 const mThumb = jobs[jobId].metaThumb;
 
-                // If yt-dlp skipped thumbnail download, explicitly fetch it
-                if (!thumbFile && mThumb && jobs[jobId]?.status === 'downloading') {
-                    logger(jobId, `Manual thumbnail fetch triggered for Task 2...`, "THUMB");
-                    const manualThumb = baseName + '_manual.jpg';
-                    try {
-                        await new Promise((resolve) => {
-                            const p = spawn('ffmpeg', ['-y', '-i', mThumb, '-vframes', '1', manualThumb, '-hide_banner', '-loglevel', 'error']);
-                            p.on('close', resolve);
-                            p.on('error', resolve);
-                        });
-                        if (fs.existsSync(manualThumb)) thumbFile = manualThumb;
-                    } catch (e) {
-                        logger(jobId, `Manual thumbnail fetch failed.`, "WARN");
-                    }
+                // Await background pre-fetched thumbnail if yt-dlp did not provide one
+                if (!thumbFile && thumbFetchPromise) {
+                    thumbFile = await thumbFetchPromise;
                 }
 
                 if (jobs[jobId] && jobs[jobId].status === 'cancelled') return; // Exit if aborted
 
-                // TASK 2: Convert/remux into target format (MP4 for video, MP3 for audio) with full metadata and cover art
+                // TASK 2: Convert/remux into target format with full metadata and cover art
                 if (fs.existsSync(finalFile)) {
                     try {
+                        let targetExt = 'mp4';
+                        if (container && container !== 'default') {
+                            targetExt = container;
+                        } else if (isAudioOnly) {
+                            targetExt = 'mp3';
+                            if (targetAudio === 'flac' || targetAudio === 'wav' || targetAudio === 'mkv' || targetAudio === 'm4a' || targetAudio === 'opus') {
+                                targetExt = targetAudio;
+                            } else if (targetAudio === 'best' || targetAudio === 'copy') {
+                                const srcExt = path.extname(finalFile).replace('.', '').toLowerCase();
+                                targetExt = (srcExt === 'm4a') ? 'm4a' : 'opus';
+                            }
+                        } else {
+                            if (targetVideo === 'mkv' || targetAudio === 'mkv') targetExt = 'mkv';
+                        }
+                        
                         const embeddedFile = baseName + '_final.' + targetExt;
                         let embedArgs = [];
 
                         if (isAudioOnly) {
-                            const isTranscode = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy';
-                            if (!isTranscode) {
-                                // ZERO QUALITY LOSS: Preserve untouched source audio stream
-                                const srcExt = path.extname(finalFile).replace('.', '').toLowerCase();
-                                const pureExt = (srcExt === 'm4a') ? 'm4a' : 'opus';
-                                const losslessEmbeddedFile = baseName + '_final.' + pureExt;
-                                jobs[jobId].extension = pureExt;
-
-                                if (pureExt === 'm4a' && thumbFile) {
-                                    embedArgs = [
-                                        '-y', '-i', finalFile, '-i', thumbFile,
-                                        '-map', '0:a:0', '-map', '1:0',
-                                        '-c:a', 'copy', '-c:v:0', 'copy',
-                                        '-disposition:v:0', 'attached_pic',
-                                        '-metadata', `title=${mTitle}`,
-                                        '-metadata', `artist=${mArtist}`,
-                                        '-metadata', `album_artist=${mArtist}`,
-                                        '-metadata', `album=${mArtist} (YouTube)`,
-                                        '-metadata', `date=${mDate}`,
-                                        '-metadata', `year=${mDate}`,
-                                        losslessEmbeddedFile
-                                    ];
-                                } else {
-                                    embedArgs = [
-                                        '-y', '-i', finalFile,
-                                        '-map', '0:a:0',
-                                        '-c:a', 'copy',
-                                        '-metadata', `title=${mTitle}`,
-                                        '-metadata', `artist=${mArtist}`,
-                                        '-metadata', `album_artist=${mArtist}`,
-                                        '-metadata', `album=${mArtist} (YouTube)`,
-                                        '-metadata', `date=${mDate}`,
-                                        '-metadata', `year=${mDate}`,
-                                        losslessEmbeddedFile
-                                    ];
-                                }
+                            if (targetExt === 'flac' || targetExt === 'wav') {
+                                embedArgs = [
+                                    '-y', '-threads', '0', '-i', finalFile,
+                                    ...(thumbFile ? ['-i', thumbFile] : []),
+                                    '-map', '0:a:0',
+                                    ...(thumbFile ? ['-map', '1:0'] : []),
+                                    '-c:a', targetExt === 'flac' ? 'flac' : 'pcm_s16le',
+                                    ...(thumbFile ? ['-c:v', 'mjpeg', '-disposition:v:0', 'attached_pic'] : []),
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
+                                    embeddedFile
+                                ];
+                            } else if (targetExt === 'mkv') {
+                                embedArgs = [
+                                    '-y', '-threads', '0', '-i', finalFile,
+                                    '-map', '0:a:0',
+                                    '-c:a', 'copy',
+                                    ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
+                                    embeddedFile
+                                ];
+                            } else if (targetExt === 'm4a') {
+                                // For m4a container, audio must be AAC or ALAC. If source is opus/vorbis/mp3, transcode to aac
+                                const isSourceAac = finalFile.toLowerCase().endsWith('.m4a');
+                                const aCodecArgs = isSourceAac ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '256k'];
+                                embedArgs = [
+                                    '-y', '-threads', '0', '-i', finalFile,
+                                    ...(thumbFile ? ['-i', thumbFile] : []),
+                                    '-map', '0:a:0',
+                                    ...(thumbFile ? ['-map', '1:0'] : []),
+                                    ...aCodecArgs,
+                                    ...(thumbFile ? ['-c:v', 'mjpeg', '-disposition:v:0', 'attached_pic'] : []),
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
+                                    embeddedFile
+                                ];
+                            } else if (targetExt === 'opus') {
+                                // For opus/ogg container, audio must be opus. If source is aac/mp3, transcode to libopus
+                                const isSourceOpus = finalFile.toLowerCase().endsWith('.opus') || finalFile.toLowerCase().endsWith('.webm');
+                                const aCodecArgs = isSourceOpus ? ['-c:a', 'copy'] : ['-c:a', 'libopus', '-b:a', '160k'];
+                                embedArgs = [
+                                    '-y', '-threads', '0', '-i', finalFile,
+                                    '-map', '0:a:0',
+                                    ...aCodecArgs,
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
+                                    embeddedFile
+                                ];
                             } else {
-                                const lameBitrate = ['-b:a', targetAudio];
-                                if (thumbFile) {
-                                    embedArgs = [
-                                        '-y', '-i', finalFile, '-i', thumbFile,
-                                        '-map', '0:a:0', '-map', '1:0',
-                                        '-c:a', 'libmp3lame', ...lameBitrate,
-                                        '-id3v2_version', '3',
-                                        '-metadata', `title=${mTitle}`,
-                                        '-metadata', `artist=${mArtist}`,
-                                        '-metadata', `album_artist=${mArtist}`,
-                                        '-metadata', `album=${mArtist} (YouTube)`,
-                                        '-metadata', `date=${mDate}`,
-                                        '-metadata', `year=${mDate}`,
-                                        '-metadata:s:v', 'title=Album cover',
-                                        '-metadata:s:v', 'comment=Cover (front)',
-                                        embeddedFile
-                                    ];
-                                } else {
-                                    embedArgs = [
-                                        '-y', '-i', finalFile,
-                                        '-map', '0:a:0',
-                                        '-c:a', 'libmp3lame', ...lameBitrate,
-                                        '-id3v2_version', '3',
-                                        '-metadata', `title=${mTitle}`,
-                                        '-metadata', `artist=${mArtist}`,
-                                        '-metadata', `album_artist=${mArtist}`,
-                                        '-metadata', `album=${mArtist} (YouTube)`,
-                                        '-metadata', `date=${mDate}`,
-                                        '-metadata', `year=${mDate}`,
-                                        embeddedFile
-                                    ];
-                                }
+                                const lameBitrate = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy' ? ['-b:a', targetAudio] : ['-b:a', '320k'];
+                                embedArgs = [
+                                    '-y', '-threads', '0', '-i', finalFile,
+                                    ...(thumbFile ? ['-i', thumbFile] : []),
+                                    '-map', '0:a:0',
+                                    ...(thumbFile ? ['-map', '1:0'] : []),
+                                    '-c:a', 'libmp3lame', ...lameBitrate, '-ac', '2',
+                                    '-id3v2_version', '3',
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
+                                    ...(thumbFile ? ['-metadata:s:v', 'title=Album cover', '-metadata:s:v', 'comment=Cover (front)'] : []),
+                                    embeddedFile
+                                ];
                             }
                         } else if (isMuted) {
-                            if (thumbFile) {
-                                embedArgs = [
-                                    '-y', '-i', finalFile, '-i', thumbFile,
-                                    '-map', '0:v:0', '-map', '1:0',
-                                    '-c:v:0', 'copy',
-                                    '-an',
-                                    '-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic',
-                                    '-metadata', `title=${mTitle}`,
-                                    '-metadata', `artist=${mArtist}`,
-                                    '-metadata', `album_artist=${mArtist}`,
-                                    '-metadata', `album=${mArtist} (YouTube)`,
-                                    '-metadata', `date=${mDate}`,
-                                    '-metadata', `year=${mDate}`,
-                                    embeddedFile
-                                ];
-                            } else {
-                                embedArgs = [
-                                    '-y', '-i', finalFile,
-                                    '-map', '0:v:0',
-                                    '-c:v:0', 'copy',
-                                    '-an',
-                                    '-metadata', `title=${mTitle}`,
-                                    '-metadata', `artist=${mArtist}`,
-                                    '-metadata', `album_artist=${mArtist}`,
-                                    '-metadata', `album=${mArtist} (YouTube)`,
-                                    '-metadata', `date=${mDate}`,
-                                    '-metadata', `year=${mDate}`,
-                                    embeddedFile
-                                ];
-                            }
+                            embedArgs = [
+                                '-y', '-threads', '0', '-i', finalFile,
+                                ...(thumbFile ? ['-i', thumbFile] : []),
+                                '-map', '0:v:0',
+                                ...(thumbFile ? ['-map', '1:0'] : []),
+                                '-c:v:0', 'copy',
+                                '-an',
+                                ...(thumbFile ? ['-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic'] : []),
+                                '-metadata', `title=${mTitle}`,
+                                '-metadata', `artist=${mArtist}`,
+                                '-metadata', `album_artist=${mArtist}`,
+                                '-metadata', `album=${mArtist} (YouTube)`,
+                                '-metadata', `date=${mDate}`,
+                                '-metadata', `year=${mDate}`,
+                                embeddedFile
+                            ];
                         } else {
-                            // Video + Audio: Stream copy by default for ZERO loss in quality!
                             const isTranscode = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy';
-                            const audioCodecArgs = isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio] : ['-c:a', 'copy'];
-                            if (thumbFile) {
-                                embedArgs = [
-                                    '-y', '-i', finalFile, '-i', thumbFile,
-                                    '-map', '0:v:0', '-map', '0:a:0?', '-map', '1:0',
-                                    '-c:v:0', 'copy',
-                                    ...audioCodecArgs,
-                                    '-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic',
-                                    '-metadata', `title=${mTitle}`,
-                                    '-metadata', `artist=${mArtist}`,
-                                    '-metadata', `album_artist=${mArtist}`,
-                                    '-metadata', `album=${mArtist} (YouTube)`,
-                                    '-metadata', `date=${mDate}`,
-                                    '-metadata', `year=${mDate}`,
-                                    embeddedFile
-                                ];
-                            } else {
+                            const audioCodecArgs = isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio, '-ac', '2'] : ['-c:a', 'copy'];
+                            
+                            if (targetExt === 'mkv') {
                                 embedArgs = [
                                     '-y', '-i', finalFile,
                                     '-map', '0:v:0', '-map', '0:a:0?',
                                     '-c:v:0', 'copy',
                                     ...audioCodecArgs,
+                                    ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
+                                    embeddedFile
+                                ];
+                            } else {
+                                embedArgs = [
+                                    '-y', '-i', finalFile,
+                                    ...(thumbFile ? ['-i', thumbFile] : []),
+                                    '-map', '0:v:0', '-map', '0:a:0?',
+                                    ...(thumbFile ? ['-map', '1:0'] : []),
+                                    '-c:v:0', 'copy',
+                                    ...audioCodecArgs,
+                                    '-movflags', '+faststart',
+                                    ...(thumbFile ? ['-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic'] : []),
                                     '-metadata', `title=${mTitle}`,
                                     '-metadata', `artist=${mArtist}`,
                                     '-metadata', `album_artist=${mArtist}`,
@@ -1138,9 +1203,9 @@ app.post('/api/download', async (req, res) => {
                             try {
                                 if (isAudioOnly) {
                                     const audioTag = jobs[jobId].targetAudio === 'best' ? 'Best Quality' : jobs[jobId].targetAudio.toUpperCase();
-                                    jobs[jobId].resolvedFormat = `MP3 (${audioTag})`;
                                 } else {
-                                    const probe = execSync(`ffmpeg -i "${finalFile}" -hide_banner -f null - 2>&1`, { stdio: 'pipe' }).toString();
+                                    const pRes = spawnSync('ffmpeg', ['-nostdin', '-i', finalFile, '-hide_banner']);
+                                    const probe = (pRes.stderr ? pRes.stderr.toString() : '') + (pRes.stdout ? pRes.stdout.toString() : '');
                                     const resMatch = probe.match(/Video:.*?(\d{3,4})x(\d{3,4})/s) || probe.match(/, (\d{3,4})x(\d{3,4})/);
                                     if (resMatch) {
                                         const h = parseInt(resMatch[2]);
@@ -1229,26 +1294,8 @@ app.get('/api/file/:jobId/:title', (req, res) => {
     const finalExt = job.extension || 'mp4';
     const finalName = `${safeTitle}_${job.customTag}.${finalExt}`;
 
-    logger(req.params.jobId, `Transmitting file to client: ${finalName}`, "SEND");
-
-    // ==========================================
-    // DEBUG: Dump final metadata to console
-    // ==========================================
-    try {
-        console.log(`\n================= METADATA VERIFICATION =================`);
-        console.log(`File: ${job.file}`);
-        // Run FFmpeg to print format/metadata. Exit code 1 is normal because no output is specified.
-        const metaDump = execSync(`ffmpeg -i "${filePath}" -hide_banner -f null - 2>&1`, { stdio: 'pipe' }).toString();
-        
-        // Only print the lines that are actually related to Metadata/Stream details to keep the log clean
-        const cleanMeta = metaDump.split('\n').filter(line => line.includes('Metadata:') || line.includes('  title ') || line.includes('  artist ') || line.includes('  album ') || line.includes('  date ') || line.includes('Stream #')).join('\n');
-        console.log(cleanMeta || metaDump);
-        console.log(`=========================================================\n`);
-    } catch (e) {
-        const metaDump = e.stdout ? e.stdout.toString() : (e.stderr ? e.stderr.toString() : "");
-        const cleanMeta = metaDump.split('\n').filter(line => line.includes('Metadata:') || line.includes('    title') || line.includes('    artist') || line.includes('    album') || line.includes('    date') || line.includes('Stream #')).join('\n');
-        console.log(`\n================= METADATA VERIFICATION =================\n${cleanMeta || metaDump}\n=========================================================\n`);
-    }
+    const fileSizeMb = (fs.statSync(filePath).size / (1024 * 1024)).toFixed(2);
+    logger(req.params.jobId, `Transmitting file to client: ${finalName} (${fileSizeMb} MB)`, "SEND");
 
     res.download(filePath, finalName, (err) => {
         if (err) {

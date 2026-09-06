@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image as ImageIcon, Video, Music, DownloadCloud, Loader2, ChevronDown, Check, X } from 'lucide-react';
+import { Image as ImageIcon, Video, Music, DownloadCloud, Loader2, ChevronDown, Check, X, SlidersHorizontal } from 'lucide-react';
 
 function formatBytes(bytes) {
   if (!bytes) return '-- MB';
@@ -11,16 +11,18 @@ function formatBytes(bytes) {
   return `${mb.toFixed(1)} MB`;
 }
 
-function CustomSelect({ label, icon: Icon, options, value, onChange, placeholder }) {
+function CustomSelect({ label, icon: Icon, options, value, onChange, placeholder, dropUp = false }) {
   const [isOpen, setIsOpen] = useState(false);
   
   const selectedOption = options.find(o => o.id === value) || { id: '', display: placeholder };
 
   return (
     <div className="space-y-1.5 w-full">
-      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-        <Icon size={12} /> {label}
-      </label>
+      {label && (
+        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+          {Icon && <Icon size={12} />} {label}
+        </label>
+      )}
       <div 
         className="relative w-full"
         tabIndex={0}
@@ -30,38 +32,37 @@ function CustomSelect({ label, icon: Icon, options, value, onChange, placeholder
       >
         <div 
           onClick={() => setIsOpen(!isOpen)}
-          className="w-full flex items-center justify-between bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 hover:border-indigo-500/50 dark:hover:border-indigo-500/50 rounded-xl px-4 py-3 text-sm text-slate-700 dark:text-slate-200 cursor-pointer transition-colors shadow-sm"
+          className="w-full flex items-center justify-between bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 hover:border-indigo-500/50 dark:hover:border-indigo-500/50 rounded-xl px-3.5 py-3 text-sm text-slate-700 dark:text-slate-200 cursor-pointer transition-colors shadow-sm select-none"
         >
-          <span className="truncate pr-2 font-medium">{selectedOption.display}</span>
-          <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-indigo-500' : ''}`} />
+          <span className="truncate pr-1 font-medium">{selectedOption.display}</span>
+          <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 flex-shrink-0 ${isOpen ? 'rotate-180 text-indigo-500' : ''}`} />
         </div>
 
         <AnimatePresence>
           {isOpen && (
             <motion.div
-              initial={{ opacity: 0, y: 5, scale: 0.98 }}
+              initial={{ opacity: 0, y: dropUp ? -5 : 5, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 5, scale: 0.98 }}
+              exit={{ opacity: 0, y: dropUp ? -5 : 5, scale: 0.98 }}
               transition={{ duration: 0.15 }}
-              className="absolute z-50 mt-2 w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden backdrop-blur-xl"
+              className={`absolute z-50 ${dropUp ? 'bottom-full mb-2' : 'mt-2'} w-full min-w-[120px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden backdrop-blur-xl`}
             >
               <div className="max-h-60 overflow-y-auto custom-scroll p-1.5 flex flex-col gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => { onChange(''); setIsOpen(false); }}
-                  className={`flex items-center justify-between w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                    value === '' ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200'
-                  }`}
-                >
-                  {placeholder}
-                  {value === '' && <Check size={14} />}
-                </button>
+                {placeholder && value !== '' && options.some(o => o.id === '') === false && (
+                  <button
+                    type="button"
+                    onClick={() => { onChange(''); setIsOpen(false); }}
+                    className="flex items-center justify-between w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200"
+                  >
+                    {placeholder}
+                  </button>
+                )}
                 {options.map((opt) => (
                   <button
                     key={opt.id}
                     type="button"
                     onClick={() => { onChange(opt.id); setIsOpen(false); }}
-                    className={`flex items-center justify-between w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                    className={`flex items-center justify-between w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
                       value === opt.id ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200'
                     }`}
                   >
@@ -82,6 +83,7 @@ export default function CompactResultPanel({
   metadata, 
   selectedVideo, setSelectedVideo, 
   selectedAudio, setSelectedAudio, 
+  selectedContainer, setSelectedContainer,
   onDownloadThumb, 
   onDownloadMedia,
   onCancelDownload,
@@ -92,6 +94,9 @@ export default function CompactResultPanel({
   const [advancedMode, setAdvancedMode] = useState(false);
 
   if (!metadata) return null;
+
+  // Video and Audio size calculation with duration fallback approximation
+  const dur = metadata.duration && metadata.duration > 0 ? metadata.duration : 210;
 
   const vFormats = useMemo(() => {
     let list = metadata.formats.filter(f => f.vcodec);
@@ -113,7 +118,7 @@ export default function CompactResultPanel({
     return list.map(f => ({
       ...f,
       display: advancedMode 
-        ? `${f.resolution} • ${f.codec_info || f.vcodec} • ${formatBytes(f.size)}`
+        ? `${f.resolution} • ${f.codec_info || f.vcodec} • ${f.fps ? f.fps + 'fps • ' : ''}${formatBytes(f.size)}`
         : `${f.resolution} • ${formatBytes(f.size)}`
     }));
   }, [metadata, advancedMode]);
@@ -123,48 +128,112 @@ export default function CompactResultPanel({
     let list = metadata.formats.filter(f => f.acodec && !f.vcodec && (f.abr || f.size > 0));
       
     if (!advancedMode) {
-      // Standard mode: smallest file per bitrate
-      list = list.sort((a, b) => {
-        const abrA = parseInt(a.abr) || 0;
-        const abrB = parseInt(b.abr) || 0;
-        if (abrA !== abrB) return abrB - abrA;
-        return (a.size || Infinity) - (b.size || Infinity);
-      });
-      const seen = new Set();
-      list = list.filter(f => {
-        const key = f.abr || 'Audio';
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    } else {
-      // Advanced mode: largest file per bitrate first (descending)
+      // Normal mode: display all available distinct audio bitrates cleanly
       list = list.sort((a, b) => {
         const abrA = parseInt(a.abr) || 0;
         const abrB = parseInt(b.abr) || 0;
         if (abrA !== abrB) return abrB - abrA;
         return (b.size || 0) - (a.size || 0);
       });
+
+      const seen = new Set();
+      list = list.filter(f => {
+        const key = parseInt(f.abr) || Math.round(((f.size || 0) * 8) / (dur || 210) / 1000) || 'Audio';
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      return list.map(f => {
+        const abrVal = parseInt(f.abr);
+        return {
+          ...f,
+          display: `${abrVal ? abrVal + ' kbps' : 'Audio'} • ${formatBytes(f.size || Math.round(160000 * dur / 8))}`
+        };
+      });
+    } else {
+      // Advanced mode: largest file per bitrate first (descending) with full stream details
+      list = list.sort((a, b) => {
+        const abrA = parseInt(a.abr) || 0;
+        const abrB = parseInt(b.abr) || 0;
+        if (abrA !== abrB) return abrB - abrA;
+        return (b.size || 0) - (a.size || 0);
+      });
+
+      return list.map(f => {
+        const channels = f.audio_channels === 6 ? '5.1 Surround' : f.audio_channels === 2 ? 'Stereo' : f.audio_channels ? `${f.audio_channels} Ch` : 'Stereo';
+        const abrVal = parseInt(f.abr);
+        return {
+          ...f,
+          display: `${f.codec_info || f.acodec} • ${abrVal || '??'} kbps • ${channels} • ${formatBytes(f.size)}`
+        };
+      });
     }
+  }, [metadata, advancedMode, dur]);
 
-    return list.map(f => ({
-      ...f,
-      display: advancedMode
-        ? `${f.abr || 'High Quality'} • ${f.codec_info || f.acodec} • ${formatBytes(f.size)}`
-        : `${f.abr || 'High Quality'} • ${formatBytes(f.size)}`
-    }));
-  }, [metadata, advancedMode]);
+  const containerOptions = useMemo(() => {
+    const isVideoSelected = Boolean(selectedVideo.id);
 
-  // Video and Audio size calculation with duration fallback approximation
-  const dur = metadata.duration && metadata.duration > 0 ? metadata.duration : 210;
-  
+    if (isVideoSelected) {
+      // Containers for VIDEO (Video + Audio or Video Only)
+      if (advancedMode) {
+        return [
+          { id: 'default', display: 'Auto (MP4)' },
+          { id: 'mp4', display: 'MP4' },
+          { id: 'mkv', display: 'MKV' },
+          { id: 'webm', display: 'WebM' }
+        ];
+      }
+      // Normal user with video has container dropdown hidden (defaults to MP4)
+      return [];
+    } else {
+      // Containers for AUDIO ONLY
+      if (advancedMode) {
+        return [
+          { id: 'mp3', display: 'MP3' },
+          { id: 'm4a', display: 'M4A' },
+          { id: 'opus', display: 'OPUS' },
+          { id: 'flac', display: 'FLAC' },
+          { id: 'wav', display: 'WAV' },
+          { id: 'mkv', display: 'MKV' }
+        ];
+      }
+      // Normal user in Audio Only mode
+      return [
+        { id: 'mp3', display: 'Most Supported (MP3)' },
+        { id: 'm4a', display: 'High Quality (M4A)' }
+      ];
+    }
+  }, [advancedMode, selectedVideo.id]);
+
   const vSize = selectedVideo.id 
     ? (selectedVideo.size || Math.round((((parseInt(selectedVideo.label) || 1080) >= 1080 ? 2500000 : 1000000) * dur) / 8))
     : 0;
 
-  const aSize = selectedAudio.id
-    ? (selectedAudio.size || Math.round((160000 * dur) / 8))
-    : 0;
+  const aSize = useMemo(() => {
+    if (!selectedAudio.id) return 0;
+    
+    // When in audio-only mode, data consumption reflects the target format/container
+    if (!selectedVideo.id) {
+      if (selectedContainer === 'm4a') {
+        return Math.round((140000 * dur) / 8);
+      }
+      if (selectedContainer === 'flac') {
+        return Math.round((850000 * dur) / 8);
+      }
+      if (selectedContainer === 'wav') {
+        return Math.round((1411200 * dur) / 8);
+      }
+      if (selectedContainer === 'opus') {
+        return Math.round((160000 * dur) / 8);
+      }
+      // Default / MP3 320k audiophile
+      return Math.round((320000 * dur) / 8);
+    }
+    
+    // In video + audio mode, use selected audio stream size with bitrate fallback
+    return selectedAudio.size || Math.round((160000 * dur) / 8);
+  }, [selectedAudio, selectedVideo.id, selectedContainer, dur]);
 
   const totalSize = vSize + aSize;
   const sizeText = totalSize > 0 ? formatBytes(totalSize) : '0 MB';
@@ -174,31 +243,31 @@ export default function CompactResultPanel({
       initial={{ opacity: 0, y: 15, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -15, scale: 0.98 }}
-      className="mt-6 relative z-50 w-full bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 rounded-[2rem] p-4 md:p-5 lg:p-6 shadow-xl flex flex-col"
+      className="mt-6 relative z-50 w-full bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 rounded-[2.5rem] p-6 sm:p-7 md:p-8 lg:p-10 shadow-2xl flex flex-col"
     >
       {/* TOP: TITLE */}
-      <div className="mb-4 md:mb-5 pr-2 w-full">
-        <h2 className="text-lg md:text-xl font-bold text-slate-800 dark:text-slate-100 line-clamp-2 leading-snug">
+      <div className="mb-5 md:mb-6 pr-2 w-full">
+        <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 dark:text-slate-100 line-clamp-2 leading-snug tracking-tight">
           {metadata.title}
         </h2>
       </div>
 
       {/* BOTTOM: ADAPTIVE ROW */}
-      <div className="flex flex-col md:flex-row gap-5 md:gap-6 lg:gap-8 w-full items-center">
+      <div className="flex flex-col md:flex-row gap-6 md:gap-8 lg:gap-10 w-full items-center">
         
         {/* LEFT: THUMBNAIL (Uncropped, natural aspect ratio, tight wrap) */}
         <div className="relative flex-shrink-0 group rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl ring-1 ring-slate-200/50 dark:ring-slate-700/50 w-full md:w-fit mx-auto md:mx-0">
           <img 
             src={metadata.thumbnail} 
             alt="Thumbnail" 
-            className="w-full md:w-auto h-auto md:max-w-[320px] lg:max-w-[360px] max-h-[360px] object-contain transition-transform duration-700 group-hover:scale-105 block" 
+            className="w-full md:w-auto h-auto md:max-w-[360px] lg:max-w-[420px] max-h-[420px] object-contain transition-transform duration-700 group-hover:scale-105 block" 
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-[2px]">
             <button 
               onClick={onDownloadThumb} 
-              className="translate-y-4 group-hover:translate-y-0 bg-white/20 hover:bg-indigo-500 text-white backdrop-blur-md border border-white/30 font-semibold px-5 py-2.5 rounded-full flex items-center gap-2 transition-all duration-300 shadow-xl text-sm"
+              className="translate-y-4 group-hover:translate-y-0 bg-white/20 hover:bg-indigo-500 text-white backdrop-blur-md border border-white/30 font-semibold px-6 py-3 rounded-full flex items-center gap-2.5 transition-all duration-300 shadow-xl text-sm"
             >
-              <ImageIcon size={16} /> Get Cover
+              <ImageIcon size={18} /> Get Cover
             </button>
           </div>
         </div>
@@ -209,7 +278,21 @@ export default function CompactResultPanel({
           <div className="flex justify-end mb-3 relative z-10">
             <label className="flex items-center gap-2 cursor-pointer text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-indigo-500 transition-colors">
               <div className="relative">
-                <input type="checkbox" className="peer sr-only" checked={advancedMode} onChange={(e) => setAdvancedMode(e.target.checked)} />
+                <input 
+                  type="checkbox" 
+                  className="peer sr-only" 
+                  checked={advancedMode} 
+                  onChange={(e) => {
+                    const isAdv = e.target.checked;
+                    setAdvancedMode(isAdv);
+                    if (!isAdv) {
+                      setSelectedContainer('default');
+                      if (!selectedVideo.id) {
+                        setSelectedAudio({ id: 'mp3', size: Math.round(320000 * dur / 8), label: 'MP3' });
+                      }
+                    }
+                  }} 
+                />
                 <div className="w-7 h-4 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:bg-indigo-500 transition-colors"></div>
                 <div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform peer-checked:translate-x-3 shadow-sm"></div>
               </div>
@@ -226,35 +309,43 @@ export default function CompactResultPanel({
               value={selectedVideo.id}
               placeholder="None (Audio Only)"
               onChange={(id) => {
-                if (!id) setSelectedVideo({ id: '', size: 0, label: 'NoVideo' });
-                else {
+                if (!id) {
+                  setSelectedVideo({ id: '', size: 0, label: 'NoVideo' });
+                  // Switching to Audio Only: if current container is a video container, reset to audio format
+                  if (['default', 'mp4', 'webm'].includes(selectedContainer) || !selectedContainer) {
+                    setSelectedContainer('mp3');
+                  }
+                  if (!advancedMode) {
+                    setSelectedAudio({ id: 'mp3', size: Math.round(320000 * dur / 8), label: 'MP3' });
+                  }
+                } else {
                   const f = vFormats.find(x => x.id === id);
-                  if (f) setSelectedVideo({ id: f.id, size: f.size, label: f.label });
+                  if (f) {
+                    setSelectedVideo({ id: f.id, size: f.size, label: f.label });
+                    // Switching to Video: if current container is an audio container, reset to video container
+                    if (['mp3', 'm4a', 'flac', 'wav', 'opus'].includes(selectedContainer)) {
+                      setSelectedContainer('default');
+                    }
+                  }
                 }
               }}
             />
 
-              {/* AUDIO DROPDOWN */}
-              <CustomSelect 
-                label="Audio Track"
-                icon={Music}
-                options={aFormats}
-                value={selectedAudio.id}
-                placeholder={aFormats.length > 0 ? "None (Mute Video)" : "Included in Video"}
-                onChange={(id) => {
-                  if (!id) setSelectedAudio({ id: '', size: 0, label: 'NoAudio' });
-                  else {
-                    const f = aFormats.find(x => x.id === id);
-                    if (f) setSelectedAudio({ 
-                      id: f.id, 
-                      size: f.size, 
-                      label: f.label,
-                      abr: f.abr,
-                      acodec: f.acodec || f.codec_info
-                    });
-                  }
-                }}
-              />
+            {/* AUDIO DROPDOWN */}
+            <CustomSelect 
+              label="Audio Track"
+              icon={Music}
+              options={aFormats}
+              value={selectedAudio.id}
+              placeholder={aFormats.length > 0 ? (selectedVideo.id ? "None (Mute Video)" : "Select Audio Quality") : "Included in Video"}
+              onChange={(id) => {
+                if (!id) setSelectedAudio({ id: '', size: 0, label: 'NoAudio' });
+                else {
+                  const f = aFormats.find(x => x.id === id);
+                  if (f) setSelectedAudio({ id: f.id, size: f.size, label: f.label || 'Audio' });
+                }
+              }}
+            />
           </div>
 
           {/* BOTTOM ACTION BAR */}
@@ -281,13 +372,33 @@ export default function CompactResultPanel({
             </div>
 
             {!isDownloading ? (
-              <button 
-                onClick={onDownloadMedia}
-                disabled={!selectedVideo.id && !selectedAudio.id}
-                className="px-6 md:px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl md:rounded-2xl text-sm transition-all hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 shadow-xl shadow-slate-900/10 dark:shadow-white/10 disabled:opacity-50 disabled:hover:translate-y-0"
-              >
-                <DownloadCloud size={18} /> Download
-              </button>
+              <div className="flex items-end gap-3 flex-shrink-0">
+                {/* Format selection: shown for advanced users OR for normal users in audio-only mode */}
+                {containerOptions.length > 0 && (
+                  <div className={advancedMode ? "w-28 sm:w-32" : "w-52 sm:w-60"}>
+                    <CustomSelect 
+                      label="Format" 
+                      icon={SlidersHorizontal} 
+                      options={containerOptions} 
+                      value={
+                        containerOptions.some(o => o.id === selectedContainer)
+                          ? selectedContainer
+                          : (containerOptions[0]?.id || 'default')
+                      } 
+                      onChange={setSelectedContainer} 
+                      dropUp={true} 
+                    />
+                  </div>
+                )}
+
+                <button 
+                  onClick={onDownloadMedia}
+                  disabled={!selectedVideo.id && !selectedAudio.id}
+                  className="px-6 md:px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl md:rounded-2xl text-sm transition-all hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 shadow-xl shadow-slate-900/10 dark:shadow-white/10 disabled:opacity-50 disabled:hover:translate-y-0 h-[46px]"
+                >
+                  <DownloadCloud size={18} /> Download
+                </button>
+              </div>
             ) : (
               <div className="flex items-center gap-3 w-64 md:w-[280px] bg-slate-900 text-white p-2.5 pr-3 rounded-xl md:rounded-2xl shadow-xl shadow-indigo-500/10 transition-all duration-300">
                 <div className="relative flex items-center justify-center flex-shrink-0 pl-1">
