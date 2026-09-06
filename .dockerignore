@@ -1,0 +1,14 @@
+node_modules/
+client/node_modules/
+dist/
+dist-electron/
+client/dist/
+temp/
+cache/
+cookies.txt
+.git
+.github
+.env
+.env.*
+*.log
+npm-debug.log*

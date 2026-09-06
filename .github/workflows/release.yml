@@ -1,4 +1,4 @@
-name: Build & Release Windows App
+name: Build & Release Desktop Apps (Windows, Linux, macOS)
 
 on:
   push:
@@ -23,9 +23,29 @@ permissions:
   contents: write
 
 jobs:
-  release-windows:
-    name: Build & Release Windows (.exe)
-    runs-on: windows-latest
+  build-and-release:
+    name: Build Desktop App (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: Windows
+            build-cmd: npm run dist:win
+            artifacts: dist-electron/*.exe
+          - os: ubuntu-latest
+            platform: Linux
+            build-cmd: npm run dist:linux
+            artifacts: |
+              dist-electron/*.AppImage
+              dist-electron/*.deb
+          - os: macos-latest
+            platform: macOS
+            build-cmd: npm run dist:mac
+            artifacts: |
+              dist-electron/*.dmg
+              dist-electron/*.zip
 
     steps:
       - name: Checkout Repository
@@ -33,10 +53,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Install Linux Build Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libarchive-tools
 
       - name: Install Dependencies
         run: |
@@ -46,37 +72,25 @@ jobs:
       - name: Build Client & Sync Dist
         run: npm run client:build
 
-      - name: Build Windows Executables (NSIS & Portable)
-        run: npm run dist:win
+      - name: Package Desktop Executables
+        run: ${{ matrix.build-cmd }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate SHA-256 Checksums
-        shell: pwsh
-        run: |
-          Get-ChildItem -Path dist-electron/*.exe | ForEach-Object {
-            $hash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($_.Name)" | Out-File -FilePath dist-electron/checksums-sha256.txt -Append -Encoding ascii
-          }
-          Write-Host "Generated SHA-256 Checksums:"
-          Get-Content dist-electron/checksums-sha256.txt
-
       - name: Determine Release Tag
         id: get_tag
-        shell: pwsh
+        shell: bash
         run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ github.event.inputs.tag_name }}") {
-            $tag = "${{ github.event.inputs.tag_name }}"
-          } elseif ($env:GITHUB_REF -match "refs/tags/(.*)") {
-            $tag = $Matches[1]
-          } else {
-            $pkgVersion = (Get-Content package.json | ConvertFrom-Json).version
-            $tag = "v$pkgVersion"
-          }
-          Write-Host "Active Release Tag: $tag"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "tag=$tag"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag_name }}" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          elif [[ "$GITHUB_REF" =~ refs/tags/(.*) ]]; then
+            TAG="${BASH_REMATCH[1]}"
+          else
+            TAG="v$(node -p "require('./package.json').version")"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Publish GitHub Release
+      - name: Upload Artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_tag.outputs.tag }}
@@ -84,8 +98,6 @@ jobs:
           draft: ${{ github.event.inputs.draft || false }}
           prerelease: ${{ github.event.inputs.prerelease || false }}
           generate_release_notes: true
-          files: |
-            dist-electron/*.exe
-            dist-electron/checksums-sha256.txt
+          files: ${{ matrix.artifacts }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

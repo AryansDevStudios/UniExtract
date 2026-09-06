@@ -72,8 +72,9 @@ Universal Media Extractor is designed to be **fully decoupled**. You do **not** 
 | **1** | **All-in-One Full-Stack (PWA)** | Full Repository | Local PC / Mac / Linux | Unified Express server serving bundled React client on `localhost:3000`. Installs as standalone PWA. |
 | **2** | **Backend Only (Headless Media API)** | `server.js`, `package.json`, `scripts/` (~50KB) | Render, Railway, Fly.io, Linux VPS, Docker | Headless media extraction, FFmpeg transcoding, and REST API. Zero frontend or Electron dependencies. |
 | **3** | **Frontend Only (Static Web Client)** | `client/` folder only | Netlify, Vercel, Cloudflare Pages | Pure static React + Vite SPA. Zero Node backend needed on host. Connects to any remote backend. |
-| **4** | **Native Desktop (Electron)** | Full Repository | Windows 10/11 | Bundled `.exe` (NSIS installer or Portable). Auto-manages backend and persistent desktop cookies. |
+| **4** | **Native Desktop (Electron)** | Full Repository | Windows 10/11, macOS, Linux | Bundled installers for Windows (x64 & ARM64), macOS (dmg/zip), and Linux (AppImage/deb). |
 | **5** | **Pre-Built Static GUI** | `server.js` + `public/` | Low-RAM nodes, Raspberry Pi, Home Servers | Complete pre-compiled modern React production bundle in `public/`. Zero frontend build step or memory overhead required on device. |
+| **6** | **Docker Container (GHCR)** | Pre-built image or `Dockerfile` | Linux VPS, Unraid, TrueNAS, Synology | Multi-arch container image with pre-installed FFmpeg, Python 3, and healthcheck. |
 
 > 📖 **Complete Documentation**: Read [docs/DEPLOYMENT_MODES.md](docs/DEPLOYMENT_MODES.md) for full pairing combinations, VPS systemd setup, and cross-platform guide. For native Windows app builds, see [docs/ELECTRON.md](docs/ELECTRON.md).
 
@@ -118,6 +119,16 @@ npm install
 npm run build
 ```
 Deploy `client/dist` to Netlify, Vercel, or GitHub Pages. Open the in-app **Server Selector** to connect to your backend!
+
+### Option D: Docker Container (Home Server / VPS)
+```bash
+docker run -d \
+  --name universal-media-extractor \
+  -p 3000:3000 \
+  -e COOKIE_PASSWORD=your_password \
+  --restart unless-stopped \
+  ghcr.io/aryansdevstudios/universal-media-extractor:latest
+```
 
 ---
 
