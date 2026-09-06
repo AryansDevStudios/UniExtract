@@ -12,23 +12,57 @@ const envPath = path.join(__dirname, '.env');
 if (fs.existsSync(envPath)) {
     try {
         const envContent = fs.readFileSync(envPath, 'utf8');
-        envContent.split(/\r?\n/).forEach(line => {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) return;
-            const eqIdx = trimmed.indexOf('=');
-            if (eqIdx !== -1) {
-                const key = trimmed.substring(0, eqIdx).trim();
-                let val = trimmed.substring(eqIdx + 1).trim();
-                if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-                    val = val.slice(1, -1);
+        const lines = envContent.split(/\r?\n/);
+        let currentKey = null;
+        let currentValLines = [];
+        let inQuotes = false;
+        let quoteChar = null;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (!inQuotes) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) continue;
+                const eqIdx = line.indexOf('=');
+                if (eqIdx !== -1) {
+                    const key = line.substring(0, eqIdx).trim();
+                    let val = line.substring(eqIdx + 1).trim();
+                    if (val.startsWith('"') || val.startsWith("'")) {
+                        quoteChar = val[0];
+                        val = val.substring(1);
+                        if (val.endsWith(quoteChar) && (val.length === 1 || !val.endsWith('\\' + quoteChar))) {
+                            val = val.slice(0, -1);
+                            if (!process.env[key]) process.env[key] = val;
+                        } else {
+                            inQuotes = true;
+                            currentKey = key;
+                            currentValLines = [val];
+                        }
+                    } else {
+                        const commentIdx = val.indexOf('#');
+                        if (commentIdx !== -1) val = val.substring(0, commentIdx).trim();
+                        if (!process.env[key]) process.env[key] = val;
+                    }
                 }
-                if (!process.env[key]) {
-                    process.env[key] = val;
+            } else {
+                if (line.includes(quoteChar)) {
+                    const endIdx = line.indexOf(quoteChar);
+                    currentValLines.push(line.substring(0, endIdx));
+                    if (!process.env[currentKey]) {
+                        process.env[currentKey] = currentValLines.join('\n');
+                    }
+                    inQuotes = false;
+                    currentKey = null;
+                    currentValLines = [];
+                    quoteChar = null;
+                } else {
+                    currentValLines.push(line);
                 }
             }
-        });
+        }
     } catch (e) {}
 }
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -760,13 +794,15 @@ function getCookiesSummary() {
             }
         }
 
+        const isEnvManaged = !!(process.env.COOKIES_CONTENT || process.env.COOKIE_DATA || process.env.COOKIES_BASE64 || process.env.YOUTUBE_COOKIES);
         return {
             exists: count > 0,
             count,
             domains: Array.from(domainsSet),
             isYouTubeAuthed,
             isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR,
-            requiresPassword: !!COOKIE_PASSWORD
+            requiresPassword: !!COOKIE_PASSWORD,
+            isEnvManaged
         };
     } catch (err) {
         return {
@@ -776,10 +812,50 @@ function getCookiesSummary() {
             isYouTubeAuthed: false,
             error: err.message,
             isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR,
-            requiresPassword: !!COOKIE_PASSWORD
+            requiresPassword: !!COOKIE_PASSWORD,
+            isEnvManaged: !!(process.env.COOKIES_CONTENT || process.env.COOKIE_DATA || process.env.COOKIES_BASE64 || process.env.YOUTUBE_COOKIES)
         };
     }
 }
+
+// --- AUTO-INITIALIZE COOKIES FROM ENV (RENDER & CLOUD DEPLOYMENTS) ---
+function initCookiesFromEnv() {
+    const rawEnvCookies = process.env.COOKIES_CONTENT || 
+                           process.env.COOKIE_DATA || 
+                           process.env.YOUTUBE_COOKIES ||
+                           (process.env.COOKIES_BASE64 ? Buffer.from(process.env.COOKIES_BASE64, 'base64').toString('utf8') : null);
+
+    if (!rawEnvCookies || typeof rawEnvCookies !== 'string' || !rawEnvCookies.trim()) {
+        return;
+    }
+
+    let formatted = rawEnvCookies.trim();
+    // Handle escaped newlines or tabs if entered as a single-line string in .env
+    if (formatted.includes('\\n') && !formatted.includes('\n')) {
+        formatted = formatted.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+    }
+
+    // Auto-create/update cookies file if missing, empty, or running on Render
+    const shouldInitialize = !fs.existsSync(COOKIES) || fs.statSync(COOKIES).size === 0 || process.env.RENDER;
+    if (shouldInitialize) {
+        const filterResult = filterAndFormatCookies(formatted);
+        const dir = path.dirname(COOKIES);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+
+        if (filterResult.success) {
+            fs.writeFileSync(COOKIES, filterResult.netscapeText, 'utf8');
+            console.log(`[AUTH] Auto-initialized ${filterResult.keptCount} media cookies from environment variable (.env / Render)`);
+        } else {
+            fs.writeFileSync(COOKIES, formatted, 'utf8');
+            console.log(`[AUTH] Auto-initialized raw cookies file from environment variable (.env / Render)`);
+        }
+    }
+}
+
+initCookiesFromEnv();
+
 
 // --- PASSWORD VERIFICATION HELPER ---
 function verifyCookiePassword(req) {

@@ -49,7 +49,6 @@ UniversalMediaExtractor/
 ├── scripts/                    # Build, installation, and end-to-end verification scripts
 ├── public/                     # Lightweight fallback HTML/JS web GUI
 ├── server.js                   # High-throughput Express + yt-dlp + FFmpeg engine
-├── cookies.txt                 # Session tokens (persisted / managed)
 └── package.json                # Project scripts & Electron builder configuration
 ```
 
@@ -57,9 +56,10 @@ UniversalMediaExtractor/
 
 | Flavor | Frontend | Backend | Cookies Storage | Server Selector |
 |---|---|---|---|---|
-| **Electron Desktop** | Local Vite bundle (`client/dist`) | Bundled Node.js (`server.js`) | `%APPDATA%\Universal Media Extractor\` (or Portable directory) | Hidden (Integrated) |
-| **Self-Hosted PWA** | Local Vite bundle (`client/dist`) | Local Node server (`127.0.0.1:3000`) | Local `cookies.txt` in repo | Hidden (Integrated) |
-| **Cloud Web (Netlify)** | Netlify CDN (`client/dist`) | Render / Custom Cloud VPS | Managed on cloud backend | Visible (Switchable) |
+| **Electron Desktop** | Local Vite bundle (`client/dist`) | Bundled Node.js (`server.js`) | `%APPDATA%\Universal Media Extractor\` (or Portable directory) | Visible (Switchable) |
+| **Self-Hosted PWA** | Local Vite bundle (`client/dist`) | Local Node server (`127.0.0.1:3000`) | Local `cookies.txt` on disk | Visible (Switchable) |
+| **Cloud Web (Netlify)** | Netlify CDN (`client/dist`) | Render / Custom Cloud VPS | Injected via `.env` (`COOKIES_CONTENT`) | Visible (Switchable) |
+
 
 ---
 
@@ -100,6 +100,13 @@ PORT=3000
 # Recommended for remote / cloud servers (e.g. Render / VPS) to prevent unauthorized overrides.
 COOKIE_PASSWORD=your_secure_password_here
 
+# Cloud / Render Environment Cookies:
+# Use either COOKIES_CONTENT (raw Netscape/JSON text) or COOKIES_BASE64 (base64-encoded cookies.txt).
+# This allows deploying on Render or cloud VPS with working cookies without ever committing cookies.txt to GitHub!
+# For local / PWA usage, the app automatically reads and preserves cookies.txt on disk.
+# COOKIES_CONTENT=
+# COOKIES_BASE64=
+
 # Optional: Custom Cookies File Path
 # COOKIES_PATH=./cookies.txt
 
@@ -108,7 +115,12 @@ COOKIE_PASSWORD=your_secure_password_here
 # CACHE_DIR=./cache
 ```
 
-> **Security Note**: If `COOKIE_PASSWORD` is left empty, cookie uploads are open to anyone who accesses the endpoint, and the server prints a prominent red security warning at startup. For remote servers, always set `COOKIE_PASSWORD`.
+> **Security & Cookies Note**:
+> 1. `cookies.txt` is `.gitignore`d to ensure sensitive account session tokens are **never** committed to public GitHub repositories.
+> 2. For **Render / Cloud deployments**, paste your cookies into `COOKIES_CONTENT` or `COOKIES_BASE64` in your Render Environment Variables dashboard or `.env`.
+> 3. For **Local / PWA / Desktop usage**, simply paste your cookies in the in-app cookie modal or keep `cookies.txt` in your local project root.
+> 4. If `COOKIE_PASSWORD` is left empty, cookie uploads are open to anyone who accesses the endpoint, and the server prints a prominent red security warning at startup. For remote servers, always set `COOKIE_PASSWORD`.
+
 
 ---
 

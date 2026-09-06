@@ -37,3 +37,6 @@ temp/
 
 # yt-dlp disk cache (generated at runtime)
 cache/
+
+# Cookies (sensitive session data - keep on local disk/PWA, inject via .env on cloud)
+cookies.txt

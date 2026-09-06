@@ -84,31 +84,10 @@ export async function testServerConnection(targetUrl) {
 
 /**
  * Determines whether the dedicated server selector should be shown.
- * In PWA, Electron, or local environments, the app contains its own full backend,
- * so the server selector is hidden. It is only shown on remote web deployments (like Netlify).
+ * All environments (Web, PWA, and Desktop) have the server selector enabled
+ * so normal users can use the default server, and advanced users can connect to custom servers.
  */
 export function shouldShowServerSelector() {
-  if (typeof window === 'undefined') return false;
-
-  // 1. Electron desktop app
-  if (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Electron')) {
-    return false;
-  }
-
-  // 2. Installed PWA (standalone or fullscreen display mode)
-  if (
-    (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches) ||
-    window.navigator.standalone === true
-  ) {
-    return false;
-  }
-
-  // 3. Localhost / local machine backend (PWA or browser served from local server)
-  const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host.endsWith('.local')) {
-    return false;
-  }
-
-  // Remote web deployment (e.g. Netlify, Vercel, remote static hosting)
   return true;
 }
+

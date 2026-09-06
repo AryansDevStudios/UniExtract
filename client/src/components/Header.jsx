@@ -26,20 +26,21 @@ export default function Header({
         {showServerSelector && (
           <button
             onClick={onOpenServer}
-            title={hasCustomServer ? `Custom Server: ${customServerUrl}` : 'Default Cloud Server (Click to configure)'}
+            title={hasCustomServer ? `Custom Server: ${customServerUrl}` : 'Default Built-in Server (Click to configure)'}
             className="relative flex items-center gap-2 px-3 py-2 rounded-full bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200 dark:border-slate-700 hover:scale-105 transition-all text-slate-600 dark:text-slate-300 shadow-sm text-xs font-semibold"
           >
             <Server size={16} className={hasCustomServer ? 'text-indigo-500' : 'text-slate-400'} />
-            <span className="hidden sm:inline">Server</span>
+            <span className="hidden sm:inline">{hasCustomServer ? 'Custom' : 'Server'}</span>
             <span
               className={`w-2 h-2 rounded-full ${
                 hasCustomServer
                   ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.9)]'
-                  : 'bg-slate-400 dark:bg-slate-600'
+                  : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]'
               }`}
             />
           </button>
         )}
+
 
         <button
           onClick={onOpenCookies}
