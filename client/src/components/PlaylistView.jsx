@@ -21,17 +21,29 @@ import {
   SlidersHorizontal
 } from 'lucide-react';
 
-const VIDEO_PRESETS = [
-  { id: 'best', label: 'Best Available (Max 8K/4K)', badge: 'BEST', desc: 'Highest resolution on YouTube' },
-  { id: '8k', label: '8K Ultra HD (4320p)', badge: '8K', desc: '8K with auto-fallback to 4K / 1080p' },
-  { id: '4k', label: '4K Ultra HD (2160p)', badge: '4K', desc: '4K with auto-fallback to 1080p / 720p' },
-  { id: '1440p', label: '2K Quad HD (1440p)', badge: '2K', desc: '1440p QHD with auto-fallback' },
-  { id: '1080p', label: '1080p Full HD (FHD)', badge: 'FHD', desc: 'Full HD with auto-fallback to 720p' },
-  { id: '720p', label: '720p High Def (HD)', badge: 'HD', desc: 'Crisp HD quality' },
-  { id: '480p', label: '480p Standard (SD)', badge: 'SD', desc: 'Compact data saver' },
-  { id: '360p', label: '360p Low Bandwidth', badge: '360p', desc: 'Minimal storage size' },
-  { id: 'none', label: 'No Video (Audio Only)', badge: 'NO VIDEO', desc: 'Extract and download audio track only' }
+const ALL_VIDEO_PRESETS = [
+  { id: 'best', label: 'Best Available', badge: 'BEST', desc: 'Highest resolution across videos', minHeight: 0 },
+  { id: '8k', label: '8K Ultra HD (4320p)', badge: '8K', desc: '8K with auto-fallback to 4K / 1080p', minHeight: 4320 },
+  { id: '4k', label: '4K Ultra HD (2160p)', badge: '4K', desc: '4K with auto-fallback to 1080p / 720p', minHeight: 2000 },
+  { id: '1440p', label: '2K Quad HD (1440p)', badge: '2K', desc: '1440p QHD with auto-fallback', minHeight: 1400 },
+  { id: '1080p', label: '1080p Full HD (FHD)', badge: 'FHD', desc: 'Full HD with auto-fallback to 720p', minHeight: 1000 },
+  { id: '720p', label: '720p High Def (HD)', badge: 'HD', desc: 'Crisp HD quality', minHeight: 700 },
+  { id: '480p', label: '480p Standard (SD)', badge: 'SD', desc: 'Compact data saver', minHeight: 460 },
+  { id: '360p', label: '360p Low Bandwidth', badge: '360p', desc: 'Minimal storage size', minHeight: 300 },
+  { id: 'none', label: 'No Video (Audio Only)', badge: 'NO VIDEO', desc: 'Extract and download audio track only', minHeight: 0 }
 ];
+
+const RESOLUTION_HEIGHT_MAP = {
+  '8k': 4320,
+  '4k': 2160,
+  '1440p': 1440,
+  '1080p': 1080,
+  '720p': 720,
+  '480p': 480,
+  '360p': 360,
+  'none': 0,
+  'best': 9999
+};
 
 const AUDIO_PRESETS = [
   { id: 'best', label: 'Best Available Audio', desc: 'Original high-bitrate source audio' },
@@ -45,13 +57,59 @@ const AUDIO_PRESETS = [
 export default function PlaylistView({ playlist, onToast }) {
   const [selectedIds, setSelectedIds] = useState(() => new Set(playlist.items.map(item => item.id)));
   
+  // Dynamic Format Capabilities & Enrichment Progress
+  const [formatCapabilities, setFormatCapabilities] = useState(() => playlist.initialFormatData || {});
+  const [maxPlaylistResolution, setMaxPlaylistResolution] = useState(() => playlist.maxPlaylistResolution || '1080p');
+  const [enrichmentStatus, setEnrichmentStatus] = useState({
+    isDone: !!playlist.isFormatsComplete,
+    completed: Object.keys(playlist.initialFormatData || {}).length,
+    total: playlist.itemCount || playlist.items.length
+  });
+
   // Master Quality Selectors
-  const [masterVideo, setMasterVideo] = useState('1080p');
+  const [masterVideo, setMasterVideo] = useState(() => playlist.maxPlaylistResolution || '1080p');
   const [masterAudio, setMasterAudio] = useState('best');
+  const userSelectedMasterVideoRef = useRef(false);
   
   // Per-video overrides: { [videoId]: { video?: string, audio?: string } }
   const [overrides, setOverrides] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Background polling for per-video format capabilities
+  useEffect(() => {
+    if (enrichmentStatus.isDone) return;
+    let isMounted = true;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/playlist-formats/${playlist.id}`);
+        const data = await res.json();
+        if (!isMounted) return;
+
+        if (data.items) {
+          setFormatCapabilities(prev => ({ ...prev, ...data.items }));
+        }
+        if (data.maxPlaylistResolution) {
+          setMaxPlaylistResolution(data.maxPlaylistResolution);
+          if (!userSelectedMasterVideoRef.current) {
+            setMasterVideo(data.maxPlaylistResolution);
+          }
+        }
+        setEnrichmentStatus({
+          isDone: !!data.isDone,
+          completed: data.completed || 0,
+          total: data.total || playlist.items.length
+        });
+        if (data.isDone) {
+          clearInterval(interval);
+        }
+      } catch (e) {}
+    }, 1200);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [playlist.id, enrichmentStatus.isDone]);
   
   // Batch Execution State
   const [batchState, setBatchState] = useState({
@@ -89,6 +147,33 @@ export default function PlaylistView({ playlist, onToast }) {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
   }, []);
+
+  // Available Master Video Presets filtered by maxPlaylistResolution
+  const availableMasterVideoPresets = useMemo(() => {
+    const maxAllowedHeight = RESOLUTION_HEIGHT_MAP[maxPlaylistResolution] || 1080;
+    return ALL_VIDEO_PRESETS.filter(p => {
+      if (p.id === 'best' || p.id === 'none') return true;
+      return p.minHeight <= maxAllowedHeight;
+    }).map(p => {
+      if (p.id === 'best') {
+        return { ...p, label: `Best Available (${maxPlaylistResolution.toUpperCase()})` };
+      }
+      return p;
+    });
+  }, [maxPlaylistResolution]);
+
+  // Helper to get allowed video presets for an individual item
+  const getItemVideoPresets = (itemId) => {
+    const caps = formatCapabilities[itemId];
+    if (!caps || !caps.videoResolutions || caps.videoResolutions.length === 0) {
+      return availableMasterVideoPresets.filter(p => p.id !== 'best' && p.id !== 'none');
+    }
+    const supportedSet = new Set(caps.videoResolutions);
+    return ALL_VIDEO_PRESETS.filter(p => {
+      if (p.id === 'best' || p.id === 'none') return false;
+      return supportedSet.has(p.id);
+    });
+  };
 
   // Filtered items based on search query
   const filteredItems = useMemo(() => {
@@ -439,17 +524,20 @@ export default function PlaylistView({ playlist, onToast }) {
             <select
               value={masterVideo}
               disabled={batchState.isDownloading}
-              onChange={(e) => setMasterVideo(e.target.value)}
+              onChange={(e) => {
+                userSelectedMasterVideoRef.current = true;
+                setMasterVideo(e.target.value);
+              }}
               className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer disabled:opacity-50"
             >
-              {VIDEO_PRESETS.map(preset => (
+              {availableMasterVideoPresets.map(preset => (
                 <option key={preset.id} value={preset.id}>
                   {preset.label}
                 </option>
               ))}
             </select>
             <span className="text-[9px] text-slate-400 block truncate">
-              {VIDEO_PRESETS.find(p => p.id === masterVideo)?.desc}
+              {availableMasterVideoPresets.find(p => p.id === masterVideo)?.desc || 'Max resolution across playlist'}
             </span>
           </div>
 
@@ -475,6 +563,37 @@ export default function PlaylistView({ playlist, onToast }) {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Media Format Codec Analysis Status Banner */}
+      <div className="w-full">
+        {!enrichmentStatus.isDone ? (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 px-4 py-2.5 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 rounded-2xl text-xs">
+            <div className="flex items-center gap-2.5 text-indigo-700 dark:text-indigo-300 font-medium">
+              <Loader2 size={15} className="animate-spin text-indigo-500 flex-shrink-0" />
+              <span>
+                Analyzing media streams & codecs for individual videos: <strong>{enrichmentStatus.completed} of {enrichmentStatus.total}</strong> verified
+              </span>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-700">
+                Playlist Max: {maxPlaylistResolution.toUpperCase()}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 px-4 py-2 bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/60 rounded-2xl text-xs">
+            <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
+              <CheckCircle2 size={15} className="text-emerald-500 flex-shrink-0" />
+              <span>
+                Exact format resolutions verified for all <strong>{enrichmentStatus.total}</strong> videos
+              </span>
+            </div>
+            <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 self-end sm:self-auto">
+              Highest Available: {maxPlaylistResolution.toUpperCase()}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 2. TOOLBAR: Selection Controls & Search & Main Download Action */}
@@ -567,14 +686,22 @@ export default function PlaylistView({ playlist, onToast }) {
           const statusObj = itemStatuses[item.id];
           const isCurrentActive = batchState.activeVideoId === item.id;
 
+          const caps = formatCapabilities[item.id];
+          const itemMaxRes = caps?.maxRes || '1080p';
+
           // Format Summary Tag
           let formatTag = '';
           if (effectiveVideo === 'none') {
             formatTag = `🎵 Audio (${effectiveAudio === 'best' ? 'HQ' : effectiveAudio.toUpperCase()})`;
           } else if (effectiveAudio === 'none') {
-            formatTag = `🎬 ${effectiveVideo.toUpperCase()} (Muted)`;
+            const itemH = caps?.maxHeight || 1080;
+            const effH = RESOLUTION_HEIGHT_MAP[effectiveVideo] || 1080;
+            const vLabel = effectiveVideo === 'best' ? itemMaxRes.toUpperCase() : (effH > itemH ? itemMaxRes.toUpperCase() : effectiveVideo.toUpperCase());
+            formatTag = `🎬 ${vLabel} (Muted)`;
           } else {
-            const vLabel = effectiveVideo === 'best' ? 'Best' : effectiveVideo.toUpperCase();
+            const itemH = caps?.maxHeight || 1080;
+            const effH = RESOLUTION_HEIGHT_MAP[effectiveVideo] || 1080;
+            const vLabel = effectiveVideo === 'best' ? itemMaxRes.toUpperCase() : (effH > itemH ? itemMaxRes.toUpperCase() : effectiveVideo.toUpperCase());
             const aLabel = effectiveAudio === 'best' ? 'HQ' : effectiveAudio.toUpperCase();
             formatTag = `🎬 ${vLabel} + 🎵 ${aLabel}`;
           }
@@ -616,15 +743,19 @@ export default function PlaylistView({ playlist, onToast }) {
                       {item.durationText}
                     </span>
                   )}
-                  {item.qualityHint && (
-                    <span className={`absolute top-1 left-1 text-[8px] font-black px-1 rounded shadow-sm ${
-                      item.qualityHint === '8K' || item.qualityHint === '4K'
-                        ? 'bg-amber-500 text-black font-extrabold'
-                        : 'bg-indigo-600 text-white'
-                    }`}>
-                      {item.qualityHint}
-                    </span>
-                  )}
+                  {(() => {
+                    const badgeText = caps?.qualityBadge || item.qualityHint || 'HD';
+                    const isHighEnd = badgeText.includes('8K') || badgeText.includes('4K');
+                    return (
+                      <span className={`absolute top-1 left-1 text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm ${
+                        isHighEnd
+                          ? 'bg-amber-500 text-black font-extrabold'
+                          : 'bg-indigo-600 text-white'
+                      }`}>
+                        {badgeText}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 <div className="min-w-0 flex-1 pr-2 space-y-1">
@@ -687,16 +818,26 @@ export default function PlaylistView({ playlist, onToast }) {
                         : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
                     }`}
                   >
-                    <option value="">Video (Master: {masterVideo.toUpperCase()})</option>
-                    <option value="best">Best Available</option>
-                    <option value="8k">8K (4320p)</option>
-                    <option value="4k">4K (2160p)</option>
-                    <option value="1440p">2K (1440p)</option>
-                    <option value="1080p">1080p FHD</option>
-                    <option value="720p">720p HD</option>
-                    <option value="480p">480p SD</option>
-                    <option value="360p">360p</option>
-                    <option value="none">No Video (Audio Only)</option>
+                    {(() => {
+                      const masterH = RESOLUTION_HEIGHT_MAP[masterVideo] || 1080;
+                      const itemH = caps?.maxHeight || 1080;
+                      const isFallback = masterVideo !== 'none' && masterVideo !== 'best' && masterH > itemH;
+                      const placeholder = isFallback
+                        ? `Video (Master: ${masterVideo.toUpperCase()} [${itemMaxRes.toUpperCase()}])`
+                        : `Video (Master: ${masterVideo.toUpperCase()})`;
+                      const allowed = getItemVideoPresets(item.id);
+
+                      return (
+                        <>
+                          <option value="">{placeholder}</option>
+                          <option value="best">Best Available ({itemMaxRes.toUpperCase()})</option>
+                          {allowed.map(p => (
+                            <option key={p.id} value={p.id}>{p.label}</option>
+                          ))}
+                          <option value="none">No Video (Audio Only)</option>
+                        </>
+                      );
+                    })()}
                   </select>
                 </div>
 

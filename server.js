@@ -3,7 +3,7 @@ const { YtDlp, helpers } = require('ytdlp-nodejs');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const { execSync, spawn, spawnSync } = require('child_process');
+const { execSync, spawn, spawnSync, exec } = require('child_process');
 const cors = require('cors');
 
 const app = express();
@@ -259,6 +259,205 @@ app.get('/favfavicon.ico', (req, res) => {
     }
 });
 
+// --- FORMAT EXTRACTION & PLAYLIST ENRICHMENT ENGINE ---
+const formatMemoryCache = new Map();
+const playlistEnrichmentJobs = {};
+
+function categorizeHeights(rawHeights) {
+    const heights = [...new Set(rawHeights.filter(h => typeof h === 'number' && h > 0))].sort((a,b) => b-a);
+    const videoResolutions = [];
+    
+    if (heights.some(h => h >= 4320)) videoResolutions.push('8k');
+    if (heights.some(h => h >= 2000)) videoResolutions.push('4k');
+    if (heights.some(h => h >= 1400)) videoResolutions.push('1440p');
+    if (heights.some(h => h >= 1000)) videoResolutions.push('1080p');
+    if (heights.some(h => h >= 700)) videoResolutions.push('720p');
+    if (heights.some(h => h >= 460)) videoResolutions.push('480p');
+    if (heights.some(h => h >= 300)) videoResolutions.push('360p');
+
+    // Always include audio-only
+    videoResolutions.push('none');
+
+    const maxHeight = heights.length > 0 ? heights[0] : 0;
+    let maxRes = '360p';
+    let qualityBadge = 'SD';
+
+    if (maxHeight >= 4320) { maxRes = '8k'; qualityBadge = '8K UHD'; }
+    else if (maxHeight >= 2000) { maxRes = '4k'; qualityBadge = '4K UHD'; }
+    else if (maxHeight >= 1400) { maxRes = '1440p'; qualityBadge = '2K QHD'; }
+    else if (maxHeight >= 1000) { maxRes = '1080p'; qualityBadge = '1080p FHD'; }
+    else if (maxHeight >= 700) { maxRes = '720p'; qualityBadge = '720p HD'; }
+    else if (maxHeight >= 460) { maxRes = '480p'; qualityBadge = '480p SD'; }
+
+    return {
+        heights,
+        maxHeight,
+        maxRes,
+        qualityBadge,
+        videoResolutions
+    };
+}
+
+function categorizeAudio(rawBitrates) {
+    const bitrates = [...new Set(rawBitrates.filter(b => typeof b === 'number' && b > 0))].sort((a,b) => b-a);
+    const maxAbr = bitrates.length > 0 ? Math.round(bitrates[0]) : 128;
+    return {
+        bitrates,
+        maxAbr,
+        audioQualities: ['best', '320k', '256k', '192k', '128k', 'none']
+    };
+}
+
+function probeVideoFormats(videoId) {
+    if (formatMemoryCache.has(videoId)) {
+        return Promise.resolve(formatMemoryCache.get(videoId));
+    }
+    const cacheFile = path.join(CACHE_DIR, `${videoId}.format.json`);
+    if (fs.existsSync(cacheFile)) {
+        try {
+            const data = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+            formatMemoryCache.set(videoId, data);
+            return Promise.resolve(data);
+        } catch (e) {}
+    }
+
+    return new Promise((resolve) => {
+        const bin = ytDlpPath || 'yt-dlp';
+        const cmd = `"${bin}" --no-playlist --cookies "${COOKIES}" --print "%(resolution)s | %(formats.:.height)j | %(formats.:.abr)j" "https://www.youtube.com/watch?v=${videoId}"`;
+        exec(cmd, { windowsHide: true, timeout: 25000 }, (err, stdout) => {
+            if (err || !stdout) {
+                const fallback = categorizeHeights([1080, 720, 480, 360]);
+                fallback.audio = categorizeAudio([128]);
+                return resolve(fallback);
+            }
+            try {
+                const parts = stdout.trim().split(' | ');
+                const rawHeights = JSON.parse(parts[1] || '[]');
+                const rawAbr = JSON.parse(parts[2] || '[]');
+                const cat = categorizeHeights(rawHeights);
+                cat.audio = categorizeAudio(rawAbr);
+
+                formatMemoryCache.set(videoId, cat);
+                try {
+                    fs.writeFileSync(cacheFile, JSON.stringify(cat));
+                } catch (we) {}
+                resolve(cat);
+            } catch (pe) {
+                const fallback = categorizeHeights([1080, 720, 480, 360]);
+                fallback.audio = categorizeAudio([128]);
+                resolve(fallback);
+            }
+        });
+    });
+}
+
+function updatePlaylistMaxResolution(job) {
+    if (job.maxPlaylistHeight >= 4320) job.maxPlaylistResolution = '8k';
+    else if (job.maxPlaylistHeight >= 2000) job.maxPlaylistResolution = '4k';
+    else if (job.maxPlaylistHeight >= 1400) job.maxPlaylistResolution = '1440p';
+    else if (job.maxPlaylistHeight >= 1000) job.maxPlaylistResolution = '1080p';
+    else if (job.maxPlaylistHeight >= 700) job.maxPlaylistResolution = '720p';
+    else job.maxPlaylistResolution = '480p';
+}
+
+function startPlaylistEnrichment(playlistId, items) {
+    let job = playlistEnrichmentJobs[playlistId];
+    if (!job) {
+        job = {
+            playlistId,
+            total: items.length,
+            completed: 0,
+            isDone: false,
+            items: {},
+            maxPlaylistResolution: '1080p',
+            maxPlaylistHeight: 1080
+        };
+        playlistEnrichmentJobs[playlistId] = job;
+    }
+
+    const pendingItems = [];
+    for (const item of items) {
+        if (job.items[item.id]) continue;
+
+        if (formatMemoryCache.has(item.id)) {
+            const cached = formatMemoryCache.get(item.id);
+            job.items[item.id] = cached;
+            if (cached.maxHeight > job.maxPlaylistHeight) {
+                job.maxPlaylistHeight = cached.maxHeight;
+            }
+        } else {
+            const cacheFile = path.join(CACHE_DIR, `${item.id}.format.json`);
+            if (fs.existsSync(cacheFile)) {
+                try {
+                    const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+                    formatMemoryCache.set(item.id, cached);
+                    job.items[item.id] = cached;
+                    if (cached.maxHeight > job.maxPlaylistHeight) {
+                        job.maxPlaylistHeight = cached.maxHeight;
+                    }
+                    continue;
+                } catch (e) {}
+            }
+            pendingItems.push(item);
+        }
+    }
+
+    job.completed = Object.keys(job.items).length;
+    updatePlaylistMaxResolution(job);
+
+    if (pendingItems.length === 0) {
+        job.isDone = true;
+        return job;
+    }
+
+    // Launch background worker pool (concurrency: 8)
+    (async () => {
+        logger(null, `Starting format analysis for playlist "${playlistId}" (${pendingItems.length} videos to probe)`, "ANALYSIS");
+        const executing = [];
+        for (const item of pendingItems) {
+            const p = probeVideoFormats(item.id).then(formatData => {
+                job.items[item.id] = formatData;
+                job.completed = Object.keys(job.items).length;
+                if (formatData.maxHeight > job.maxPlaylistHeight) {
+                    job.maxPlaylistHeight = formatData.maxHeight;
+                    updatePlaylistMaxResolution(job);
+                }
+                executing.splice(executing.indexOf(p), 1);
+            }).catch(() => {
+                job.completed = Object.keys(job.items).length;
+                executing.splice(executing.indexOf(p), 1);
+            });
+            executing.push(p);
+            if (executing.length >= 8) {
+                await Promise.race(executing);
+            }
+        }
+        await Promise.all(executing);
+        job.isDone = true;
+        updatePlaylistMaxResolution(job);
+        logger(null, `Playlist "${playlistId}" format analysis completed: ${job.completed}/${job.total} videos probed. Highest resolution: ${job.maxPlaylistResolution.toUpperCase()}`, "SUCCESS");
+    })();
+
+    return job;
+}
+
+// --- API: PLAYLIST FORMATS STREAM / STATUS ---
+app.get('/api/playlist-formats/:playlistId', (req, res) => {
+    const job = playlistEnrichmentJobs[req.params.playlistId];
+    if (!job) {
+        return res.json({ isDone: true, completed: 0, total: 0, items: {}, maxPlaylistResolution: '1080p', maxPlaylistHeight: 1080 });
+    }
+    res.json({
+        playlistId: job.playlistId,
+        total: job.total,
+        completed: job.completed,
+        isDone: job.isDone,
+        items: job.items,
+        maxPlaylistResolution: job.maxPlaylistResolution || '1080p',
+        maxPlaylistHeight: job.maxPlaylistHeight || 1080
+    });
+});
+
 // --- API: ANALYZE ---
 app.post('/api/analyze', async (req, res) => {
     const { url } = req.body;
@@ -335,20 +534,34 @@ app.post('/api/analyze', async (req, res) => {
                 };
             });
 
+            const playlistId = info.id || Buffer.from(cleanedUrl).toString('base64url');
+            const enrichment = startPlaylistEnrichment(playlistId, items);
+
+            // If any items are already analyzed, attach them directly
+            items.forEach(it => {
+                if (enrichment.items[it.id]) {
+                    it.formatData = enrichment.items[it.id];
+                    it.qualityHint = enrichment.items[it.id].qualityBadge;
+                }
+            });
+
             const playlistThumb = info.thumbnails?.[0]?.url || items[0]?.thumbnail || '';
 
             const responseData = {
                 isPlaylist: true,
-                id: info.id,
+                id: playlistId,
                 title: info.title || 'YouTube Playlist',
                 uploader: info.uploader || info.channel || 'Various Artists',
                 itemCount: items.length,
                 thumbnail: playlistThumb,
-                items
+                items,
+                maxPlaylistResolution: enrichment.maxPlaylistResolution || '1080p',
+                isFormatsComplete: enrichment.isDone,
+                initialFormatData: enrichment.items
             };
 
             setCachedAnalysis(cleanedUrl, responseData);
-            logger(null, `Playlist retrieved: "${info.title}" (${items.length} videos)`);
+            logger(null, `Playlist retrieved: "${info.title}" (${items.length} videos, ${enrichment.completed}/${items.length} formats ready)`);
             return res.json(responseData);
         }
 
