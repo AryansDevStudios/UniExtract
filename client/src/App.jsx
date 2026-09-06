@@ -75,7 +75,13 @@ function App() {
     if (vList.length > 0) setSelectedVideo({ id: vList[0].id, size: vList[0].size, label: vList[0].label });
     else setSelectedVideo({ id: '', size: 0, label: 'NoVideo' });
     
-    if (aList.length > 0) setSelectedAudio({ id: aList[0].id, size: aList[0].size, label: aList[0].label });
+    if (aList.length > 0) setSelectedAudio({ 
+      id: aList[0].id, 
+      size: aList[0].size, 
+      label: aList[0].label,
+      abr: aList[0].abr,
+      acodec: aList[0].acodec || aList[0].codec_info
+    });
     else setSelectedAudio({ id: '', size: 0, label: 'PreMerged' });
   };
 
@@ -170,6 +176,8 @@ function App() {
           aId: selectedAudio.id,
           vLabel: selectedVideo.label || 'NoVideo',
           aLabel: selectedAudio.label || 'NoAudio',
+          audioAbr: selectedAudio.abr,
+          audioCodec: selectedAudio.acodec,
           title: metadata.title
         })
       });

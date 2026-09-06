@@ -234,21 +234,27 @@ export default function CompactResultPanel({
               }}
             />
 
-            {/* AUDIO DROPDOWN */}
-            <CustomSelect 
-              label="Audio Track"
-              icon={Music}
-              options={aFormats}
-              value={selectedAudio.id}
-              placeholder={aFormats.length > 0 ? "None (Mute Video)" : "Included in Video"}
-              onChange={(id) => {
-                if (!id) setSelectedAudio({ id: '', size: 0, label: 'NoAudio' });
-                else {
-                  const f = aFormats.find(x => x.id === id);
-                  if (f) setSelectedAudio({ id: f.id, size: f.size, label: f.label });
-                }
-              }}
-            />
+              {/* AUDIO DROPDOWN */}
+              <CustomSelect 
+                label="Audio Track"
+                icon={Music}
+                options={aFormats}
+                value={selectedAudio.id}
+                placeholder={aFormats.length > 0 ? "None (Mute Video)" : "Included in Video"}
+                onChange={(id) => {
+                  if (!id) setSelectedAudio({ id: '', size: 0, label: 'NoAudio' });
+                  else {
+                    const f = aFormats.find(x => x.id === id);
+                    if (f) setSelectedAudio({ 
+                      id: f.id, 
+                      size: f.size, 
+                      label: f.label,
+                      abr: f.abr,
+                      acodec: f.acodec || f.codec_info
+                    });
+                  }
+                }}
+              />
           </div>
 
           {/* BOTTOM ACTION BAR */}

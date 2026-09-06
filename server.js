@@ -774,7 +774,7 @@ app.get('/api/thumbnail', (req, res) => {
 
 // --- API: DOWNLOAD & PROCESS ---
 app.post('/api/download', async (req, res) => {
-    const { url, vId, aId, vLabel, aLabel, title, qualityPreset, videoQuality, audioQuality } = req.body;
+    const { url, vId, aId, vLabel, aLabel, title, qualityPreset, videoQuality, audioQuality, audioAbr, audioCodec } = req.body;
     const cleanedUrl = cleanMediaUrl(url);
     const jobId = uuidv4();
     
@@ -863,6 +863,8 @@ app.post('/api/download', async (req, res) => {
         isMuted,
         targetVideo: targetVideo || (isAudioOnly ? 'none' : 'best'),
         targetAudio: targetAudio || (isMuted ? 'none' : 'best'),
+        audioAbr: audioAbr || null,
+        audioCodec: audioCodec || null,
         resolvedFormat: null,
         createdAt: Date.now(),
         lastPoll: Date.now(),
@@ -971,9 +973,21 @@ app.post('/api/download', async (req, res) => {
                         let embedArgs = [];
 
                         if (isAudioOnly) {
-                            const lameBitrate = (targetAudio && targetAudio !== 'best')
-                                ? ['-b:a', targetAudio]
-                                : ['-q:a', '0'];
+                            let lameBitrate;
+                            if (targetAudio && targetAudio !== 'best') {
+                                lameBitrate = ['-b:a', targetAudio];
+                            } else if (jobs[jobId]?.audioAbr) {
+                                const parsed = parseInt(jobs[jobId].audioAbr);
+                                const clampedBitrate = parsed >= 280 ? '320k' 
+                                    : parsed >= 200 ? '256k' 
+                                    : parsed >= 140 ? '160k' 
+                                    : parsed >= 110 ? '128k' 
+                                    : parsed >= 80 ? '96k' 
+                                    : '64k';
+                                lameBitrate = ['-b:a', clampedBitrate];
+                            } else {
+                                lameBitrate = ['-b:a', '160k'];
+                            }
 
                             if (thumbFile) {
                                 embedArgs = [
@@ -1038,13 +1052,34 @@ app.post('/api/download', async (req, res) => {
                                 ];
                             }
                         } else {
-                            const aacBitrate = (targetAudio && targetAudio !== 'best') ? targetAudio : '320k';
+                            let audioArgs = [];
+                            const jAudioCodec = (jobs[jobId]?.audioCodec || '').toLowerCase();
+                            const isNativeAac = jAudioCodec.includes('mp4a') || jAudioCodec.includes('aac');
+
+                            if (isNativeAac) {
+                                // Lossless stream copy if source stream is already AAC! Zero inflation, exact size match!
+                                audioArgs = ['-c:a', 'copy'];
+                            } else if (targetAudio && targetAudio !== 'best') {
+                                audioArgs = ['-c:a', 'aac', '-b:a', targetAudio];
+                            } else if (jobs[jobId]?.audioAbr) {
+                                const parsed = parseInt(jobs[jobId].audioAbr);
+                                const clampedAac = parsed >= 280 ? '320k'
+                                    : parsed >= 200 ? '256k'
+                                    : parsed >= 140 ? '160k'
+                                    : parsed >= 110 ? '128k'
+                                    : parsed >= 80 ? '96k'
+                                    : '64k';
+                                audioArgs = ['-c:a', 'aac', '-b:a', clampedAac];
+                            } else {
+                                audioArgs = ['-c:a', 'aac', '-b:a', '160k'];
+                            }
+
                             if (thumbFile) {
                                 embedArgs = [
                                     '-y', '-i', finalFile, '-i', thumbFile,
                                     '-map', '0:v:0', '-map', '0:a:0?', '-map', '1:0',
                                     '-c:v:0', 'copy',
-                                    '-c:a', 'aac', '-b:a', aacBitrate,
+                                    ...audioArgs,
                                     '-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic',
                                     '-metadata', `title=${mTitle}`,
                                     '-metadata', `artist=${mArtist}`,
@@ -1059,7 +1094,7 @@ app.post('/api/download', async (req, res) => {
                                     '-y', '-i', finalFile,
                                     '-map', '0:v:0', '-map', '0:a:0?',
                                     '-c:v:0', 'copy',
-                                    '-c:a', 'aac', '-b:a', aacBitrate,
+                                    ...audioArgs,
                                     '-metadata', `title=${mTitle}`,
                                     '-metadata', `artist=${mArtist}`,
                                     '-metadata', `album_artist=${mArtist}`,
