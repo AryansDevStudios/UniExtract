@@ -30,6 +30,8 @@ const ALL_VIDEO_PRESETS = [
   { id: '720p', label: '720p High Def (HD)', badge: 'HD', desc: 'Crisp HD quality', minHeight: 700 },
   { id: '480p', label: '480p Standard (SD)', badge: 'SD', desc: 'Compact data saver', minHeight: 460 },
   { id: '360p', label: '360p Low Bandwidth', badge: '360p', desc: 'Minimal storage size', minHeight: 300 },
+  { id: '240p', label: '240p Data Saver', badge: '240p', desc: 'Very light mobile video', minHeight: 200 },
+  { id: '144p', label: '144p Ultra Low', badge: '144p', desc: 'Lowest bandwidth consumption', minHeight: 100 },
   { id: 'none', label: 'No Video (Audio Only)', badge: 'NO VIDEO', desc: 'Extract and download audio track only', minHeight: 0 }
 ];
 
@@ -41,6 +43,8 @@ const RESOLUTION_HEIGHT_MAP = {
   '720p': 720,
   '480p': 480,
   '360p': 360,
+  '240p': 240,
+  '144p': 144,
   'none': 0,
   'best': 9999
 };
@@ -62,6 +66,70 @@ const AUDIO_BITRATE_MAP = {
   'none': 0,
   'best': 9999
 };
+
+const VIDEO_BITRATES = {
+  '8k': 22000000,    // ~22 Mbps
+  '4k': 12000000,    // ~12 Mbps
+  '1440p': 5500000,  // ~5.5 Mbps
+  '1080p': 2500000,  // ~2.5 Mbps
+  '720p': 1200000,   // ~1.2 Mbps
+  '480p': 600000,    // ~600 kbps
+  '360p': 350000,    // ~350 kbps
+  '240p': 200000,    // ~200 kbps
+  '144p': 100000,    // ~100 kbps
+  'none': 0
+};
+
+const AUDIO_BITRATES = {
+  '320k': 320000,    // 320 kbps = 40 KB/s
+  '256k': 256000,    // 256 kbps = 32 KB/s
+  '192k': 192000,    // 192 kbps = 24 KB/s
+  '128k': 128000,    // 128 kbps = 16 KB/s
+  'best': 160000,    // ~160 kbps Opus / 128 kbps AAC
+  'none': 0
+};
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1000) {
+    return `${(mb / 1024).toFixed(2)} GB`;
+  }
+  if (mb < 1) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${mb.toFixed(1)} MB`;
+}
+
+function estimateItemSizes(duration, effectiveVideo, effectiveAudio, caps) {
+  const dur = duration && duration > 0 ? duration : 210;
+  
+  let vKey = effectiveVideo;
+  if (vKey === 'best') {
+    vKey = caps?.maxRes || '1080p';
+  }
+  
+  let aKey = effectiveAudio;
+  if (aKey === 'best') {
+    aKey = caps?.audio?.maxAudioRes || '320k';
+  }
+  
+  const vBitrate = VIDEO_BITRATES[vKey] !== undefined ? VIDEO_BITRATES[vKey] : 2500000;
+  const aBitrate = AUDIO_BITRATES[aKey] !== undefined ? AUDIO_BITRATES[aKey] : 320000;
+  
+  const videoBytes = Math.round((vBitrate * dur) / 8);
+  const audioBytes = Math.round((aBitrate * dur) / 8);
+  const totalBytes = videoBytes + audioBytes;
+  
+  return {
+    videoBytes,
+    audioBytes,
+    totalBytes,
+    videoFormatted: formatBytes(videoBytes),
+    audioFormatted: formatBytes(audioBytes),
+    totalFormatted: formatBytes(totalBytes)
+  };
+}
 
 export default function PlaylistView({ playlist, onToast }) {
   const [selectedIds, setSelectedIds] = useState(() => new Set(playlist.items.map(item => item.id)));
@@ -331,6 +399,32 @@ export default function PlaylistView({ playlist, onToast }) {
 
     return { video, audio };
   };
+
+  // Calculate collective estimated download sizes across all selected items
+  const collectiveTotals = useMemo(() => {
+    let totalVideoBytes = 0;
+    let totalAudioBytes = 0;
+
+    playlist.items.forEach(item => {
+      if (!selectedIds.has(item.id)) return;
+      const { video, audio } = getEffectiveConfig(item.id);
+      const caps = formatCapabilities[item.id];
+      const sizes = estimateItemSizes(item.duration, video, audio, caps);
+      totalVideoBytes += sizes.videoBytes;
+      totalAudioBytes += sizes.audioBytes;
+    });
+
+    const totalPlaylistBytes = totalVideoBytes + totalAudioBytes;
+
+    return {
+      videoBytes: totalVideoBytes,
+      audioBytes: totalAudioBytes,
+      totalBytes: totalPlaylistBytes,
+      videoFormatted: formatBytes(totalVideoBytes),
+      audioFormatted: formatBytes(totalAudioBytes),
+      totalFormatted: formatBytes(totalPlaylistBytes)
+    };
+  }, [playlist.items, selectedIds, overrides, masterVideo, masterAudio, formatCapabilities]);
 
   // Trigger browser file download
   const triggerDownload = (jobId, title) => {
@@ -625,9 +719,14 @@ export default function PlaylistView({ playlist, onToast }) {
                 </option>
               ))}
             </select>
-            <span className="text-[9px] text-slate-400 block truncate">
-              {availableMasterVideoPresets.find(p => p.id === masterVideo)?.desc || 'Max resolution across playlist'}
-            </span>
+            <div className="flex items-center justify-between text-[9px] text-slate-400 gap-1 pt-0.5">
+              <span className="truncate">{availableMasterVideoPresets.find(p => p.id === masterVideo)?.desc || 'Max resolution across playlist'}</span>
+              {collectiveTotals.videoBytes > 0 && (
+                <span className="text-indigo-600 dark:text-indigo-400 font-mono font-bold whitespace-nowrap">
+                  ~{collectiveTotals.videoFormatted}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Master Audio Selector */}
@@ -650,9 +749,14 @@ export default function PlaylistView({ playlist, onToast }) {
                 </option>
               ))}
             </select>
-            <span className="text-[9px] text-slate-400 block truncate">
-              {availableMasterAudioPresets.find(p => p.id === masterAudio)?.desc || 'Max audio quality across playlist'}
-            </span>
+            <div className="flex items-center justify-between text-[9px] text-slate-400 gap-1 pt-0.5">
+              <span className="truncate">{availableMasterAudioPresets.find(p => p.id === masterAudio)?.desc || 'Max audio quality across playlist'}</span>
+              {collectiveTotals.audioBytes > 0 && (
+                <span className="text-purple-600 dark:text-purple-400 font-mono font-bold whitespace-nowrap">
+                  ~{collectiveTotals.audioFormatted}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -741,16 +845,32 @@ export default function PlaylistView({ playlist, onToast }) {
           )}
         </div>
 
-        {/* Action Button */}
-        <div>
+        {/* Action Button & Total Playlist Download Size */}
+        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+          {selectedCount > 0 && !isBothNone && !batchState.isDownloading && (
+            <div className="flex flex-col items-end pr-1 text-right">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Total Est. Download
+              </span>
+              <span className="text-xs md:text-sm font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                ~{collectiveTotals.totalFormatted}
+              </span>
+            </div>
+          )}
+
           {!batchState.isDownloading ? (
             <button
               type="button"
               disabled={selectedCount === 0 || isBothNone}
               onClick={startBatchDownload}
-              className="w-full md:w-auto px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl text-sm transition-all hover:shadow-lg hover:shadow-indigo-500/25 active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
+              className="w-full md:w-auto px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl text-sm transition-all hover:shadow-lg hover:shadow-indigo-500/25 active:scale-95 flex items-center justify-center gap-2.5 disabled:opacity-50 disabled:pointer-events-none"
             >
               <DownloadCloud size={17} /> Download Selected ({selectedCount})
+              {collectiveTotals.totalBytes > 0 && (
+                <span className="px-2 py-0.5 rounded-lg bg-white/20 text-xs font-mono font-bold tracking-tight">
+                  ~{collectiveTotals.totalFormatted}
+                </span>
+              )}
             </button>
           ) : (
             <div className="flex items-center gap-3 bg-slate-900 text-white px-4 py-2 rounded-xl shadow-lg border border-slate-700">
@@ -818,6 +938,8 @@ export default function PlaylistView({ playlist, onToast }) {
               computedAudio = masterAbr > itemAbr ? itemMaxAudio : masterAudio;
             }
           }
+
+          const itemSizes = estimateItemSizes(item.duration, computedVideo, computedAudio, caps);
 
           const videoPreset = ALL_VIDEO_PRESETS.find(p => p.id === computedVideo);
           const defaultVideoLabel = videoPreset ? videoPreset.label : computedVideo.toUpperCase();
@@ -921,6 +1043,21 @@ export default function PlaylistView({ playlist, onToast }) {
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                       {formatTag}
                     </span>
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold">
+                      {computedVideo !== 'none' && (
+                        <span className="px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                          🎬 ~{itemSizes.videoFormatted}
+                        </span>
+                      )}
+                      {computedAudio !== 'none' && videoHasAudio && (
+                        <span className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                          🎵 ~{itemSizes.audioFormatted}
+                        </span>
+                      )}
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800">
+                        Total: ~{itemSizes.totalFormatted}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -966,10 +1103,13 @@ export default function PlaylistView({ playlist, onToast }) {
                       const allowed = getItemVideoPresets(item.id);
                       return (
                         <>
-                          <option value="">{defaultVideoLabel}</option>
-                          {allowed.map(p => (
-                            <option key={p.id} value={p.id}>{p.label}</option>
-                          ))}
+                          <option value="">{defaultVideoLabel} • ~{itemSizes.videoFormatted}</option>
+                          {allowed.map(p => {
+                            const pSize = estimateItemSizes(item.duration, p.id, 'none', caps).videoFormatted;
+                            return (
+                              <option key={p.id} value={p.id}>{p.label} • ~{pSize}</option>
+                            );
+                          })}
                           <option value="none">No Video (Audio Only)</option>
                         </>
                       );
@@ -999,10 +1139,13 @@ export default function PlaylistView({ playlist, onToast }) {
                         const allowedAudio = getItemAudioPresets(item.id);
                         return (
                           <>
-                            <option value="">{defaultAudioLabel}</option>
-                            {allowedAudio.map(p => (
-                              <option key={p.id} value={p.id}>{p.label}</option>
-                            ))}
+                            <option value="">{defaultAudioLabel}{videoHasAudio ? ` • ~${itemSizes.audioFormatted}` : ''}</option>
+                            {allowedAudio.map(p => {
+                              const aSize = estimateItemSizes(item.duration, 'none', p.id, caps).audioFormatted;
+                              return (
+                                <option key={p.id} value={p.id}>{p.label} • ~{aSize}</option>
+                              );
+                            })}
                             <option value="none">No Audio (Muted Video)</option>
                           </>
                         );

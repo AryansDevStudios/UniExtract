@@ -155,8 +155,19 @@ export default function CompactResultPanel({
     }));
   }, [metadata, advancedMode]);
 
-  const totalSize = (selectedVideo.size || 0) + (selectedAudio.size || 0);
-  const sizeText = totalSize > 0 ? formatBytes(totalSize) : 'Unknown Size';
+  // Video and Audio size calculation with duration fallback approximation
+  const dur = metadata.duration && metadata.duration > 0 ? metadata.duration : 210;
+  
+  const vSize = selectedVideo.id 
+    ? (selectedVideo.size || Math.round((((parseInt(selectedVideo.label) || 1080) >= 1080 ? 2500000 : 1000000) * dur) / 8))
+    : 0;
+
+  const aSize = selectedAudio.id
+    ? (selectedAudio.size || Math.round((160000 * dur) / 8))
+    : 0;
+
+  const totalSize = vSize + aSize;
+  const sizeText = totalSize > 0 ? formatBytes(totalSize) : '0 MB';
 
   return (
     <motion.div 
@@ -241,10 +252,26 @@ export default function CompactResultPanel({
           </div>
 
           {/* BOTTOM ACTION BAR */}
-          <div className="mt-6 md:mt-8 flex items-center justify-between border-t border-slate-200/60 dark:border-slate-700/60 pt-5">
-            <div className="flex flex-col">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Est. Size</span>
-              <span className="text-base md:text-lg font-black text-indigo-600 dark:text-indigo-400 leading-none">{sizeText}</span>
+          <div className="mt-6 md:mt-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-slate-200/60 dark:border-slate-700/60 pt-5">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Est. Data Consumption
+              </span>
+              <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
+                {selectedVideo.id && (
+                  <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800">
+                    🎬 Video: ~{formatBytes(vSize)}
+                  </span>
+                )}
+                {selectedAudio.id && (
+                  <span className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800">
+                    🎵 Audio: ~{formatBytes(aSize)}
+                  </span>
+                )}
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-black border border-emerald-200 dark:border-emerald-800">
+                  Total: ~{sizeText}
+                </span>
+              </div>
             </div>
 
             {!isDownloading ? (

@@ -274,6 +274,8 @@ function categorizeHeights(rawHeights) {
     if (heights.some(h => h >= 700)) videoResolutions.push('720p');
     if (heights.some(h => h >= 460)) videoResolutions.push('480p');
     if (heights.some(h => h >= 300)) videoResolutions.push('360p');
+    if (heights.some(h => h >= 200)) videoResolutions.push('240p');
+    if (heights.some(h => h > 0 && h < 200)) videoResolutions.push('144p');
 
     // Always include audio-only
     videoResolutions.push('none');
@@ -288,6 +290,9 @@ function categorizeHeights(rawHeights) {
     else if (maxHeight >= 1000) { maxRes = '1080p'; qualityBadge = '1080p FHD'; }
     else if (maxHeight >= 700) { maxRes = '720p'; qualityBadge = '720p HD'; }
     else if (maxHeight >= 460) { maxRes = '480p'; qualityBadge = '480p SD'; }
+    else if (maxHeight >= 300) { maxRes = '360p'; qualityBadge = '360p'; }
+    else if (maxHeight >= 200) { maxRes = '240p'; qualityBadge = '240p'; }
+    else { maxRes = '144p'; qualityBadge = '144p'; }
 
     return {
         heights,
@@ -387,7 +392,10 @@ function updatePlaylistMaxResolution(job) {
     else if (job.maxPlaylistHeight >= 1400) job.maxPlaylistResolution = '1440p';
     else if (job.maxPlaylistHeight >= 1000) job.maxPlaylistResolution = '1080p';
     else if (job.maxPlaylistHeight >= 700) job.maxPlaylistResolution = '720p';
-    else job.maxPlaylistResolution = '480p';
+    else if (job.maxPlaylistHeight >= 460) job.maxPlaylistResolution = '480p';
+    else if (job.maxPlaylistHeight >= 300) job.maxPlaylistResolution = '360p';
+    else if (job.maxPlaylistHeight >= 200) job.maxPlaylistResolution = '240p';
+    else job.maxPlaylistResolution = '144p';
 
     let maxAbr = 0;
     let anyAudio = false;
@@ -770,7 +778,9 @@ app.post('/api/download', async (req, res) => {
         '1080p': 1080,
         '720p': 720,
         '480p': 480,
-        '360p': 360
+        '360p': 360,
+        '240p': 240,
+        '144p': 144
     };
 
     // Determine target video & audio quality
