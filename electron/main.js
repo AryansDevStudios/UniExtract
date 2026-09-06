@@ -64,7 +64,7 @@ function getCookiesPath() {
     } catch (e) {}
   }
 
-  if (!fs.existsSync(userCookie) && fs.existsSync(rootCookie)) {
+  if (!app.isPackaged && !fs.existsSync(userCookie) && fs.existsSync(rootCookie)) {
     try {
       fs.copyFileSync(rootCookie, userCookie);
     } catch (e) {}
