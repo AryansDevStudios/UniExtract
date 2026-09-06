@@ -1402,6 +1402,7 @@ app.post('/api/download', async (req, res) => {
                         
                         const embeddedFile = baseName + '_final.' + targetExt;
                         let embedArgs = [];
+                        let subtitleFile = null;
 
                         if (isAudioOnly) {
                             if (targetExt === 'flac' || targetExt === 'wav') {
@@ -1490,7 +1491,7 @@ app.post('/api/download', async (req, res) => {
                             }
                         } else {
                             // Subtitle extraction & mapping for both muted and standard video
-                            let subtitleFile = null;
+                            subtitleFile = null;
                             if (jobs[jobId].embedSubs && jobs[jobId].subLang) {
                                 const subCandidates = fs.readdirSync(TEMP_DIR)
                                     .filter((name) => name.startsWith(jobId.substring(0, 8)) && /\.(vtt|srt|ass)$/i.test(name))
@@ -1625,11 +1626,12 @@ app.post('/api/download', async (req, res) => {
                         if (jobs[jobId] && jobs[jobId].status === 'cancelled') return; // Exit if aborted
 
                         if (task2Result.status === 0 && fs.existsSync(embeddedFile) && fs.statSync(embeddedFile).size > 1000) {
-                            fs.unlinkSync(finalFile);
-                            if (thumbFile && fs.existsSync(thumbFile)) fs.unlinkSync(thumbFile);
-                            if (subtitleFile && fs.existsSync(subtitleFile)) fs.unlinkSync(subtitleFile);
+                            const originalFile = finalFile;
                             finalFile = embeddedFile;
                             jobs[jobId].extension = targetExt;
+                            try { if (fs.existsSync(originalFile)) fs.unlinkSync(originalFile); } catch (e) {}
+                            if (thumbFile && fs.existsSync(thumbFile)) try { fs.unlinkSync(thumbFile); } catch (e) {}
+                            if (subtitleFile && fs.existsSync(subtitleFile)) try { fs.unlinkSync(subtitleFile); } catch (e) {}
                             logger(jobId, `Task 2 Packaging Successful: Output is authentic ${targetExt.toUpperCase()}`, "META");
 
                             try {
@@ -1663,6 +1665,9 @@ app.post('/api/download', async (req, res) => {
                         }
                     } catch (err) {
                         logger(jobId, `Metadata injection script crashed: ${err.message}`, "WARN");
+                        if (fs.existsSync(embeddedFile) && fs.statSync(embeddedFile).size > 1000) {
+                            finalFile = embeddedFile;
+                        }
                         jobs[jobId].extension = finalFile.split('.').pop();
                     }
                 }
