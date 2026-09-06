@@ -298,13 +298,44 @@ function categorizeHeights(rawHeights) {
     };
 }
 
-function categorizeAudio(rawBitrates) {
+function categorizeAudio(rawBitrates, rawCodecs = []) {
     const bitrates = [...new Set(rawBitrates.filter(b => typeof b === 'number' && b > 0))].sort((a,b) => b-a);
-    const maxAbr = bitrates.length > 0 ? Math.round(bitrates[0]) : 128;
+    const validCodecs = [...new Set(rawCodecs.filter(c => typeof c === 'string' && c !== 'none'))];
+    const hasAudio = bitrates.length > 0 || validCodecs.length > 0;
+    const maxAbr = bitrates.length > 0 ? Math.round(bitrates[0]) : (hasAudio ? 128 : 0);
+
+    const audioQualities = [];
+    let audioBadge = 'No Audio';
+    let maxAudioRes = 'none';
+
+    if (hasAudio) {
+        audioQualities.push('best', '320k', '256k', '192k', '128k');
+        if (maxAbr >= 250) {
+            audioBadge = '320k HQ';
+            maxAudioRes = '320k';
+        } else if (maxAbr >= 160) {
+            audioBadge = '256k';
+            maxAudioRes = '256k';
+        } else if (maxAbr >= 120) {
+            audioBadge = '160k';
+            maxAudioRes = '320k';
+        } else if (maxAbr >= 64) {
+            audioBadge = `${maxAbr}k`;
+            maxAudioRes = '192k';
+        } else {
+            audioBadge = `${maxAbr}k`;
+            maxAudioRes = '128k';
+        }
+    }
+    audioQualities.push('none');
+
     return {
+        hasAudio,
         bitrates,
         maxAbr,
-        audioQualities: ['best', '320k', '256k', '192k', '128k', 'none']
+        audioBadge,
+        maxAudioRes,
+        audioQualities
     };
 }
 
@@ -323,19 +354,20 @@ function probeVideoFormats(videoId) {
 
     return new Promise((resolve) => {
         const bin = ytDlpPath || 'yt-dlp';
-        const cmd = `"${bin}" --no-playlist --cookies "${COOKIES}" --print "%(resolution)s | %(formats.:.height)j | %(formats.:.abr)j" "https://www.youtube.com/watch?v=${videoId}"`;
+        const cmd = `"${bin}" --no-playlist --cookies "${COOKIES}" --print "%(resolution)s | %(formats.:.height)j | %(formats.:.abr)j | %(formats.:.acodec)j" "https://www.youtube.com/watch?v=${videoId}"`;
         exec(cmd, { windowsHide: true, timeout: 25000 }, (err, stdout) => {
             if (err || !stdout) {
                 const fallback = categorizeHeights([1080, 720, 480, 360]);
-                fallback.audio = categorizeAudio([128]);
+                fallback.audio = categorizeAudio([128], ['opus']);
                 return resolve(fallback);
             }
             try {
                 const parts = stdout.trim().split(' | ');
                 const rawHeights = JSON.parse(parts[1] || '[]');
                 const rawAbr = JSON.parse(parts[2] || '[]');
+                const rawCodecs = JSON.parse(parts[3] || '[]');
                 const cat = categorizeHeights(rawHeights);
-                cat.audio = categorizeAudio(rawAbr);
+                cat.audio = categorizeAudio(rawAbr, rawCodecs);
 
                 formatMemoryCache.set(videoId, cat);
                 try {
@@ -344,7 +376,7 @@ function probeVideoFormats(videoId) {
                 resolve(cat);
             } catch (pe) {
                 const fallback = categorizeHeights([1080, 720, 480, 360]);
-                fallback.audio = categorizeAudio([128]);
+                fallback.audio = categorizeAudio([128], ['opus']);
                 resolve(fallback);
             }
         });
@@ -358,6 +390,28 @@ function updatePlaylistMaxResolution(job) {
     else if (job.maxPlaylistHeight >= 1000) job.maxPlaylistResolution = '1080p';
     else if (job.maxPlaylistHeight >= 700) job.maxPlaylistResolution = '720p';
     else job.maxPlaylistResolution = '480p';
+
+    let maxAbr = 0;
+    let anyAudio = false;
+    const probedKeys = Object.keys(job.items);
+    for (const id of probedKeys) {
+        const a = job.items[id]?.audio;
+        if (a && a.hasAudio) {
+            anyAudio = true;
+            if (a.maxAbr > maxAbr) maxAbr = a.maxAbr;
+        }
+    }
+    if (probedKeys.length === 0) {
+        job.maxPlaylistAudio = '320k';
+    } else if (!anyAudio) {
+        job.maxPlaylistAudio = 'none';
+    } else if (maxAbr >= 250) {
+        job.maxPlaylistAudio = '320k';
+    } else if (maxAbr >= 160) {
+        job.maxPlaylistAudio = '256k';
+    } else {
+        job.maxPlaylistAudio = '320k';
+    }
 }
 
 function startPlaylistEnrichment(playlistId, items) {
@@ -370,7 +424,8 @@ function startPlaylistEnrichment(playlistId, items) {
             isDone: false,
             items: {},
             maxPlaylistResolution: '1080p',
-            maxPlaylistHeight: 1080
+            maxPlaylistHeight: 1080,
+            maxPlaylistAudio: '320k'
         };
         playlistEnrichmentJobs[playlistId] = job;
     }
@@ -445,7 +500,7 @@ function startPlaylistEnrichment(playlistId, items) {
 app.get('/api/playlist-formats/:playlistId', (req, res) => {
     const job = playlistEnrichmentJobs[req.params.playlistId];
     if (!job) {
-        return res.json({ isDone: true, completed: 0, total: 0, items: {}, maxPlaylistResolution: '1080p', maxPlaylistHeight: 1080 });
+        return res.json({ isDone: true, completed: 0, total: 0, items: {}, maxPlaylistResolution: '1080p', maxPlaylistHeight: 1080, maxPlaylistAudio: '320k' });
     }
     res.json({
         playlistId: job.playlistId,
@@ -454,7 +509,8 @@ app.get('/api/playlist-formats/:playlistId', (req, res) => {
         isDone: job.isDone,
         items: job.items,
         maxPlaylistResolution: job.maxPlaylistResolution || '1080p',
-        maxPlaylistHeight: job.maxPlaylistHeight || 1080
+        maxPlaylistHeight: job.maxPlaylistHeight || 1080,
+        maxPlaylistAudio: job.maxPlaylistAudio || '320k'
     });
 });
 
@@ -556,6 +612,7 @@ app.post('/api/analyze', async (req, res) => {
                 thumbnail: playlistThumb,
                 items,
                 maxPlaylistResolution: enrichment.maxPlaylistResolution || '1080p',
+                maxPlaylistAudio: enrichment.maxPlaylistAudio || '320k',
                 isFormatsComplete: enrichment.isDone,
                 initialFormatData: enrichment.items
             };

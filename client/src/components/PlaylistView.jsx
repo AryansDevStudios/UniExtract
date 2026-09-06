@@ -46,13 +46,22 @@ const RESOLUTION_HEIGHT_MAP = {
 };
 
 const AUDIO_PRESETS = [
-  { id: 'best', label: 'Best Available Audio', desc: 'Original high-bitrate source audio' },
-  { id: '320k', label: '320 kbps (Studio MP3 / High AAC)', desc: 'Audiophile grade maximum fidelity' },
-  { id: '256k', label: '256 kbps (High Quality)', desc: 'Clean sound with low file size' },
-  { id: '192k', label: '192 kbps (Standard Quality)', desc: 'Standard high-definition audio' },
-  { id: '128k', label: '128 kbps (Compact MP3)', desc: 'Lightweight audio files' },
-  { id: 'none', label: 'No Audio (Muted Video)', desc: 'Video stream only without audio' }
+  { id: 'best', label: 'Best Available Audio', badge: 'BEST', desc: 'Original high-bitrate source audio' },
+  { id: '320k', label: '320 kbps (Studio MP3 / High AAC)', badge: '320K', desc: 'Audiophile grade maximum fidelity' },
+  { id: '256k', label: '256 kbps (High Quality)', badge: '256K', desc: 'Clean sound with low file size' },
+  { id: '192k', label: '192 kbps (Standard Quality)', badge: '192K', desc: 'Standard high-definition audio' },
+  { id: '128k', label: '128 kbps (Compact MP3)', badge: '128K', desc: 'Lightweight audio files' },
+  { id: 'none', label: 'No Audio (Muted Video)', badge: 'NO AUDIO', desc: 'Video stream only without audio' }
 ];
+
+const AUDIO_BITRATE_MAP = {
+  '320k': 320,
+  '256k': 256,
+  '192k': 192,
+  '128k': 128,
+  'none': 0,
+  'best': 9999
+};
 
 export default function PlaylistView({ playlist, onToast }) {
   const [selectedIds, setSelectedIds] = useState(() => new Set(playlist.items.map(item => item.id)));
@@ -60,6 +69,7 @@ export default function PlaylistView({ playlist, onToast }) {
   // Dynamic Format Capabilities & Enrichment Progress
   const [formatCapabilities, setFormatCapabilities] = useState(() => playlist.initialFormatData || {});
   const [maxPlaylistResolution, setMaxPlaylistResolution] = useState(() => playlist.maxPlaylistResolution || '1080p');
+  const [maxPlaylistAudio, setMaxPlaylistAudio] = useState(() => playlist.maxPlaylistAudio || '320k');
   const [enrichmentStatus, setEnrichmentStatus] = useState({
     isDone: !!playlist.isFormatsComplete,
     completed: Object.keys(playlist.initialFormatData || {}).length,
@@ -70,6 +80,7 @@ export default function PlaylistView({ playlist, onToast }) {
   const [masterVideo, setMasterVideo] = useState(() => playlist.maxPlaylistResolution || '1080p');
   const [masterAudio, setMasterAudio] = useState('best');
   const userSelectedMasterVideoRef = useRef(false);
+  const userSelectedMasterAudioRef = useRef(false);
   
   // Per-video overrides: { [videoId]: { video?: string, audio?: string } }
   const [overrides, setOverrides] = useState({});
@@ -92,6 +103,12 @@ export default function PlaylistView({ playlist, onToast }) {
           setMaxPlaylistResolution(data.maxPlaylistResolution);
           if (!userSelectedMasterVideoRef.current) {
             setMasterVideo(data.maxPlaylistResolution);
+          }
+        }
+        if (data.maxPlaylistAudio) {
+          setMaxPlaylistAudio(data.maxPlaylistAudio);
+          if (!userSelectedMasterAudioRef.current && data.maxPlaylistAudio === 'none') {
+            setMasterAudio('none');
           }
         }
         setEnrichmentStatus({
@@ -175,6 +192,43 @@ export default function PlaylistView({ playlist, onToast }) {
     });
   };
 
+  // Available Master Audio Presets filtered by maxPlaylistAudio
+  const availableMasterAudioPresets = useMemo(() => {
+    if (maxPlaylistAudio === 'none') {
+      return AUDIO_PRESETS.filter(p => p.id === 'none');
+    }
+    const maxAllowedAbr = AUDIO_BITRATE_MAP[maxPlaylistAudio] || 320;
+    return AUDIO_PRESETS.filter(p => {
+      if (p.id === 'best' || p.id === 'none') return true;
+      return (AUDIO_BITRATE_MAP[p.id] || 0) <= maxAllowedAbr;
+    }).map(p => {
+      if (p.id === 'best') {
+        const topBadge = maxPlaylistAudio && maxPlaylistAudio !== 'best' && maxPlaylistAudio !== 'none'
+          ? ` (${maxPlaylistAudio.toUpperCase()})`
+          : '';
+        return { ...p, label: `Best Available Audio${topBadge}` };
+      }
+      return p;
+    });
+  }, [maxPlaylistAudio]);
+
+  // Helper to get allowed audio presets for an individual item
+  const getItemAudioPresets = (itemId) => {
+    const caps = formatCapabilities[itemId];
+    const audioCaps = caps?.audio;
+    if (audioCaps && audioCaps.hasAudio === false) {
+      return [];
+    }
+    if (!audioCaps || !audioCaps.audioQualities || audioCaps.audioQualities.length === 0) {
+      return availableMasterAudioPresets.filter(p => p.id !== 'best' && p.id !== 'none');
+    }
+    const supportedSet = new Set(audioCaps.audioQualities);
+    return AUDIO_PRESETS.filter(p => {
+      if (p.id === 'best' || p.id === 'none') return false;
+      return supportedSet.has(p.id);
+    });
+  };
+
   // Filtered items based on search query
   const filteredItems = useMemo(() => {
     if (!searchQuery.trim()) return playlist.items;
@@ -245,6 +299,9 @@ export default function PlaylistView({ playlist, onToast }) {
     const itemOv = overrides[itemId] || {};
     const caps = formatCapabilities[itemId];
     const itemMaxRes = caps?.maxRes || '1080p';
+    const audioCaps = caps?.audio;
+    const hasAudio = audioCaps ? audioCaps.hasAudio !== false : true;
+    const itemMaxAudio = audioCaps?.maxAudioRes || '320k';
 
     let video = itemOv.video;
     if (!video) {
@@ -261,7 +318,15 @@ export default function PlaylistView({ playlist, onToast }) {
 
     let audio = itemOv.audio;
     if (!audio) {
-      audio = masterAudio;
+      if (!hasAudio || masterAudio === 'none') {
+        audio = 'none';
+      } else if (masterAudio === 'best') {
+        audio = itemMaxAudio;
+      } else {
+        const masterAbr = AUDIO_BITRATE_MAP[masterAudio] || 320;
+        const itemAbr = AUDIO_BITRATE_MAP[itemMaxAudio] || 320;
+        audio = masterAbr > itemAbr ? itemMaxAudio : masterAudio;
+      }
     }
 
     return { video, audio };
@@ -545,7 +610,12 @@ export default function PlaylistView({ playlist, onToast }) {
               disabled={batchState.isDownloading}
               onChange={(e) => {
                 userSelectedMasterVideoRef.current = true;
-                setMasterVideo(e.target.value);
+                const val = e.target.value;
+                setMasterVideo(val);
+                if (val === 'best') {
+                  userSelectedMasterAudioRef.current = true;
+                  setMasterAudio('best');
+                }
               }}
               className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer disabled:opacity-50"
             >
@@ -568,17 +638,20 @@ export default function PlaylistView({ playlist, onToast }) {
             <select
               value={masterAudio}
               disabled={batchState.isDownloading}
-              onChange={(e) => setMasterAudio(e.target.value)}
+              onChange={(e) => {
+                userSelectedMasterAudioRef.current = true;
+                setMasterAudio(e.target.value);
+              }}
               className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500/40 cursor-pointer disabled:opacity-50"
             >
-              {AUDIO_PRESETS.map(preset => (
+              {availableMasterAudioPresets.map(preset => (
                 <option key={preset.id} value={preset.id}>
                   {preset.label}
                 </option>
               ))}
             </select>
             <span className="text-[9px] text-slate-400 block truncate">
-              {AUDIO_PRESETS.find(p => p.id === masterAudio)?.desc}
+              {availableMasterAudioPresets.find(p => p.id === masterAudio)?.desc || 'Max audio quality across playlist'}
             </span>
           </div>
         </div>
@@ -594,9 +667,12 @@ export default function PlaylistView({ playlist, onToast }) {
                 Analyzing media streams & codecs for individual videos: <strong>{enrichmentStatus.completed} of {enrichmentStatus.total}</strong> verified
               </span>
             </div>
-            <div className="flex items-center gap-2 self-end sm:self-auto">
+            <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
               <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-700">
-                Playlist Max: {maxPlaylistResolution.toUpperCase()}
+                Max Video: {maxPlaylistResolution.toUpperCase()}
+              </span>
+              <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-200 border border-purple-200 dark:border-purple-700">
+                Max Audio: {maxPlaylistAudio.toUpperCase()}
               </span>
             </div>
           </div>
@@ -605,12 +681,17 @@ export default function PlaylistView({ playlist, onToast }) {
             <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
               <CheckCircle2 size={15} className="text-emerald-500 flex-shrink-0" />
               <span>
-                Exact format resolutions verified for all <strong>{enrichmentStatus.total}</strong> videos
+                Exact video & audio format capabilities verified for all <strong>{enrichmentStatus.total}</strong> videos
               </span>
             </div>
-            <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 self-end sm:self-auto">
-              Highest Available: {maxPlaylistResolution.toUpperCase()}
-            </span>
+            <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+              <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">
+                Top Video: {maxPlaylistResolution.toUpperCase()}
+              </span>
+              <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-200 border border-purple-200 dark:border-purple-700">
+                Top Audio: {maxPlaylistAudio.toUpperCase()}
+              </span>
+            </div>
           </div>
         )}
       </div>
@@ -707,6 +788,9 @@ export default function PlaylistView({ playlist, onToast }) {
 
           const caps = formatCapabilities[item.id];
           const itemMaxRes = caps?.maxRes || '1080p';
+          const audioCaps = caps?.audio;
+          const videoHasAudio = audioCaps ? audioCaps.hasAudio !== false : true;
+          const itemMaxAudio = audioCaps?.maxAudioRes || '320k';
 
           // Clean, un-cluttered effective resolution and audio
           let computedVideo = itemOv.video;
@@ -722,24 +806,40 @@ export default function PlaylistView({ playlist, onToast }) {
             }
           }
 
-          let computedAudio = itemOv.audio || masterAudio;
+          let computedAudio = itemOv.audio;
+          if (!computedAudio) {
+            if (!videoHasAudio || masterAudio === 'none') {
+              computedAudio = 'none';
+            } else if (masterAudio === 'best') {
+              computedAudio = itemMaxAudio;
+            } else {
+              const masterAbr = AUDIO_BITRATE_MAP[masterAudio] || 320;
+              const itemAbr = AUDIO_BITRATE_MAP[itemMaxAudio] || 320;
+              computedAudio = masterAbr > itemAbr ? itemMaxAudio : masterAudio;
+            }
+          }
 
           const videoPreset = ALL_VIDEO_PRESETS.find(p => p.id === computedVideo);
           const defaultVideoLabel = videoPreset ? videoPreset.label : computedVideo.toUpperCase();
 
           const audioPreset = AUDIO_PRESETS.find(p => p.id === computedAudio);
-          const defaultAudioLabel = audioPreset ? audioPreset.label : computedAudio.toUpperCase();
+          const defaultAudioLabel = !videoHasAudio 
+            ? 'No Audio (Muted Video)'
+            : (audioPreset ? audioPreset.label : computedAudio.toUpperCase());
 
           // Format Summary Tag (Clean, simple, no clutter)
           let formatTag = '';
-          if (computedVideo === 'none') {
-            formatTag = `🎵 Audio (${computedAudio === 'best' ? 'Best Audio' : computedAudio.toUpperCase()})`;
-          } else if (computedAudio === 'none') {
+          if (computedVideo === 'none' && computedAudio === 'none') {
+            formatTag = '⚠️ No Media Selected';
+          } else if (computedVideo === 'none') {
+            const aBadge = audioPreset?.badge || computedAudio.toUpperCase();
+            formatTag = `🎵 Audio (${aBadge})`;
+          } else if (computedAudio === 'none' || !videoHasAudio) {
             const vBadge = videoPreset?.badge || computedVideo.toUpperCase();
             formatTag = `🎬 ${vBadge} (Muted)`;
           } else {
             const vBadge = videoPreset?.badge || computedVideo.toUpperCase();
-            const aBadge = computedAudio === 'best' ? 'Best Audio' : computedAudio.toUpperCase();
+            const aBadge = audioPreset?.badge || computedAudio.toUpperCase();
             formatTag = `🎬 ${vBadge} + 🎵 ${aBadge}`;
           }
 
@@ -748,7 +848,7 @@ export default function PlaylistView({ playlist, onToast }) {
               key={item.id}
               className={`flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 p-3.5 rounded-2xl transition-all border ${
                 isCurrentActive
-                  ? 'bg-indigo-500/10 border-indigo-500/40 shadow-md ring-1 ring-indigo-500/20'
+                  ? 'bg-indigo-50/10 border-indigo-500/40 shadow-md ring-1 ring-indigo-500/20'
                   : isSelected
                   ? 'bg-white/90 dark:bg-slate-800/80 border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300'
                   : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200/40 dark:border-slate-800/50 opacity-60'
@@ -784,13 +884,20 @@ export default function PlaylistView({ playlist, onToast }) {
                     const badgeText = caps?.qualityBadge || item.qualityHint || 'HD';
                     const isHighEnd = badgeText.includes('8K') || badgeText.includes('4K');
                     return (
-                      <span className={`absolute top-1 left-1 text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm ${
-                        isHighEnd
-                          ? 'bg-amber-500 text-black font-extrabold'
-                          : 'bg-indigo-600 text-white'
-                      }`}>
-                        {badgeText}
-                      </span>
+                      <div className="absolute top-1 left-1 flex items-center gap-1">
+                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm ${
+                          isHighEnd
+                            ? 'bg-amber-500 text-black font-extrabold'
+                            : 'bg-indigo-600 text-white'
+                        }`}>
+                          {badgeText}
+                        </span>
+                        {!videoHasAudio && (
+                          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm bg-red-500/90 text-white">
+                            Muted
+                          </span>
+                        )}
+                      </div>
                     );
                   })()}
                 </div>
@@ -874,19 +981,33 @@ export default function PlaylistView({ playlist, onToast }) {
                 <div className="flex items-center gap-1">
                   <select
                     value={itemOv.audio || ''}
-                    disabled={batchState.isDownloading}
+                    disabled={batchState.isDownloading || !videoHasAudio}
                     onChange={(e) => setItemAudioOverride(item.id, e.target.value)}
-                    title={`Audio Quality: ${defaultAudioLabel}`}
+                    title={videoHasAudio ? `Audio Quality: ${defaultAudioLabel}` : 'This video stream has no audio tracks'}
                     className={`text-xs rounded-xl px-2.5 py-1.5 border font-medium focus:outline-none focus:ring-1 focus:ring-purple-500 transition-colors cursor-pointer ${
-                      itemOv.audio
+                      !videoHasAudio
+                        ? 'bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-400 cursor-not-allowed'
+                        : itemOv.audio
                         ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold'
                         : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold'
                     }`}
                   >
-                    <option value="">{defaultAudioLabel}</option>
-                    {AUDIO_PRESETS.map(p => (
-                      <option key={p.id} value={p.id}>{p.label}</option>
-                    ))}
+                    {!videoHasAudio ? (
+                      <option value="">No Audio (Muted Video)</option>
+                    ) : (
+                      (() => {
+                        const allowedAudio = getItemAudioPresets(item.id);
+                        return (
+                          <>
+                            <option value="">{defaultAudioLabel}</option>
+                            {allowedAudio.map(p => (
+                              <option key={p.id} value={p.id}>{p.label}</option>
+                            ))}
+                            <option value="none">No Audio (Muted Video)</option>
+                          </>
+                        );
+                      })()
+                    )}
                   </select>
                 </div>
               </div>
