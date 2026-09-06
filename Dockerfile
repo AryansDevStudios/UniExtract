@@ -32,20 +32,20 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOST=0.0.0.0
 
-# Install production Node dependencies
+# Ensure directories for runtime temp, cache, and cookies mount
+RUN mkdir -p /app/temp /app/cache
+
+# Install production Node dependencies (scripts/ is needed by postinstall)
 COPY package.json ./
+COPY scripts/ ./scripts/
 RUN npm install --omit=dev
 
 # Copy server code and build outputs
 COPY server.js ./
-COPY scripts/ ./scripts/
 COPY yt-dlp.conf ./
 COPY favicon.ico ./
 COPY --from=builder /app/client/dist ./client/dist
 COPY --from=builder /app/public ./public
-
-# Ensure directories for runtime temp, cache, and cookies mount
-RUN mkdir -p /app/temp /app/cache
 
 EXPOSE 3000
 
