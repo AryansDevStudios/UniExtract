@@ -6,6 +6,7 @@ import PlaylistView from './components/PlaylistView';
 import RecentHistory from './components/RecentHistory';
 import AuthModal from './components/AuthModal';
 import ServerModal from './components/ServerModal';
+import UpdateModal from './components/UpdateModal';
 import { apiUrl, apiFetch, getCustomServerUrl, shouldShowServerSelector } from './utils/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -41,6 +42,8 @@ function App() {
   const [cookieStatus, setCookieStatus] = useState(null);
   const [serverModalOpen, setServerModalOpen] = useState(false);
   const [customServerUrl, setCustomServerUrlState] = useState(() => getCustomServerUrl());
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState(null);
 
   const fetchCookieStatus = async () => {
     try {
@@ -54,15 +57,36 @@ function App() {
     }
   };
 
+  const fetchUpdateInfo = async (force = false) => {
+    try {
+      const res = await apiFetch(`/api/updates${force ? '?force=true' : ''}`);
+      if (res.ok) {
+        const data = await res.json();
+        setUpdateInfo(data);
+      }
+    } catch (e) {
+      console.error('Failed to load update info:', e);
+    }
+  };
+
   useEffect(() => {
     fetchCookieStatus();
+    fetchUpdateInfo();
 
     const handleServerChange = () => {
       setCustomServerUrlState(getCustomServerUrl());
       fetchCookieStatus();
+      fetchUpdateInfo(true);
     };
     window.addEventListener('umx-server-changed', handleServerChange);
-    return () => window.removeEventListener('umx-server-changed', handleServerChange);
+
+    // Poll for updates every 30 minutes
+    const updateTimer = setInterval(() => fetchUpdateInfo(), 30 * 60 * 1000);
+
+    return () => {
+      window.removeEventListener('umx-server-changed', handleServerChange);
+      clearInterval(updateTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -351,6 +375,8 @@ function App() {
         onOpenServer={() => setServerModalOpen(true)}
         customServerUrl={customServerUrl}
         showServerSelector={shouldShowServerSelector()}
+        updateInfo={updateInfo}
+        onOpenUpdate={() => setUpdateModalOpen(true)}
       />
 
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
@@ -442,6 +468,14 @@ function App() {
         isOpen={serverModalOpen}
         onClose={() => setServerModalOpen(false)}
         onToast={showToast}
+      />
+
+      <UpdateModal 
+        isOpen={updateModalOpen}
+        onClose={() => setUpdateModalOpen(false)}
+        updateInfo={updateInfo}
+        onRefreshUpdate={() => fetchUpdateInfo(true)}
+        activeJobsCount={downloadJob ? 1 : (updateInfo?.activeJobsCount || 0)}
       />
     </div>
   );

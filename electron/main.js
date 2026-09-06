@@ -1,10 +1,30 @@
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 
 let mainWindow;
 let serverProcess = null;
+let deferredUpdateInterval = null;
+
+// Updater State
+let updateState = {
+  status: 'idle', // idle, checking, available, not-available, downloading, downloaded, waiting_for_idle, applying, error
+  version: null,
+  percent: 0,
+  speed: 0,
+  error: null,
+  activeJobs: 0
+};
+
+function sendUpdateEvent(data) {
+  updateState = { ...updateState, ...data };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('updater:event', updateState);
+  }
+}
 
 function getCookiesPath() {
   const rootDir = path.join(__dirname, '..');
@@ -53,7 +73,11 @@ function startServer() {
     NODE_ENV: 'production',
     TEMP_DIR: path.join(app.getPath('temp'), 'ume-temp'),
     CACHE_DIR: path.join(app.getPath('userData'), 'cache'),
-    COOKIES_PATH: cookiesPath
+    COOKIES_PATH: cookiesPath,
+    IS_ELECTRON: 'true',
+    ELECTRON_IS_PACKAGED: isProd ? 'true' : 'false',
+    ELECTRON_PORTABLE: process.env.PORTABLE_EXECUTABLE_DIR ? 'true' : 'false',
+    ELECTRON_APP_VERSION: app.getVersion()
   };
 
   if (isProd) {
@@ -77,6 +101,146 @@ function startServer() {
   });
 }
 
+// Query local server to inspect active in-flight downloads / transcoding
+function queryActiveJobs() {
+  return new Promise((resolve) => {
+    const req = http.get('http://127.0.0.1:3000/api/updates/active-jobs', { timeout: 1500 }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          resolve(json.activeJobsCount || 0);
+        } catch (e) {
+          resolve(0);
+        }
+      });
+    });
+    req.on('error', () => resolve(0));
+    req.on('timeout', () => { req.destroy(); resolve(0); });
+  });
+}
+
+function setupAutoUpdater() {
+  // Disable auto download by default so active media downloads are not bandwidth-starved
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    sendUpdateEvent({ status: 'checking', error: null });
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    sendUpdateEvent({
+      status: 'available',
+      version: info.version,
+      releaseNotes: info.releaseNotes,
+      error: null
+    });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    sendUpdateEvent({ status: 'not-available', error: null });
+  });
+
+  autoUpdater.on('download-progress', (p) => {
+    sendUpdateEvent({
+      status: 'downloading',
+      percent: Math.round(p.percent || 0),
+      speed: p.bytesPerSecond || 0
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    sendUpdateEvent({
+      status: 'downloaded',
+      version: info.version,
+      percent: 100,
+      error: null
+    });
+  });
+
+  autoUpdater.on('error', (err) => {
+    sendUpdateEvent({ status: 'error', error: err ? err.message : 'Update check failed' });
+  });
+
+  // IPC Handlers for Renderer
+  ipcMain.handle('updater:check', async () => {
+    if (!app.isPackaged) {
+      return { status: 'dev_mode', message: 'Auto-update is only active in packaged desktop builds' };
+    }
+    try {
+      sendUpdateEvent({ status: 'checking' });
+      await autoUpdater.checkForUpdates();
+      return updateState;
+    } catch (e) {
+      sendUpdateEvent({ status: 'error', error: e.message });
+      return { status: 'error', error: e.message };
+    }
+  });
+
+  ipcMain.handle('updater:download', async () => {
+    if (!app.isPackaged) {
+      return { status: 'dev_mode', message: 'Auto-update is only active in packaged desktop builds' };
+    }
+    try {
+      sendUpdateEvent({ status: 'downloading', percent: 0 });
+      await autoUpdater.downloadUpdate();
+      return { status: 'downloading' };
+    } catch (e) {
+      sendUpdateEvent({ status: 'error', error: e.message });
+      return { status: 'error', error: e.message };
+    }
+  });
+
+  ipcMain.handle('updater:get-state', () => {
+    return updateState;
+  });
+
+  // Zero-disruption updater application under load
+  ipcMain.handle('updater:apply', async (_event, { force = false } = {}) => {
+    if (!app.isPackaged) {
+      return { status: 'dev_mode', message: 'Auto-update is only active in packaged desktop builds' };
+    }
+
+    const activeCount = await queryActiveJobs();
+
+    if (activeCount === 0 || force) {
+      // Zero active jobs (or force confirmed by user) -> Apply immediately
+      if (deferredUpdateInterval) {
+        clearInterval(deferredUpdateInterval);
+        deferredUpdateInterval = null;
+      }
+      sendUpdateEvent({ status: 'applying' });
+      setImmediate(() => {
+        autoUpdater.quitAndInstall(false, true);
+      });
+      return { status: 'applying' };
+    }
+
+    // Active jobs in flight -> Enter deferred waiting state
+    sendUpdateEvent({ status: 'waiting_for_idle', activeJobs: activeCount });
+
+    if (!deferredUpdateInterval) {
+      deferredUpdateInterval = setInterval(async () => {
+        const count = await queryActiveJobs();
+        if (count === 0) {
+          clearInterval(deferredUpdateInterval);
+          deferredUpdateInterval = null;
+          sendUpdateEvent({ status: 'applying' });
+          setTimeout(() => {
+            autoUpdater.quitAndInstall(false, true);
+          }, 3500); // 3.5s cooldown grace window
+        } else {
+          sendUpdateEvent({ status: 'waiting_for_idle', activeJobs: count });
+        }
+      }, 3000);
+    }
+
+    return { status: 'waiting_for_idle', activeJobs: activeCount };
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1500,
@@ -87,7 +251,8 @@ function createWindow() {
     backgroundColor: '#0f172a',
     icon: path.join(__dirname, '..', 'favicon.ico'),
     webPreferences: {
-      contextIsolation: false,
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
       webSecurity: true,
@@ -124,7 +289,15 @@ app.setName('Universal Media Extractor');
 
 app.whenReady().then(() => {
   startServer();
+  setupAutoUpdater();
   createWindow();
+
+  // Background check for updates 10 seconds after launch
+  if (app.isPackaged && !process.env.PORTABLE_EXECUTABLE_DIR) {
+    setTimeout(() => {
+      autoUpdater.checkForUpdates().catch(() => {});
+    }, 10000);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -132,6 +305,9 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
+  if (deferredUpdateInterval) {
+    clearInterval(deferredUpdateInterval);
+  }
   if (serverProcess) {
     serverProcess.kill('SIGTERM');
   }

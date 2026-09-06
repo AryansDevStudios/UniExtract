@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sun, Moon, Cookie, Server } from 'lucide-react';
+import { Sun, Moon, Cookie, Server, Sparkles } from 'lucide-react';
 
 export default function Header({ 
   isDark, 
@@ -8,7 +8,9 @@ export default function Header({
   onOpenCookies, 
   onOpenServer, 
   customServerUrl,
-  showServerSelector = false 
+  showServerSelector = false,
+  updateInfo = null,
+  onOpenUpdate
 }) {
   const isYouTubeAuthed = cookieStatus?.isYouTubeAuthed;
   const hasCookies = (cookieStatus?.count || 0) > 0;
@@ -23,6 +25,17 @@ export default function Header({
         </h1>
       </div>
       <div className="flex items-center gap-2.5">
+        {updateInfo?.updateAvailable && (
+          <button
+            onClick={onOpenUpdate}
+            title={`New version available: v${updateInfo.latestVersion} (Click for details)`}
+            className="relative flex items-center gap-1.5 px-3 py-2 rounded-full bg-indigo-500/10 dark:bg-indigo-500/20 border border-indigo-500/30 hover:border-indigo-500 hover:scale-105 transition-all text-indigo-600 dark:text-indigo-400 shadow-sm text-xs font-semibold group"
+          >
+            <Sparkles size={14} className="text-indigo-500 group-hover:rotate-12 transition-transform" />
+            <span>v{updateInfo.latestVersion}</span>
+            <span className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.9)]" />
+          </button>
+        )}
         {showServerSelector && (
           <button
             onClick={onOpenServer}

@@ -92,6 +92,13 @@ if (!fs.existsSync(CACHE_DIR)) {
 const jobs = {};
 let selectedEncoder = 'libx264';
 
+// Helper to inspect active in-flight jobs (downloading or transcoding)
+const getActiveJobsCount = () => {
+    return Object.values(jobs).filter(j => 
+        j && (j.status === 'downloading' || j.status === 'processing' || j.status === 'starting')
+    ).length;
+};
+
 // --- IN-FLIGHT DOWNLOAD ABORT & CLEANUP HELPER ---
 const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
     const job = jobs[jobId];
@@ -633,6 +640,164 @@ app.get('/api/health', (req, res) => {
         uptime: Math.floor(process.uptime()),
         timestamp: Date.now()
     });
+});
+
+// --- RELEASE & UPDATE CHECKING SYSTEM ---
+let cachedReleaseData = null;
+let lastReleaseCheck = 0;
+const RELEASE_CACHE_TTL = 15 * 60 * 1000; // 15 minutes cache
+let updatePendingWhenIdle = false;
+
+function parseSemver(v) {
+    if (!v) return [0, 0, 0];
+    const cleaned = String(v).replace(/^v/i, '').trim();
+    const [main] = cleaned.split('-');
+    const parts = main.split('.').map(p => parseInt(p, 10) || 0);
+    while (parts.length < 3) parts.push(0);
+    return parts;
+}
+
+function isNewerVersion(current, latest) {
+    const [cMaj, cMin, cPat] = parseSemver(current);
+    const [lMaj, lMin, lPat] = parseSemver(latest);
+    if (lMaj > cMaj) return true;
+    if (lMaj < cMaj) return false;
+    if (lMin > cMin) return true;
+    if (lMin < cMin) return false;
+    return lPat > cPat;
+}
+
+// Active jobs query for traffic-safe updates
+app.get('/api/updates/active-jobs', (req, res) => {
+    res.json({
+        activeJobsCount: getActiveJobsCount(),
+        updatePendingWhenIdle,
+        uptime: Math.floor(process.uptime())
+    });
+});
+
+// Full update check endpoint
+app.get('/api/updates', async (req, res) => {
+    const currentVersion = require('./package.json').version || '2.0.0';
+    const force = req.query.force === 'true';
+    const now = Date.now();
+
+    if (!force && cachedReleaseData && (now - lastReleaseCheck < RELEASE_CACHE_TTL)) {
+        return res.json({
+            ...cachedReleaseData,
+            currentVersion,
+            activeJobsCount: getActiveJobsCount(),
+            updatePendingWhenIdle,
+            isElectron: process.env.IS_ELECTRON === 'true',
+            isPortable: process.env.ELECTRON_PORTABLE === 'true'
+        });
+    }
+
+    try {
+        const response = await fetch('https://api.github.com/repos/AryansDevStudios/Universal-Media-Extractor/releases/latest', {
+            headers: {
+                'User-Agent': 'UniversalMediaExtractor-UpdateChecker/2.0.0',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        });
+
+        if (!response.ok) {
+            return res.json({
+                currentVersion,
+                latestVersion: currentVersion,
+                updateAvailable: false,
+                activeJobsCount: getActiveJobsCount(),
+                updatePendingWhenIdle,
+                isElectron: process.env.IS_ELECTRON === 'true',
+                isPortable: process.env.ELECTRON_PORTABLE === 'true',
+                message: 'No newer release published on GitHub or rate limit reached.'
+            });
+        }
+
+        const release = await response.json();
+        const latestTag = release.tag_name || release.name || '';
+        const latestClean = latestTag.replace(/^v/i, '');
+        const updateAvailable = isNewerVersion(currentVersion, latestClean);
+
+        const assets = (release.assets || []).map(a => {
+            let type = 'other';
+            let arch = 'universal';
+            const nameLower = a.name.toLowerCase();
+            if (nameLower.includes('arm64')) arch = 'arm64';
+            else if (nameLower.includes('x64')) arch = 'x64';
+
+            if (nameLower.endsWith('.exe')) {
+                type = nameLower.includes('portable') ? 'windows-portable' : 'windows-installer';
+            } else if (nameLower.endsWith('.dmg')) {
+                type = 'macos-dmg';
+            } else if (nameLower.endsWith('.appimage')) {
+                type = 'linux-appimage';
+            } else if (nameLower.endsWith('.deb')) {
+                type = 'linux-deb';
+            } else if (nameLower.endsWith('.zip')) {
+                type = 'archive-zip';
+            }
+
+            return {
+                name: a.name,
+                size: a.size,
+                url: a.browser_download_url,
+                type,
+                arch
+            };
+        });
+
+        cachedReleaseData = {
+            latestVersion: latestClean,
+            latestTag,
+            updateAvailable,
+            releaseName: release.name || latestTag,
+            releaseNotes: release.body || '',
+            releaseUrl: release.html_url || '',
+            publishedAt: release.published_at || null,
+            assets
+        };
+        lastReleaseCheck = now;
+
+        res.json({
+            ...cachedReleaseData,
+            currentVersion,
+            activeJobsCount: getActiveJobsCount(),
+            updatePendingWhenIdle,
+            isElectron: process.env.IS_ELECTRON === 'true',
+            isPortable: process.env.ELECTRON_PORTABLE === 'true'
+        });
+    } catch (err) {
+        res.json({
+            currentVersion,
+            latestVersion: currentVersion,
+            updateAvailable: false,
+            activeJobsCount: getActiveJobsCount(),
+            updatePendingWhenIdle,
+            isElectron: process.env.IS_ELECTRON === 'true',
+            isPortable: process.env.ELECTRON_PORTABLE === 'true',
+            error: err.message
+        });
+    }
+});
+
+// Schedule safe update when traffic is idle
+app.post('/api/updates/schedule-install', (req, res) => {
+    const activeCount = getActiveJobsCount();
+    updatePendingWhenIdle = true;
+
+    if (activeCount === 0) {
+        res.json({
+            status: 'ready',
+            message: 'Zero active downloads. Update can be applied immediately.'
+        });
+    } else {
+        res.json({
+            status: 'queued',
+            activeJobsCount: activeCount,
+            message: `Update queued safely. Will apply automatically when all ${activeCount} active download(s) complete.`
+        });
+    }
 });
 
 // --- COOKIE MANAGEMENT & INTELLIGENT FILTERING SYSTEM ---

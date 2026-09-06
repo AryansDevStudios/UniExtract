@@ -352,6 +352,17 @@ Extracts and converts standalone subtitle tracks.
 
 ---
 
+### 12. `GET /api/updates`
+Queries the GitHub Releases API with 15-minute caching and semver comparison. Returns `updateAvailable`, current & latest version, release notes, and platform download assets.
+- **Query Params**: `?force=true` (bypasses in-memory cache).
+
+---
+
+### 13. `GET /api/updates/active-jobs`
+Returns real-time count of active in-flight downloads and FFmpeg conversions (`activeJobsCount`). Used by the Electron desktop shell and frontend to guarantee safe, zero-interruption updates under load.
+
+---
+
 ## 🤖 Automated CI/CD & GitHub Workflows
 
 Universal Media Extractor includes a production-grade automated CI/CD suite powered by **GitHub Actions** across 4 dedicated workflows:

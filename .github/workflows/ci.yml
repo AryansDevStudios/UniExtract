@@ -41,3 +41,6 @@ jobs:
 
       - name: Test Server Boot & Health Endpoint
         run: node scripts/test-server-boot.js
+
+      - name: Test Update Engine & Release Check
+        run: node scripts/test-updates.js
