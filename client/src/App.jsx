@@ -4,6 +4,7 @@ import SearchBox from './components/SearchBox';
 import CompactResultPanel from './components/CompactResultPanel';
 import PlaylistView from './components/PlaylistView';
 import RecentHistory from './components/RecentHistory';
+import CookieModal from './components/CookieModal';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function App() {
@@ -34,6 +35,24 @@ function App() {
   const pollIntervalRef = useRef(null);
 
   const [toasts, setToasts] = useState([]);
+  const [cookieModalOpen, setCookieModalOpen] = useState(false);
+  const [cookieStatus, setCookieStatus] = useState(null);
+
+  const fetchCookieStatus = async () => {
+    try {
+      const res = await fetch('/api/cookies');
+      if (res.ok) {
+        const data = await res.json();
+        setCookieStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to load cookie status:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchCookieStatus();
+  }, []);
 
   useEffect(() => {
     if (isDark) {
@@ -313,7 +332,12 @@ function App() {
         </AnimatePresence>
       </div>
 
-      <Header isDark={isDark} toggleTheme={() => setIsDark(!isDark)} />
+      <Header 
+        isDark={isDark} 
+        toggleTheme={() => setIsDark(!isDark)} 
+        cookieStatus={cookieStatus}
+        onOpenCookies={() => setCookieModalOpen(true)}
+      />
 
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
         
@@ -391,6 +415,14 @@ function App() {
           Open-Source & Free
         </a>
       </footer>
+
+      <CookieModal 
+        isOpen={cookieModalOpen}
+        onClose={() => setCookieModalOpen(false)}
+        cookieStatus={cookieStatus}
+        onCookieUpdated={fetchCookieStatus}
+        onToast={showToast}
+      />
     </div>
   );
 }

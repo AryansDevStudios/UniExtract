@@ -9,7 +9,7 @@ const archiver = require('archiver');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const COOKIES = path.join(__dirname, 'cookies.txt');
+const COOKIES = process.env.COOKIES_PATH || path.join(__dirname, 'cookies.txt');
 const TEMP_DIR = process.env.TEMP_DIR || path.join(__dirname, 'temp');
 const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, 'cache');
 
@@ -17,7 +17,8 @@ const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, 'cache');
 let ytDlpPath = null;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 if (!fs.existsSync(TEMP_DIR)) {
     console.log(`[SYSTEM] Creating temporary directory at: ${TEMP_DIR}`);
@@ -492,6 +493,311 @@ app.get('/favfavicon.ico', (req, res) => {
     }
 });
 
+// --- COOKIE MANAGEMENT & INTELLIGENT FILTERING SYSTEM ---
+const ALLOWED_MEDIA_DOMAINS = [
+    'youtube.com',
+    'instagram.com',
+    'facebook.com',
+    'snapchat.com',
+    'tiktok.com',
+    'twitter.com',
+    'x.com',
+    'reddit.com',
+    'twitch.tv',
+    'soundcloud.com',
+    'vimeo.com',
+    'pinterest.com',
+    'dailymotion.com',
+    'threads.net',
+    'bilibili.com'
+];
+
+const EXCLUDED_COOKIE_DOMAINS = [
+    'accounts.google.com',
+    'mail.google.com',
+    'myaccount.google.com',
+    'gds.google.com',
+    'contacts.google.com',
+    'ogs.google.com',
+    'google.com',
+    'google.co.in',
+    'bing.com',
+    'msn.com',
+    'scorecardresearch.com',
+    'doubleclick.net',
+    'linkedin.com'
+];
+
+function isAllowedCookieDomain(domain) {
+    if (!domain) return false;
+    const d = domain.toLowerCase().replace(/^\./, '');
+    for (const ex of EXCLUDED_COOKIE_DOMAINS) {
+        if (d === ex || d.endsWith('.' + ex)) {
+            // Keep YouTube cookies even though YouTube is hosted under Google infrastructure
+            if (d.includes('youtube.com')) return true;
+            return false;
+        }
+    }
+    for (const plat of ALLOWED_MEDIA_DOMAINS) {
+        if (d === plat || d.endsWith('.' + plat)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function filterAndFormatCookies(rawInput) {
+    if (!rawInput || typeof rawInput !== 'string') {
+        return { success: false, error: 'Empty cookie content provided' };
+    }
+
+    const trimmed = rawInput.trim();
+    let parsedCookies = [];
+    let droppedCount = 0;
+    let keptCount = 0;
+
+    // 1. Try parsing JSON format (e.g. from Cookie-Editor / EditThisCookie export)
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            const rawArr = Array.isArray(parsed) ? parsed : [parsed];
+            for (const item of rawArr) {
+                const domain = (item.domain || '').trim();
+                if (!isAllowedCookieDomain(domain)) {
+                    droppedCount++;
+                    continue;
+                }
+                const name = (item.name || '').trim();
+                const value = item.value !== undefined ? String(item.value).trim() : '';
+                if (!name) {
+                    droppedCount++;
+                    continue;
+                }
+                const path = item.path || '/';
+                const secure = item.secure ? 'TRUE' : 'FALSE';
+                const includeSubdomains = item.hostOnly ? 'FALSE' : (domain.startsWith('.') ? 'TRUE' : 'FALSE');
+                let expires = Math.floor(Number(item.expirationDate || item.expires || 0));
+                if (isNaN(expires) || expires < 0) expires = 0;
+
+                parsedCookies.push({
+                    domain,
+                    includeSubdomains,
+                    path,
+                    secure,
+                    expires,
+                    name,
+                    value
+                });
+                keptCount++;
+            }
+        } catch (e) {}
+    }
+
+    // 2. Parse Netscape format (standard cookies.txt)
+    if (parsedCookies.length === 0) {
+        const lines = rawInput.split(/\r?\n/);
+        for (const line of lines) {
+            const lineTrim = line.trim();
+            if (!lineTrim || lineTrim.startsWith('#')) continue;
+            const parts = lineTrim.split(/\t+/);
+            const cols = parts.length >= 7 ? parts : lineTrim.split(/\s{2,}/);
+            if (cols.length >= 7) {
+                const domain = cols[0].trim();
+                if (!isAllowedCookieDomain(domain)) {
+                    droppedCount++;
+                    continue;
+                }
+                const name = cols[5].trim();
+                const value = cols.slice(6).join('\t').trim();
+                if (!name) {
+                    droppedCount++;
+                    continue;
+                }
+                parsedCookies.push({
+                    domain,
+                    includeSubdomains: cols[1].trim().toUpperCase() === 'TRUE' ? 'TRUE' : 'FALSE',
+                    path: cols[2].trim(),
+                    secure: cols[3].trim().toUpperCase() === 'TRUE' ? 'TRUE' : 'FALSE',
+                    expires: cols[4].trim(),
+                    name,
+                    value
+                });
+                keptCount++;
+            } else {
+                droppedCount++;
+            }
+        }
+    }
+
+    if (keptCount === 0) {
+        return {
+            success: false,
+            error: 'No media extraction cookies detected. Please ensure your export contains cookies for supported platforms (YouTube, Instagram, Facebook, Snapchat, etc.).',
+            droppedCount
+        };
+    }
+
+    let netscapeText = '# Netscape HTTP Cookie File\n# Filtered and formatted by Universal Media Extractor\n\n';
+    const domainsSet = new Set();
+    let isYouTubeAuthed = false;
+
+    for (const c of parsedCookies) {
+        netscapeText += `${c.domain}\t${c.includeSubdomains}\t${c.path}\t${c.secure}\t${c.expires}\t${c.name}\t${c.value}\n`;
+        const cleanDomain = c.domain.replace(/^\./, '').toLowerCase();
+        for (const plat of ALLOWED_MEDIA_DOMAINS) {
+            if (cleanDomain === plat || cleanDomain.endsWith('.' + plat)) {
+                domainsSet.add(plat);
+                break;
+            }
+        }
+
+        if (cleanDomain.includes('youtube.com')) {
+            if (['__Secure-1PSID', '__Secure-3PSID', 'LOGIN_INFO', 'SID', 'SSID'].includes(c.name) && c.value) {
+                isYouTubeAuthed = true;
+            }
+        }
+    }
+
+    return {
+        success: true,
+        netscapeText,
+        keptCount,
+        droppedCount,
+        domains: Array.from(domainsSet),
+        isYouTubeAuthed
+    };
+}
+
+function getCookiesSummary() {
+    if (!fs.existsSync(COOKIES)) {
+        return {
+            exists: false,
+            count: 0,
+            domains: [],
+            isYouTubeAuthed: false,
+            path: COOKIES,
+            isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR
+        };
+    }
+
+    try {
+        const stat = fs.statSync(COOKIES);
+        if (stat.size === 0) {
+            return {
+                exists: false,
+                count: 0,
+                domains: [],
+                isYouTubeAuthed: false,
+                path: COOKIES,
+                isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR
+            };
+        }
+
+        const content = fs.readFileSync(COOKIES, 'utf8');
+        const lines = content.split(/\r?\n/);
+        let count = 0;
+        const domainsSet = new Set();
+        let isYouTubeAuthed = false;
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            const parts = trimmed.split(/\t+/);
+            const cols = parts.length >= 7 ? parts : trimmed.split(/\s{2,}/);
+            if (cols.length >= 7) {
+                count++;
+                const domain = cols[0].trim().replace(/^\./, '').toLowerCase();
+                const name = cols[5].trim();
+                const value = cols.slice(6).join('\t').trim();
+
+                for (const plat of ALLOWED_MEDIA_DOMAINS) {
+                    if (domain === plat || domain.endsWith('.' + plat)) {
+                        domainsSet.add(plat);
+                        break;
+                    }
+                }
+
+                if (domain.includes('youtube.com')) {
+                    if (['__Secure-1PSID', '__Secure-3PSID', 'LOGIN_INFO', 'SID', 'SSID'].includes(name) && value) {
+                        isYouTubeAuthed = true;
+                    }
+                }
+            }
+        }
+
+        return {
+            exists: count > 0,
+            count,
+            domains: Array.from(domainsSet),
+            isYouTubeAuthed,
+            path: COOKIES,
+            isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR
+        };
+    } catch (err) {
+        return {
+            exists: false,
+            count: 0,
+            domains: [],
+            isYouTubeAuthed: false,
+            error: err.message,
+            path: COOKIES,
+            isPortable: !!process.env.PORTABLE_EXECUTABLE_DIR
+        };
+    }
+}
+
+// --- ROUTES: COOKIE MANAGEMENT & AUTHENTICATION ---
+app.get('/api/cookies', (req, res) => {
+    res.json(getCookiesSummary());
+});
+
+app.post('/api/cookies', (req, res) => {
+    const { content } = req.body;
+    if (!content) {
+        return res.status(400).json({ success: false, error: 'No cookie content provided.' });
+    }
+
+    const result = filterAndFormatCookies(content);
+    if (!result.success) {
+        return res.status(400).json({ success: false, error: result.error, droppedCount: result.droppedCount || 0 });
+    }
+
+    try {
+        const dir = path.dirname(COOKIES);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(COOKIES, result.netscapeText, 'utf8');
+        logger(null, `Updated cookies at: ${COOKIES} (${result.keptCount} kept, ${result.droppedCount} junk cookies filtered out)`);
+
+        warmUpYtDlp();
+
+        const summary = getCookiesSummary();
+        res.json({
+            success: true,
+            message: `Successfully saved ${result.keptCount} media cookies (${result.droppedCount} junk/tracking cookies filtered out).`,
+            ...summary,
+            keptCount: result.keptCount,
+            droppedCount: result.droppedCount
+        });
+    } catch (err) {
+        logger(null, `Failed to write cookies file: ${err.message}`, 'ERROR');
+        res.status(500).json({ success: false, error: `Failed to save cookies: ${err.message}` });
+    }
+});
+
+app.delete('/api/cookies', (req, res) => {
+    try {
+        if (fs.existsSync(COOKIES)) {
+            fs.writeFileSync(COOKIES, '# Netscape HTTP Cookie File\n# Cookies cleared by user\n', 'utf8');
+        }
+        logger(null, `Cleared cookies file at: ${COOKIES}`);
+        res.json({ success: true, message: 'Cookies cleared successfully.' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // --- FORMAT EXTRACTION & PLAYLIST ENRICHMENT ENGINE ---
 const formatMemoryCache = new Map();
 const playlistEnrichmentJobs = {};
@@ -590,7 +896,8 @@ function probeVideoFormats(videoId) {
 
     return new Promise((resolve) => {
         const bin = ytDlpPath || 'yt-dlp';
-        const cmd = `"${bin}" --no-playlist --cookies "${COOKIES}" --print "%(resolution)s | %(formats.:.height)j | %(formats.:.abr)j | %(formats.:.acodec)j" "https://www.youtube.com/watch?v=${videoId}"`;
+        const cookieArg = (COOKIES && fs.existsSync(COOKIES) && fs.statSync(COOKIES).size > 0) ? ` --cookies "${COOKIES}"` : '';
+        const cmd = `"${bin}" --no-playlist${cookieArg} --print "%(resolution)s | %(formats.:.height)j | %(formats.:.abr)j | %(formats.:.acodec)j" "https://www.youtube.com/watch?v=${videoId}"`;
         exec(cmd, { windowsHide: true, timeout: 25000 }, (err, stdout) => {
             if (err || !stdout) {
                 const fallback = categorizeHeights([1080, 720, 480, 360]);
@@ -773,8 +1080,9 @@ app.post('/api/analyze', async (req, res) => {
         const isPlaylist = cleanedUrl.includes('/playlist') || cleanedUrl.includes('list=');
         const isMix = cleanedUrl.includes('list=RD');
 
+        const hasValidCookies = COOKIES && fs.existsSync(COOKIES) && fs.statSync(COOKIES).size > 0;
         const ytdlpOptions = { 
-            cookies: COOKIES, 
+            ...(hasValidCookies ? { cookies: COOKIES } : {}), 
             flatPlaylist: isPlaylist,
             noPlaylist: !isPlaylist
         };
@@ -1034,7 +1342,7 @@ app.get('/api/subtitle', async (req, res) => {
             '-o', subOutTemplate
         ];
 
-        if (COOKIES && fs.existsSync(COOKIES)) {
+        if (COOKIES && fs.existsSync(COOKIES) && fs.statSync(COOKIES).size > 0) {
             ytdlpArgs.push('--cookies', COOKIES);
         }
 
@@ -1350,7 +1658,9 @@ app.post('/api/download', async (req, res) => {
 
     const download = ytdlp.download(cleanedUrl);
     jobs[jobId].downloadInstance = download;
-    download.cookies(COOKIES);
+    if (COOKIES && fs.existsSync(COOKIES) && fs.statSync(COOKIES).size > 0) {
+        download.cookies(COOKIES);
+    }
     download.format(formatSelection);
     download.setOutputTemplate(path.join(TEMP_DIR, `${jobId.substring(0, 8)}_%(${'title'})s.%(${'ext'})s`));
     if (ffmpegArgs.length > 0) {
@@ -1841,13 +2151,17 @@ if (fs.existsSync(clientDist)) {
 const warmUpYtDlp = () => {
     if (!ytDlpPath) return;
     logger(null, 'Warming up yt-dlp engine (background, non-blocking)...');
-    const warmup = spawn(ytDlpPath, [
+    const warmArgs = [
         '--simulate',
         '--no-playlist',
-        '--cookies', COOKIES,
-        '--cache-dir', CACHE_DIR,
-        'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-    ], { stdio: 'ignore' });
+        '--cache-dir', CACHE_DIR
+    ];
+    if (COOKIES && fs.existsSync(COOKIES) && fs.statSync(COOKIES).size > 0) {
+        warmArgs.push('--cookies', COOKIES);
+    }
+    warmArgs.push('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+    const warmup = spawn(ytDlpPath, warmArgs, { stdio: 'ignore' });
     warmup.on('close', (code) => {
         logger(null, `yt-dlp warm-up completed (exit: ${code}) — disk cache primed`);
     });

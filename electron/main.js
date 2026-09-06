@@ -6,16 +6,54 @@ const fs = require('fs');
 let mainWindow;
 let serverProcess = null;
 
+function getCookiesPath() {
+  const rootDir = path.join(__dirname, '..');
+  const rootCookie = path.join(rootDir, 'cookies.txt');
+
+  // 1. Portable mode: Check PORTABLE_EXECUTABLE_DIR (directory where portable .exe is located)
+  if (process.env.PORTABLE_EXECUTABLE_DIR) {
+    const portableCookie = path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'cookies.txt');
+    try {
+      fs.accessSync(process.env.PORTABLE_EXECUTABLE_DIR, fs.constants.W_OK);
+      if (!fs.existsSync(portableCookie) && fs.existsSync(rootCookie)) {
+        try {
+          fs.copyFileSync(rootCookie, portableCookie);
+        } catch (e) {}
+      }
+      return portableCookie;
+    } catch (e) {
+      // Portable directory is read-only; fallback to userData
+    }
+  }
+
+  // 2. Persistent mode: Store in userData (%APPDATA%\Universal Media Extractor\cookies.txt)
+  const userDataDir = app.getPath('userData');
+  if (!fs.existsSync(userDataDir)) {
+    try {
+      fs.mkdirSync(userDataDir, { recursive: true });
+    } catch (e) {}
+  }
+  const userCookie = path.join(userDataDir, 'cookies.txt');
+  if (!fs.existsSync(userCookie) && fs.existsSync(rootCookie)) {
+    try {
+      fs.copyFileSync(rootCookie, userCookie);
+    } catch (e) {}
+  }
+  return userCookie;
+}
+
 function startServer() {
   const rootDir = path.join(__dirname, '..');
   const serverScript = path.join(rootDir, 'server.js');
   const isProd = app.isPackaged;
+  const cookiesPath = getCookiesPath();
 
   const env = {
     ...process.env,
     NODE_ENV: 'production',
     TEMP_DIR: path.join(app.getPath('temp'), 'ume-temp'),
-    CACHE_DIR: path.join(app.getPath('userData'), 'cache')
+    CACHE_DIR: path.join(app.getPath('userData'), 'cache'),
+    COOKIES_PATH: cookiesPath
   };
 
   if (isProd) {
