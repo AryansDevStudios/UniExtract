@@ -1,6 +1,6 @@
-# Universal Media Extractor - Electron Desktop Application
+# Uni Extract - Electron Desktop Application
 
-This document covers running, debugging, and packaging Universal Media Extractor as a native desktop app using Electron across Windows, Linux, and macOS.
+This document covers running, debugging, and packaging Uni Extract as a native desktop app using Electron across Windows, Linux, and macOS.
 
 ---
 
@@ -36,11 +36,11 @@ npm run dist:win:arm64   # Native Windows on ARM (Snapdragon X Elite / Surface C
 
 The compiled executables will be generated in `dist-electron/`:
 - **x64 (Intel/AMD)**:
-  - `UniversalMediaExtractor-2.0.0-x64-Setup.exe` (NSIS Installer)
-  - `UniversalMediaExtractor-Portable-2.0.0-x64.exe` (Standalone Portable)
+  - `UniExtract-2.0.0-x64-Setup.exe` (NSIS Installer)
+  - `UniExtract-Portable-2.0.0-x64.exe` (Standalone Portable)
 - **ARM64 (Snapdragon / Copilot+ PCs)**:
-  - `UniversalMediaExtractor-2.0.0-arm64-Setup.exe` (Native ARM64 NSIS Installer)
-  - `UniversalMediaExtractor-Portable-2.0.0-arm64.exe` (Native ARM64 Portable)
+  - `UniExtract-2.0.0-arm64-Setup.exe` (Native ARM64 NSIS Installer)
+  - `UniExtract-Portable-2.0.0-arm64.exe` (Native ARM64 Portable)
 
 ### 2. Linux & macOS
 ```bash
@@ -73,7 +73,7 @@ You can also trigger builds manually anytime from the GitHub repository by going
 
 ## 🍪 Cookie Persistence in Desktop Mode
 
-- **Installed Mode (NSIS)**: Cookies are automatically persisted in `%APPDATA%\Universal Media Extractor\cookies.txt`, meaning updates and reinstalls preserve your session tokens.
+- **Installed Mode (NSIS)**: Cookies are automatically persisted in `%APPDATA%\Uni Extract\cookies.txt`, meaning updates and reinstalls preserve your session tokens. Legacy tokens from `%APPDATA%\Universal Media Extractor\` are migrated automatically.
 - **Portable Mode**: Placing a `cookies.txt` in the same directory as the portable executable keeps your authentication persistent on USB flash drives or across multiple machines.
 - **In-App Manager**: You can also use the in-app Cookies modal to paste or upload cookies at any time.
 
@@ -84,4 +84,4 @@ You can also trigger builds manually anytime from the GitHub repository by going
 - The Electron main process (`electron/main.js`) starts the bundled Node.js server automatically upon launch.
 - Child processes are automatically terminated when the application window is closed.
 - Both **FFmpeg** (`ffmpeg-static`) and **yt-dlp** binaries are automatically bundled and unpacked via `asarUnpack`, making the desktop application 100% self-contained with zero external software or PATH requirements on the end user's machine.
-- Temporary files and yt-dlp binary caches are isolated into system temp and app data directories.
+- Temporary files and yt-dlp binary caches are isolated into system temp and app data directories (`uniextract-temp`).

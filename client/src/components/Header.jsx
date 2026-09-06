@@ -21,7 +21,7 @@ export default function Header({
       <div className="flex items-center gap-3 md:gap-4">
         <img src="/favicon.ico" className="w-10 h-10 md:w-12 md:h-12 rounded-xl shadow-md" alt="Logo" />
         <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100">
-          Universal <span className="font-light text-slate-400">Media Extractor</span>
+          Uni <span className="font-light text-slate-400">Extract</span>
         </h1>
       </div>
       <div className="flex items-center gap-2.5">

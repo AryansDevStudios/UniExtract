@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-echo "==> Setting up Universal Media Extractor Backend..."
+echo "==> Setting up Uni Extract Backend..."
 
 if [ ! -f .env ] && [ -f .env.example ]; then
     cp .env.example .env

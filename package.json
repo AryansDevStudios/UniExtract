@@ -1,7 +1,7 @@
 {
-  "name": "universal-media-extractor",
+  "name": "uni-extract",
   "version": "2.0.0",
-  "description": "A multi-platform media downloader using Express, FFmpeg, and yt-dlp",
+  "description": "A modern high-performance media downloader and transcoder using Express, FFmpeg, and yt-dlp",
   "main": "electron/main.js",
   "scripts": {
     "postinstall": "node scripts/install-ytdlp.js",
@@ -51,16 +51,16 @@
     "wait-on": "^9.0.0"
   },
   "build": {
-    "appId": "com.aryansdev.universalmediaextractor",
-    "productName": "Universal Media Extractor",
-    "artifactName": "UniversalMediaExtractor-${version}-${arch}.${ext}",
+    "appId": "com.aryansdev.uniextract",
+    "productName": "Uni Extract",
+    "artifactName": "UniExtract-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist-electron"
     },
     "publish": {
       "provider": "github",
       "owner": "AryansDevStudios",
-      "repo": "Universal-Media-Extractor"
+      "repo": "UniExtract"
     },
     "files": [
       "server.js",
@@ -101,11 +101,11 @@
       "uninstallerIcon": "favicon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Universal Media Extractor",
-      "artifactName": "UniversalMediaExtractor-${version}-${arch}-Setup.${ext}"
+      "shortcutName": "Uni Extract",
+      "artifactName": "UniExtract-${version}-${arch}-Setup.${ext}"
     },
     "portable": {
-      "artifactName": "UniversalMediaExtractor-Portable-${version}-${arch}.${ext}",
+      "artifactName": "UniExtract-Portable-${version}-${arch}.${ext}",
       "unicode": true
     },
     "mac": {
@@ -127,7 +127,7 @@
       ],
       "icon": "public/icon-512.png",
       "category": "public.app-category.video",
-      "artifactName": "UniversalMediaExtractor-${version}-${arch}.${ext}"
+      "artifactName": "UniExtract-${version}-${arch}.${ext}"
     },
     "linux": {
       "target": [
@@ -147,7 +147,7 @@
       ],
       "icon": "public/icon-512.png",
       "category": "Video",
-      "artifactName": "UniversalMediaExtractor-${version}-${arch}.${ext}"
+      "artifactName": "UniExtract-${version}-${arch}.${ext}"
     }
   },
   "keywords": [

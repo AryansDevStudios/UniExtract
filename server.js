@@ -694,9 +694,9 @@ app.get('/api/updates', async (req, res) => {
     }
 
     try {
-        const response = await fetch('https://api.github.com/repos/AryansDevStudios/Universal-Media-Extractor/releases/latest', {
+        const response = await fetch('https://api.github.com/repos/AryansDevStudios/UniExtract/releases/latest', {
             headers: {
-                'User-Agent': 'UniversalMediaExtractor-UpdateChecker/2.0.0',
+                'User-Agent': 'UniExtract-UpdateChecker/2.0.0',
                 'Accept': 'application/vnd.github.v3+json'
             }
         });
@@ -944,7 +944,7 @@ function filterAndFormatCookies(rawInput) {
         };
     }
 
-    let netscapeText = '# Netscape HTTP Cookie File\n# Filtered and formatted by Universal Media Extractor\n\n';
+    let netscapeText = '# Netscape HTTP Cookie File\n# Filtered and formatted by Uni Extract\n\n';
     const domainsSet = new Set();
     let isYouTubeAuthed = false;
 
@@ -2575,7 +2575,7 @@ const warmUpYtDlp = () => {
 
     app.listen(PORT, HOST, () => {
         console.log("\n" + "=".repeat(50));
-        console.log(`[SERVER] Universal Media Extractor Server running on port ${PORT}`);
+        console.log(`[SERVER] Uni Extract Server running on port ${PORT}`);
         console.log(`[ACCESS] Bound to: http://${HOST}:${PORT}`);
         console.log(`[TEMP]   Temp Folder: ${TEMP_DIR}`);
         console.log(`[CACHE]  Cache Folder: ${CACHE_DIR}`);

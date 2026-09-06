@@ -2,16 +2,16 @@
 set -e
 
 # ==============================================================================
-# Universal Media Extractor - Frontend Only Downloader & Installer
+# Uni Extract - Frontend Only Downloader & Installer
 # Fetches ONLY the client React/Vite/Tailwind frontend folder.
 # No backend dependencies, yt-dlp binaries, or Electron files are downloaded.
 # ==============================================================================
 
-REPO_URL="https://github.com/AryansDevStudios/Universal-Media-Extractor.git"
-TARGET_DIR="${1:-ume-frontend}"
+REPO_URL="https://github.com/AryansDevStudios/UniExtract.git"
+TARGET_DIR="${1:-uniextract-frontend}"
 
 echo "=================================================="
-echo "Universal Media Extractor: Frontend Only Downloader"
+echo "Uni Extract: Frontend Only Downloader"
 echo "Target directory: $TARGET_DIR"
 echo "=================================================="
 

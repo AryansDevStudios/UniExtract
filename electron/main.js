@@ -46,7 +46,7 @@ function getCookiesPath() {
     }
   }
 
-  // 2. Persistent mode: Store in userData (%APPDATA%\Universal Media Extractor\cookies.txt)
+  // 2. Persistent mode: Store in userData (%APPDATA%\Uni Extract\cookies.txt)
   const userDataDir = app.getPath('userData');
   if (!fs.existsSync(userDataDir)) {
     try {
@@ -54,6 +54,16 @@ function getCookiesPath() {
     } catch (e) {}
   }
   const userCookie = path.join(userDataDir, 'cookies.txt');
+
+  // Migrate legacy cookie from Universal Media Extractor if present
+  const legacyUserDataDir = path.join(app.getPath('appData'), 'Universal Media Extractor');
+  const legacyCookie = path.join(legacyUserDataDir, 'cookies.txt');
+  if (!fs.existsSync(userCookie) && fs.existsSync(legacyCookie)) {
+    try {
+      fs.copyFileSync(legacyCookie, userCookie);
+    } catch (e) {}
+  }
+
   if (!fs.existsSync(userCookie) && fs.existsSync(rootCookie)) {
     try {
       fs.copyFileSync(rootCookie, userCookie);
@@ -71,7 +81,7 @@ function startServer() {
   const env = {
     ...process.env,
     NODE_ENV: 'production',
-    TEMP_DIR: path.join(app.getPath('temp'), 'ume-temp'),
+    TEMP_DIR: path.join(app.getPath('temp'), 'uniextract-temp'),
     CACHE_DIR: path.join(app.getPath('userData'), 'cache'),
     COOKIES_PATH: cookiesPath,
     IS_ELECTRON: 'true',
@@ -247,7 +257,7 @@ function createWindow() {
     height: 980,
     minWidth: 1100,
     minHeight: 780,
-    title: 'Universal Media Extractor',
+    title: 'Uni Extract',
     backgroundColor: '#0f172a',
     icon: path.join(__dirname, '..', 'favicon.ico'),
     webPreferences: {
@@ -285,7 +295,7 @@ function createWindow() {
   }
 }
 
-app.setName('Universal Media Extractor');
+app.setName('Uni Extract');
 
 app.whenReady().then(() => {
   startServer();

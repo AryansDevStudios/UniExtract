@@ -7,7 +7,7 @@ async function checkLatestYtDlpRelease() {
         const options = {
             hostname: 'api.github.com',
             path: '/repos/yt-dlp/yt-dlp/releases/latest',
-            headers: { 'User-Agent': 'Universal-Media-Extractor-HealthCheck' }
+            headers: { 'User-Agent': 'UniExtract-HealthCheck' }
         };
         https.get(options, (res) => {
             let data = '';

@@ -1,6 +1,6 @@
-# Universal Media Extractor - Deployment Modes & Pairing Guide 🚀
+# Uni Extract - Deployment Modes & Pairing Guide 🚀
 
-Universal Media Extractor (UME) is designed with a **fully decoupled, modular architecture**. You can run the entire stack together on your local machine, or split it across different cloud providers, VPSs, and CDNs.
+Uni Extract (UniExtract) is designed with a **fully decoupled, modular architecture**. You can run the entire stack together on your local machine, or split it across different cloud providers, VPSs, and CDNs.
 
 ---
 
@@ -57,8 +57,8 @@ Best for everyday users and developers who want the full application running on 
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/AryansDevStudios/Universal-Media-Extractor.git
-cd Universal-Media-Extractor
+git clone https://github.com/AryansDevStudios/UniExtract.git
+cd UniExtract
 
 # 2. Install both backend and frontend dependencies
 npm run fullstack:install
@@ -77,9 +77,9 @@ Best for hosting on an Ubuntu/Debian VPS, Raspberry Pi, Docker, or Cloud platfor
 
 #### Option A: Download ONLY Backend via Git Sparse Checkout (Recommended)
 ```bash
-# Clone ONLY backend files from GitHub into 'ume-backend'
-git clone --depth 1 --filter=blob:none --sparse https://github.com/AryansDevStudios/Universal-Media-Extractor.git ume-backend
-cd ume-backend
+# Clone ONLY backend files from GitHub into 'uniextract-backend'
+git clone --depth 1 --filter=blob:none --sparse https://github.com/AryansDevStudios/UniExtract.git uniextract-backend
+cd uniextract-backend
 git sparse-checkout set server.js scripts package.json yt-dlp.conf .env.example public
 
 # Install production dependencies only (NO devDependencies)
@@ -92,7 +92,7 @@ npm run backend:start
 #### Option B: Using Helper Script
 - **Linux / macOS**:
   ```bash
-  curl -sL https://raw.githubusercontent.com/AryansDevStudios/Universal-Media-Extractor/main/scripts/download-backend-only.sh | bash
+  curl -sL https://raw.githubusercontent.com/AryansDevStudios/UniExtract/main/scripts/download-backend-only.sh | bash
   ```
 - **Windows CMD**:
   ```cmd
@@ -112,16 +112,16 @@ COOKIE_PASSWORD=your_secure_password_here
 ```
 
 #### Running in Production (Systemd Service on Linux VPS)
-Create `/etc/systemd/system/ume.service`:
+Create `/etc/systemd/system/uniextract.service`:
 ```ini
 [Unit]
-Description=Universal Media Extractor Backend
+Description=Uni Extract Backend
 After=network.target
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/opt/ume-backend
+WorkingDirectory=/opt/uniextract-backend
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=10
@@ -133,7 +133,7 @@ WantedBy=multi-user.target
 Enable and start:
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now ume
+sudo systemctl enable --now uniextract
 ```
 
 ---
@@ -144,9 +144,9 @@ Best for deploying to Netlify, Vercel, Cloudflare Pages, or running a standalone
 
 #### Option A: Download ONLY Frontend via Git Sparse Checkout
 ```bash
-# Clone ONLY the client folder from GitHub into 'ume-frontend'
-git clone --depth 1 --filter=blob:none --sparse https://github.com/AryansDevStudios/Universal-Media-Extractor.git ume-frontend
-cd ume-frontend
+# Clone ONLY the client folder from GitHub into 'uniextract-frontend'
+git clone --depth 1 --filter=blob:none --sparse https://github.com/AryansDevStudios/UniExtract.git uniextract-frontend
+cd uniextract-frontend
 git sparse-checkout set client
 cd client
 
@@ -199,12 +199,12 @@ Best for unRAID, TrueNAS SCALE, Synology, Proxmox, or Docker Swarm/Kubernetes ho
 ```bash
 # Pull and run pre-built multi-arch image from GitHub Container Registry
 docker run -d \
-  --name universal-media-extractor \
+  --name uniextract \
   -p 3000:3000 \
   -v $(pwd)/cookies.txt:/app/cookies.txt \
   -e COOKIE_PASSWORD=your_secure_password \
   --restart unless-stopped \
-  ghcr.io/aryansdevstudios/universal-media-extractor:latest
+  ghcr.io/aryansdevstudios/uniextract:latest
 ```
 
 ---

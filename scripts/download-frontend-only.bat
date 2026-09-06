@@ -2,11 +2,11 @@
 setlocal enabledelayedexpansion
 
 echo ==================================================
-echo Universal Media Extractor: Frontend Only Downloader
+echo Uni Extract: Frontend Only Downloader
 echo ==================================================
 
 set "TARGET_DIR=%~1"
-if "%TARGET_DIR%"=="" set "TARGET_DIR=ume-frontend"
+if "%TARGET_DIR%"=="" set "TARGET_DIR=uniextract-frontend"
 
 echo [1/3] Cloning frontend files via Git Sparse Checkout into %TARGET_DIR%...
 where git >nul 2>nul
@@ -15,7 +15,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-git clone --depth 1 --filter=blob:none --sparse https://github.com/AryansDevStudios/Universal-Media-Extractor.git "%TARGET_DIR%"
+git clone --depth 1 --filter=blob:none --sparse https://github.com/AryansDevStudios/UniExtract.git "%TARGET_DIR%"
 cd /d "%TARGET_DIR%"
 git sparse-checkout set client
 cd client

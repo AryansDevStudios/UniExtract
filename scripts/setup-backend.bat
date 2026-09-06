@@ -1,5 +1,5 @@
 @echo off
-echo ==> Setting up Universal Media Extractor Backend...
+echo ==> Setting up Uni Extract Backend...
 
 if not exist .env (
     if exist .env.example copy .env.example .env >nul

@@ -2,16 +2,16 @@
 set -e
 
 # ==============================================================================
-# Universal Media Extractor - Backend Only Downloader & Installer
+# Uni Extract - Backend Only Downloader & Installer
 # Fetches ONLY backend server files from GitHub using Git Sparse Checkout.
 # No frontend or Electron files are downloaded.
 # ==============================================================================
 
-REPO_URL="https://github.com/AryansDevStudios/Universal-Media-Extractor.git"
-TARGET_DIR="${1:-ume-backend}"
+REPO_URL="https://github.com/AryansDevStudios/UniExtract.git"
+TARGET_DIR="${1:-uniextract-backend}"
 
 echo "=================================================="
-echo "Universal Media Extractor: Backend Only Downloader"
+echo "Uni Extract: Backend Only Downloader"
 echo "Target directory: $TARGET_DIR"
 echo "=================================================="
 

@@ -1,5 +1,5 @@
 # ==============================================================================
-# Universal Media Extractor (UME) - Multi-Stage Production Dockerfile
+# Uni Extract (UniExtract) - Multi-Stage Production Dockerfile
 # ==============================================================================
 
 # STAGE 1: Build React Frontend

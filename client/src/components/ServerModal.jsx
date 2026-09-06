@@ -309,7 +309,7 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
                     How to spin up your own remote backend:
                   </div>
                   <div className="p-2.5 rounded-xl bg-slate-900 text-slate-200 font-mono text-[10px] space-y-1">
-                    <div className="text-emerald-400">git clone https://github.com/AryansDevStudios/Universal-Media-Extractor.git</div>
+                    <div className="text-emerald-400">git clone https://github.com/AryansDevStudios/UniExtract.git</div>
                     <div>npm install && npm start</div>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">

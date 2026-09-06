@@ -61,7 +61,7 @@ export default function UpdateModal({
   const latestVersion = updateInfo.latestVersion || '2.0.0';
   const releaseName = updateInfo.releaseName || `v${latestVersion}`;
   const releaseNotes = updateInfo.releaseNotes || 'No release notes provided.';
-  const releaseUrl = updateInfo.releaseUrl || 'https://github.com/AryansDevStudios/Universal-Media-Extractor/releases';
+  const releaseUrl = updateInfo.releaseUrl || 'https://github.com/AryansDevStudios/UniExtract/releases';
   const assets = updateInfo.assets || [];
 
   const handleDownloadUpdate = async () => {
@@ -322,10 +322,10 @@ export default function UpdateModal({
             <div className="p-3 rounded-xl bg-slate-100/60 dark:bg-slate-950/40 border border-slate-200/60 dark:border-slate-800 text-xs flex items-center justify-between">
               <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
                 <ServerIcon size={14} />
-                <span>Docker: <code>ghcr.io/aryansdevstudios/universal-media-extractor:latest</code></span>
+                <span>Docker: <code>ghcr.io/aryansdevstudios/uniextract:latest</code></span>
               </div>
               <button
-                onClick={() => navigator.clipboard?.writeText('docker pull ghcr.io/aryansdevstudios/universal-media-extractor:latest')}
+                onClick={() => navigator.clipboard?.writeText('docker pull ghcr.io/aryansdevstudios/uniextract:latest')}
                 className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-300"
               >
                 Copy Pull
