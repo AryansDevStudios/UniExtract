@@ -307,6 +307,21 @@ app.post('/api/analyze', async (req, res) => {
                     durText = `${m}:${s < 10 ? '0' : ''}${s}`;
                 }
 
+                // Detect potential format hints from title or thumbnail
+                const titleUpper = (item.title || '').toUpperCase();
+                let qualityHint = 'HD';
+                if (titleUpper.includes('8K') || titleUpper.includes('4320P')) {
+                    qualityHint = '8K';
+                } else if (titleUpper.includes('4K') || titleUpper.includes('2160P') || titleUpper.includes('UHD')) {
+                    qualityHint = '4K';
+                } else if (titleUpper.includes('1440P') || titleUpper.includes('2K')) {
+                    qualityHint = '2K';
+                } else if (titleUpper.includes('1080P') || titleUpper.includes('FHD')) {
+                    qualityHint = '1080p';
+                } else if (thumb && (thumb.includes('maxres') || thumb.includes('sddefault'))) {
+                    qualityHint = 'FHD/HD';
+                }
+
                 return {
                     index: idx + 1,
                     id: item.id,
@@ -315,7 +330,8 @@ app.post('/api/analyze', async (req, res) => {
                     durationText: durText,
                     thumbnail: thumb,
                     url: `https://www.youtube.com/watch?v=${item.id}`,
-                    uploader: item.uploader || item.channel || info.uploader || ''
+                    uploader: item.uploader || item.channel || info.uploader || '',
+                    qualityHint
                 };
             });
 
@@ -468,39 +484,74 @@ app.get('/api/thumbnail', (req, res) => {
 
 // --- API: DOWNLOAD & PROCESS ---
 app.post('/api/download', async (req, res) => {
-    const { url, vId, aId, vLabel, aLabel, title, qualityPreset } = req.body;
+    const { url, vId, aId, vLabel, aLabel, title, qualityPreset, videoQuality, audioQuality } = req.body;
     const cleanedUrl = cleanMediaUrl(url);
     const jobId = uuidv4();
     
     let isAudioOnly = false;
+    let isMuted = false;
     let formatSelection = '';
     let extension = 'mp4';
     let namingTag = '';
 
-    // Handle high-level quality presets (used for playlists or simple mode) with graceful resolution fallback
-    if (qualityPreset) {
+    const heightMap = {
+        '8k': 4320,
+        '4k': 2160,
+        '1440p': 1440,
+        '2k': 1440,
+        '1080p': 1080,
+        '720p': 720,
+        '480p': 480,
+        '360p': 360
+    };
+
+    // Determine target video & audio quality
+    let targetVideo = videoQuality;
+    let targetAudio = audioQuality;
+
+    // Backward compatibility with legacy qualityPreset
+    if (qualityPreset && !videoQuality && !audioQuality) {
         if (qualityPreset === 'audio') {
-            isAudioOnly = true;
-            formatSelection = 'bestaudio/best';
-            extension = 'mp3';
-            namingTag = 'Audio_MP3';
-        } else if (qualityPreset === '1080p') {
-            formatSelection = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
-            extension = 'mp4';
-            namingTag = '1080p_FHD';
-        } else if (qualityPreset === '720p') {
-            formatSelection = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best';
-            extension = 'mp4';
-            namingTag = '720p_HD';
-        } else if (qualityPreset === '480p') {
-            formatSelection = 'bestvideo[height<=480]+bestaudio/best[height<=480]/best';
-            extension = 'mp4';
-            namingTag = '480p_SD';
+            targetVideo = 'none';
+            targetAudio = '320k';
         } else {
-            // 'best'
-            formatSelection = 'bestvideo+bestaudio/best';
+            targetVideo = qualityPreset;
+            targetAudio = 'best';
+        }
+    }
+
+    if (targetVideo !== undefined || targetAudio !== undefined) {
+        const v = targetVideo || '1080p';
+        const a = targetAudio || 'best';
+
+        if (v === 'none' && a === 'none') {
+            return res.status(400).json({ error: "Cannot select both 'No Video' and 'No Audio'." });
+        }
+
+        if (v === 'none') {
+            // Audio Only mode
+            isAudioOnly = true;
+            extension = 'mp3';
+            formatSelection = 'bestaudio/best';
+            namingTag = `Audio_${a === 'best' ? 'HQ' : a.toUpperCase()}`;
+        } else if (a === 'none') {
+            // Muted Video mode
+            isMuted = true;
             extension = 'mp4';
-            namingTag = 'Best_Quality';
+            const h = heightMap[v];
+            formatSelection = h 
+                ? `bestvideo[height<=${h}]/best[height<=${h}]/best`
+                : 'bestvideo/best';
+            namingTag = `${v.toUpperCase()}_Muted`;
+        } else {
+            // Video + Audio with resilient resolution fallback (falls back to next highest if 4K/8K not present)
+            isAudioOnly = false;
+            extension = 'mp4';
+            const h = heightMap[v];
+            formatSelection = h
+                ? `bestvideo[height<=${h}]+bestaudio/best[height<=${h}]/best`
+                : 'bestvideo+bestaudio/best';
+            namingTag = `${v.toUpperCase()}_${a === 'best' ? 'HQ' : a.toUpperCase()}`;
         }
     } else {
         isAudioOnly = !vId && !!aId;
@@ -516,6 +567,11 @@ app.post('/api/download', async (req, res) => {
         customTag: namingTag, 
         title, 
         extension,
+        isAudioOnly,
+        isMuted,
+        targetVideo: targetVideo || (isAudioOnly ? 'none' : 'best'),
+        targetAudio: targetAudio || (isMuted ? 'none' : 'best'),
+        resolvedFormat: null,
         lastPoll: Date.now(),
         downloadInstance: null,
         activeFfmpeg: null,
@@ -541,9 +597,6 @@ app.post('/api/download', async (req, res) => {
     let metaThumb = "";
 
     if (fs.existsSync(infoJsonPath)) {
-        ffmpegArgs.push('--load-info-json', infoJsonPath);
-        logger(jobId, "Bypassing network extraction phase using cached metadata (Instant Start)", "SPEED");
-        
         try {
             const infoData = JSON.parse(fs.readFileSync(infoJsonPath, 'utf8'));
             if (infoData.title) metaTitle = infoData.title;
@@ -623,11 +676,15 @@ app.post('/api/download', async (req, res) => {
                         let embedArgs = [];
 
                         if (isAudioOnly) {
+                            const lameBitrate = (targetAudio && targetAudio !== 'best')
+                                ? ['-b:a', targetAudio]
+                                : ['-q:a', '0'];
+
                             if (thumbFile) {
                                 embedArgs = [
                                     '-y', '-i', finalFile, '-i', thumbFile,
                                     '-map', '0:a:0', '-map', '1:0',
-                                    '-c:a', 'libmp3lame', '-q:a', '0',
+                                    '-c:a', 'libmp3lame', ...lameBitrate,
                                     '-id3v2_version', '3',
                                     '-metadata', `title=${mTitle}`,
                                     '-metadata', `artist=${mArtist}`,
@@ -643,7 +700,7 @@ app.post('/api/download', async (req, res) => {
                                 embedArgs = [
                                     '-y', '-i', finalFile,
                                     '-map', '0:a:0',
-                                    '-c:a', 'libmp3lame', '-q:a', '0',
+                                    '-c:a', 'libmp3lame', ...lameBitrate,
                                     '-id3v2_version', '3',
                                     '-metadata', `title=${mTitle}`,
                                     '-metadata', `artist=${mArtist}`,
@@ -654,13 +711,45 @@ app.post('/api/download', async (req, res) => {
                                     embeddedFile
                                 ];
                             }
+                        } else if (isMuted) {
+                            if (thumbFile) {
+                                embedArgs = [
+                                    '-y', '-i', finalFile, '-i', thumbFile,
+                                    '-map', '0:v:0', '-map', '1:0',
+                                    '-c:v:0', 'copy',
+                                    '-an',
+                                    '-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic',
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
+                                    embeddedFile
+                                ];
+                            } else {
+                                embedArgs = [
+                                    '-y', '-i', finalFile,
+                                    '-map', '0:v:0',
+                                    '-c:v:0', 'copy',
+                                    '-an',
+                                    '-metadata', `title=${mTitle}`,
+                                    '-metadata', `artist=${mArtist}`,
+                                    '-metadata', `album_artist=${mArtist}`,
+                                    '-metadata', `album=${mArtist} (YouTube)`,
+                                    '-metadata', `date=${mDate}`,
+                                    '-metadata', `year=${mDate}`,
+                                    embeddedFile
+                                ];
+                            }
                         } else {
+                            const aacBitrate = (targetAudio && targetAudio !== 'best') ? targetAudio : '320k';
                             if (thumbFile) {
                                 embedArgs = [
                                     '-y', '-i', finalFile, '-i', thumbFile,
                                     '-map', '0:v:0', '-map', '0:a:0?', '-map', '1:0',
                                     '-c:v:0', 'copy',
-                                    '-c:a', 'aac', '-b:a', '192k',
+                                    '-c:a', 'aac', '-b:a', aacBitrate,
                                     '-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic',
                                     '-metadata', `title=${mTitle}`,
                                     '-metadata', `artist=${mArtist}`,
@@ -675,7 +764,7 @@ app.post('/api/download', async (req, res) => {
                                     '-y', '-i', finalFile,
                                     '-map', '0:v:0', '-map', '0:a:0?',
                                     '-c:v:0', 'copy',
-                                    '-c:a', 'aac', '-b:a', '192k',
+                                    '-c:a', 'aac', '-b:a', aacBitrate,
                                     '-metadata', `title=${mTitle}`,
                                     '-metadata', `artist=${mArtist}`,
                                     '-metadata', `album_artist=${mArtist}`,
@@ -713,6 +802,30 @@ app.post('/api/download', async (req, res) => {
                             finalFile = embeddedFile;
                             jobs[jobId].extension = targetExt;
                             logger(jobId, `Task 2 Packaging Successful: Output is authentic ${targetExt.toUpperCase()}`, "META");
+
+                            try {
+                                if (isAudioOnly) {
+                                    const audioTag = jobs[jobId].targetAudio === 'best' ? 'Best Quality' : jobs[jobId].targetAudio.toUpperCase();
+                                    jobs[jobId].resolvedFormat = `MP3 (${audioTag})`;
+                                } else {
+                                    const probe = execSync(`ffmpeg -i "${finalFile}" -hide_banner -f null - 2>&1`, { stdio: 'pipe' }).toString();
+                                    const resMatch = probe.match(/Video:.*?(\d{3,4})x(\d{3,4})/s) || probe.match(/, (\d{3,4})x(\d{3,4})/);
+                                    if (resMatch) {
+                                        const h = parseInt(resMatch[2]);
+                                        let label = `${h}p`;
+                                        if (h >= 4320) label = '8K (4320p)';
+                                        else if (h >= 2160) label = '4K (2160p)';
+                                        else if (h >= 1440) label = '2K (1440p)';
+                                        else if (h >= 1080) label = '1080p FHD';
+                                        else if (h >= 720) label = '720p HD';
+                                        else if (h >= 480) label = '480p SD';
+                                        else if (h >= 360) label = '360p';
+                                        
+                                        const audioSuffix = isMuted ? ' (Muted)' : (jobs[jobId].targetAudio && jobs[jobId].targetAudio !== 'best' ? ` + ${jobs[jobId].targetAudio.toUpperCase()}` : '');
+                                        jobs[jobId].resolvedFormat = `${label}${audioSuffix}`;
+                                    }
+                                }
+                            } catch (pe) {}
                         } else {
                             const errorLog = task2Result.stderr ? task2Result.stderr.toString() : 'Unknown FFmpeg Error';
                             logger(jobId, `Task 2 FFmpeg warning/fallback:\n${errorLog}`, "WARN");
@@ -752,10 +865,24 @@ app.all('/api/cancel/:jobId', (req, res) => {
 // --- API: STATUS ---
 app.get('/api/status/:jobId', (req, res) => {
     const job = jobs[req.params.jobId];
-    if (job) {
-        job.lastPoll = Date.now();
+    if (!job) {
+        return res.json({});
     }
-    res.json(job || {});
+    job.lastPoll = Date.now();
+    res.json({
+        status: job.status,
+        progress: job.progress,
+        file: job.file,
+        title: job.title,
+        extension: job.extension,
+        customTag: job.customTag,
+        isAudioOnly: job.isAudioOnly,
+        isMuted: job.isMuted,
+        targetVideo: job.targetVideo,
+        targetAudio: job.targetAudio,
+        resolvedFormat: job.resolvedFormat,
+        error: job.error
+    });
 });
 
 // --- API: DELIVERY & CLEANUP ---

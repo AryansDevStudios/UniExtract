@@ -16,21 +16,41 @@ import {
   Clock,
   Sparkles,
   Music,
-  Video
+  Video,
+  VolumeX,
+  SlidersHorizontal
 } from 'lucide-react';
 
-const QUALITY_PRESETS = [
-  { id: '1080p', label: '1080p FHD (or max available)', desc: 'Full HD with auto-fallback to 720p', isAudio: false },
-  { id: '720p', label: '720p HD (Balanced)', desc: 'Fast & sharp high definition', isAudio: false },
-  { id: '480p', label: '480p SD (Data Saver)', desc: 'Compact file size', isAudio: false },
-  { id: 'best', label: 'Best Video (Maximum Quality)', desc: 'Highest available bitrate & resolution', isAudio: false },
-  { id: 'audio', label: 'MP3 Audio Only (320kbps)', desc: 'High quality audio + ID3 metadata', isAudio: true }
+const VIDEO_PRESETS = [
+  { id: 'best', label: 'Best Available (Max 8K/4K)', badge: 'BEST', desc: 'Highest resolution on YouTube' },
+  { id: '8k', label: '8K Ultra HD (4320p)', badge: '8K', desc: '8K with auto-fallback to 4K / 1080p' },
+  { id: '4k', label: '4K Ultra HD (2160p)', badge: '4K', desc: '4K with auto-fallback to 1080p / 720p' },
+  { id: '1440p', label: '2K Quad HD (1440p)', badge: '2K', desc: '1440p QHD with auto-fallback' },
+  { id: '1080p', label: '1080p Full HD (FHD)', badge: 'FHD', desc: 'Full HD with auto-fallback to 720p' },
+  { id: '720p', label: '720p High Def (HD)', badge: 'HD', desc: 'Crisp HD quality' },
+  { id: '480p', label: '480p Standard (SD)', badge: 'SD', desc: 'Compact data saver' },
+  { id: '360p', label: '360p Low Bandwidth', badge: '360p', desc: 'Minimal storage size' },
+  { id: 'none', label: 'No Video (Audio Only)', badge: 'NO VIDEO', desc: 'Extract and download audio track only' }
+];
+
+const AUDIO_PRESETS = [
+  { id: 'best', label: 'Best Available Audio', desc: 'Original high-bitrate source audio' },
+  { id: '320k', label: '320 kbps (Studio MP3 / High AAC)', desc: 'Audiophile grade maximum fidelity' },
+  { id: '256k', label: '256 kbps (High Quality)', desc: 'Clean sound with low file size' },
+  { id: '192k', label: '192 kbps (Standard Quality)', desc: 'Standard high-definition audio' },
+  { id: '128k', label: '128 kbps (Compact MP3)', desc: 'Lightweight audio files' },
+  { id: 'none', label: 'No Audio (Muted Video)', desc: 'Video stream only without audio' }
 ];
 
 export default function PlaylistView({ playlist, onToast }) {
   const [selectedIds, setSelectedIds] = useState(() => new Set(playlist.items.map(item => item.id)));
-  const [masterQuality, setMasterQuality] = useState('1080p');
-  const [overrides, setOverrides] = useState({}); // { [videoId]: '720p' | 'audio' | ... }
+  
+  // Master Quality Selectors
+  const [masterVideo, setMasterVideo] = useState('1080p');
+  const [masterAudio, setMasterAudio] = useState('best');
+  
+  // Per-video overrides: { [videoId]: { video?: string, audio?: string } }
+  const [overrides, setOverrides] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   
   // Batch Execution State
@@ -45,14 +65,14 @@ export default function PlaylistView({ playlist, onToast }) {
     failedCount: 0
   });
 
-  // Per-item status dictionary: { [videoId]: { status: 'queued'|'downloading'|'completed'|'error', progress: '0%', jobId?: string } }
+  // Per-item status dictionary: { [videoId]: { status: 'queued'|'downloading'|'completed'|'error', progress: '0%', resolvedFormat?: string, jobId?: string } }
   const [itemStatuses, setItemStatuses] = useState({});
 
   const isCancelledRef = useRef(false);
   const activeJobIdRef = useRef(null);
   const pollTimerRef = useRef(null);
 
-  // Clean up timers on unmount
+  // Clean up timers & abort on unmount or tab close
   useEffect(() => {
     const handleUnload = () => {
       const jobId = activeJobIdRef.current;
@@ -90,7 +110,7 @@ export default function PlaylistView({ playlist, onToast }) {
   };
 
   const toggleItem = (id) => {
-    if (batchState.isDownloading) return; // Prevent selection changes during active download
+    if (batchState.isDownloading) return;
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -99,15 +119,48 @@ export default function PlaylistView({ playlist, onToast }) {
     });
   };
 
-  const setItemOverride = (id, quality) => {
+  const setItemVideoOverride = (id, val) => {
     setOverrides(prev => {
-      if (!quality || quality === 'inherit') {
-        const next = { ...prev };
-        delete next[id];
-        return next;
+      const cur = prev[id] || {};
+      const next = { ...cur };
+      if (!val || val === 'inherit') {
+        delete next.video;
+      } else {
+        next.video = val;
       }
-      return { ...prev, [id]: quality };
+      if (Object.keys(next).length === 0) {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      }
+      return { ...prev, [id]: next };
     });
+  };
+
+  const setItemAudioOverride = (id, val) => {
+    setOverrides(prev => {
+      const cur = prev[id] || {};
+      const next = { ...cur };
+      if (!val || val === 'inherit') {
+        delete next.audio;
+      } else {
+        next.audio = val;
+      }
+      if (Object.keys(next).length === 0) {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      }
+      return { ...prev, [id]: next };
+    });
+  };
+
+  // Helper to determine effective configuration for an item
+  const getEffectiveConfig = (itemId) => {
+    const itemOv = overrides[itemId] || {};
+    const video = itemOv.video !== undefined ? itemOv.video : masterVideo;
+    const audio = itemOv.audio !== undefined ? itemOv.audio : masterAudio;
+    return { video, audio };
   };
 
   // Trigger browser file download
@@ -154,6 +207,10 @@ export default function PlaylistView({ playlist, onToast }) {
       return onToast('Please select at least one video to download.', 'error');
     }
 
+    if (masterVideo === 'none' && masterAudio === 'none') {
+      return onToast('Cannot download: Both Master Video and Audio are set to None.', 'error');
+    }
+
     isCancelledRef.current = false;
     let completedCount = 0;
     let failedCount = 0;
@@ -182,7 +239,16 @@ export default function PlaylistView({ playlist, onToast }) {
       if (isCancelledRef.current) break;
 
       const item = queue[i];
-      const quality = overrides[item.id] || masterQuality;
+      const { video, audio } = getEffectiveConfig(item.id);
+
+      if (video === 'none' && audio === 'none') {
+        failedCount++;
+        setItemStatuses(prev => ({
+          ...prev,
+          [item.id]: { status: 'error', progress: '0%' }
+        }));
+        continue;
+      }
 
       setBatchState(prev => ({
         ...prev,
@@ -197,14 +263,14 @@ export default function PlaylistView({ playlist, onToast }) {
       }));
 
       try {
-        // Step 1: Initiate download on server
         const res = await fetch('/api/download', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             url: item.url,
             title: item.title,
-            qualityPreset: quality
+            videoQuality: video,
+            audioQuality: audio
           })
         });
 
@@ -219,7 +285,6 @@ export default function PlaylistView({ playlist, onToast }) {
         activeJobIdRef.current = jobId;
         setBatchState(prev => ({ ...prev, activeJobId: jobId }));
 
-        // Step 2: Poll status until finished or error
         const jobResult = await new Promise((resolve) => {
           pollTimerRef.current = setInterval(async () => {
             if (isCancelledRef.current) {
@@ -246,7 +311,11 @@ export default function PlaylistView({ playlist, onToast }) {
 
               if (data.status === 'completed') {
                 clearInterval(pollTimerRef.current);
-                return resolve({ status: 'completed', jobId });
+                return resolve({ 
+                  status: 'completed', 
+                  jobId, 
+                  resolvedFormat: data.resolvedFormat 
+                });
               }
 
               if (data.status === 'error') {
@@ -269,7 +338,12 @@ export default function PlaylistView({ playlist, onToast }) {
           completedCount++;
           setItemStatuses(prev => ({
             ...prev,
-            [item.id]: { status: 'completed', progress: '100%', jobId }
+            [item.id]: { 
+              status: 'completed', 
+              progress: '100%', 
+              jobId, 
+              resolvedFormat: jobResult.resolvedFormat 
+            }
           }));
           triggerDownload(jobId, item.title);
         } else {
@@ -294,7 +368,6 @@ export default function PlaylistView({ playlist, onToast }) {
         failedCount
       }));
 
-      // Small pause between items to allow browser download manager to register cleanly
       if (i < queue.length - 1 && !isCancelledRef.current) {
         await new Promise(r => setTimeout(r, 1500));
       }
@@ -315,6 +388,7 @@ export default function PlaylistView({ playlist, onToast }) {
   const selectedCount = selectedIds.size;
   const totalItems = playlist.items.length;
   const isAllSelected = selectedCount === totalItems && totalItems > 0;
+  const isBothNone = masterVideo === 'none' && masterAudio === 'none';
 
   return (
     <motion.div
@@ -324,7 +398,7 @@ export default function PlaylistView({ playlist, onToast }) {
       className="w-full bg-white/70 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 md:p-8 backdrop-blur-xl shadow-2xl space-y-6"
     >
       {/* 1. PLAYLIST HEADER BANNER */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 border-b border-slate-200/60 dark:border-slate-800/80 pb-6">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 border-b border-slate-200/60 dark:border-slate-800/80 pb-6">
         <div className="flex items-center gap-4">
           <div className="relative w-20 h-20 md:w-24 md:h-24 rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0 shadow-lg border border-slate-200/50 dark:border-slate-700/50">
             {playlist.thumbnail ? (
@@ -340,12 +414,12 @@ export default function PlaylistView({ playlist, onToast }) {
             </span>
           </div>
 
-          <div className="space-y-1 max-w-xl">
-            <div className="flex items-center gap-2">
+          <div className="space-y-1.5 max-w-xl">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
                 <ListMusic size={11} /> YouTube Playlist
               </span>
-              <span className="text-xs text-slate-400 font-medium">
+              <span className="text-xs text-slate-400 font-medium truncate">
                 by {playlist.uploader || 'Creator'}
               </span>
             </div>
@@ -355,28 +429,51 @@ export default function PlaylistView({ playlist, onToast }) {
           </div>
         </div>
 
-        {/* Master Quality Preset Picker */}
-        <div className="w-full md:w-auto flex flex-col gap-1.5 min-w-[240px]">
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles size={12} className="text-indigo-500" /> Master Quality Preset
-          </label>
-          <div className="relative">
+        {/* Master Quality Controls: Independent Video & Audio Selectors */}
+        <div className="w-full lg:w-auto flex flex-col sm:flex-row gap-4 bg-slate-50/80 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 shadow-sm">
+          {/* Master Video Selector */}
+          <div className="flex-1 sm:w-56 space-y-1">
+            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Video size={12} className="text-indigo-500" /> Master Video Quality
+            </label>
             <select
-              value={masterQuality}
+              value={masterVideo}
               disabled={batchState.isDownloading}
-              onChange={(e) => setMasterQuality(e.target.value)}
-              className="w-full bg-slate-100/70 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3.5 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer disabled:opacity-50"
+              onChange={(e) => setMasterVideo(e.target.value)}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer disabled:opacity-50"
             >
-              {QUALITY_PRESETS.map(preset => (
+              {VIDEO_PRESETS.map(preset => (
                 <option key={preset.id} value={preset.id}>
                   {preset.label}
                 </option>
               ))}
             </select>
+            <span className="text-[9px] text-slate-400 block truncate">
+              {VIDEO_PRESETS.find(p => p.id === masterVideo)?.desc}
+            </span>
           </div>
-          <span className="text-[10px] text-slate-400 dark:text-slate-500">
-            {QUALITY_PRESETS.find(p => p.id === masterQuality)?.desc}
-          </span>
+
+          {/* Master Audio Selector */}
+          <div className="flex-1 sm:w-56 space-y-1">
+            <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Music size={12} className="text-purple-500" /> Master Audio Quality
+            </label>
+            <select
+              value={masterAudio}
+              disabled={batchState.isDownloading}
+              onChange={(e) => setMasterAudio(e.target.value)}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500/40 cursor-pointer disabled:opacity-50"
+            >
+              {AUDIO_PRESETS.map(preset => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+            <span className="text-[9px] text-slate-400 block truncate">
+              {AUDIO_PRESETS.find(p => p.id === masterAudio)?.desc}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -430,7 +527,7 @@ export default function PlaylistView({ playlist, onToast }) {
           {!batchState.isDownloading ? (
             <button
               type="button"
-              disabled={selectedCount === 0}
+              disabled={selectedCount === 0 || isBothNone}
               onClick={startBatchDownload}
               className="w-full md:w-auto px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl text-sm transition-all hover:shadow-lg hover:shadow-indigo-500/25 active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
             >
@@ -461,18 +558,31 @@ export default function PlaylistView({ playlist, onToast }) {
       </div>
 
       {/* 3. SCROLLABLE VIDEO LIST WITH PER-VIDEO FORMAT OVERRIDES */}
-      <div className="space-y-2 max-h-[540px] overflow-y-auto custom-scroll pr-1">
+      <div className="space-y-2.5 max-h-[560px] overflow-y-auto custom-scroll pr-1">
         {filteredItems.map((item) => {
           const isSelected = selectedIds.has(item.id);
-          const currentOverride = overrides[item.id] || '';
-          const effectiveQuality = currentOverride || masterQuality;
+          const itemOv = overrides[item.id] || {};
+          const effectiveVideo = itemOv.video !== undefined ? itemOv.video : masterVideo;
+          const effectiveAudio = itemOv.audio !== undefined ? itemOv.audio : masterAudio;
           const statusObj = itemStatuses[item.id];
           const isCurrentActive = batchState.activeVideoId === item.id;
+
+          // Format Summary Tag
+          let formatTag = '';
+          if (effectiveVideo === 'none') {
+            formatTag = `🎵 Audio (${effectiveAudio === 'best' ? 'HQ' : effectiveAudio.toUpperCase()})`;
+          } else if (effectiveAudio === 'none') {
+            formatTag = `🎬 ${effectiveVideo.toUpperCase()} (Muted)`;
+          } else {
+            const vLabel = effectiveVideo === 'best' ? 'Best' : effectiveVideo.toUpperCase();
+            const aLabel = effectiveAudio === 'best' ? 'HQ' : effectiveAudio.toUpperCase();
+            formatTag = `🎬 ${vLabel} + 🎵 ${aLabel}`;
+          }
 
           return (
             <div
               key={item.id}
-              className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl transition-all border ${
+              className={`flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 p-3.5 rounded-2xl transition-all border ${
                 isCurrentActive
                   ? 'bg-indigo-500/10 border-indigo-500/40 shadow-md ring-1 ring-indigo-500/20'
                   : isSelected
@@ -480,7 +590,7 @@ export default function PlaylistView({ playlist, onToast }) {
                   : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200/40 dark:border-slate-800/50 opacity-60'
               }`}
             >
-              {/* Left: Checkbox, Index, Thumbnail, Title */}
+              {/* Left: Checkbox, Index, Thumbnail, Title, Quality Badges */}
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <button
                   type="button"
@@ -499,16 +609,25 @@ export default function PlaylistView({ playlist, onToast }) {
                   #{item.index}
                 </span>
 
-                <div className="relative w-20 h-12 rounded-lg overflow-hidden bg-slate-200 dark:bg-slate-800 flex-shrink-0 shadow-sm">
+                <div className="relative w-24 h-14 rounded-lg overflow-hidden bg-slate-200 dark:bg-slate-800 flex-shrink-0 shadow-sm">
                   <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover" />
                   {item.durationText && (
-                    <span className="absolute bottom-1 right-1 text-[9px] font-mono font-bold bg-black/70 text-white px-1 rounded">
+                    <span className="absolute bottom-1 right-1 text-[9px] font-mono font-bold bg-black/75 text-white px-1 rounded">
                       {item.durationText}
+                    </span>
+                  )}
+                  {item.qualityHint && (
+                    <span className={`absolute top-1 left-1 text-[8px] font-black px-1 rounded shadow-sm ${
+                      item.qualityHint === '8K' || item.qualityHint === '4K'
+                        ? 'bg-amber-500 text-black font-extrabold'
+                        : 'bg-indigo-600 text-white'
+                    }`}>
+                      {item.qualityHint}
                     </span>
                   )}
                 </div>
 
-                <div className="min-w-0 flex-1 pr-2">
+                <div className="min-w-0 flex-1 pr-2 space-y-1">
                   <a
                     href={item.url}
                     target="_blank"
@@ -519,24 +638,30 @@ export default function PlaylistView({ playlist, onToast }) {
                     {item.title}
                     <ExternalLink size={11} className="opacity-0 hover:opacity-100 flex-shrink-0" />
                   </a>
-                  <p className="text-[11px] text-slate-400 truncate">
-                    {item.uploader || playlist.uploader}
-                  </p>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] text-slate-400 truncate">
+                      {item.uploader || playlist.uploader}
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      {formatTag}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Right: Format Override Dropdown & Progress/Status Badge */}
-              <div className="flex items-center gap-2.5 sm:flex-shrink-0 self-end sm:self-center">
+              {/* Right: Individual Overrides (Video & Audio) & Status Badge */}
+              <div className="flex items-center gap-2.5 flex-wrap lg:flex-nowrap sm:flex-shrink-0 self-end lg:self-center">
                 {/* Status Indicator */}
                 {statusObj?.status === 'downloading' ? (
-                  <div className="flex items-center gap-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2.5 py-1 rounded-lg text-xs font-mono font-bold">
+                  <div className="flex items-center gap-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2.5 py-1 rounded-lg text-xs font-mono font-bold">
                     <Loader2 size={13} className="animate-spin" />
                     <span>{statusObj.progress || '0%'}</span>
                   </div>
                 ) : statusObj?.status === 'completed' ? (
-                  <div className="flex items-center gap-1.5 text-emerald-500 bg-emerald-500/10 px-2.5 py-1 rounded-lg text-xs font-bold">
+                  <div className="flex items-center gap-1.5 text-emerald-500 bg-emerald-500/10 px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap">
                     <CheckCircle2 size={14} />
-                    <span>Done</span>
+                    <span>{statusObj.resolvedFormat || 'Done'}</span>
                   </div>
                 ) : statusObj?.status === 'error' ? (
                   <div className="flex items-center gap-1.5 text-red-500 bg-red-500/10 px-2.5 py-1 rounded-lg text-xs font-bold">
@@ -549,24 +674,52 @@ export default function PlaylistView({ playlist, onToast }) {
                   </span>
                 ) : null}
 
-                {/* Per-video Format Override */}
+                {/* Per-Video Video Override Selector */}
                 <div className="flex items-center gap-1">
                   <select
-                    value={currentOverride}
+                    value={itemOv.video || ''}
                     disabled={batchState.isDownloading}
-                    onChange={(e) => setItemOverride(item.id, e.target.value)}
+                    onChange={(e) => setItemVideoOverride(item.id, e.target.value)}
+                    title="Override Video Quality for this video"
                     className={`text-xs rounded-xl px-2.5 py-1.5 border font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors cursor-pointer ${
-                      currentOverride
+                      itemOv.video
                         ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 font-bold'
                         : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
                     }`}
                   >
-                    <option value="">Default ({masterQuality.toUpperCase()})</option>
+                    <option value="">Video (Master: {masterVideo.toUpperCase()})</option>
+                    <option value="best">Best Available</option>
+                    <option value="8k">8K (4320p)</option>
+                    <option value="4k">4K (2160p)</option>
+                    <option value="1440p">2K (1440p)</option>
                     <option value="1080p">1080p FHD</option>
                     <option value="720p">720p HD</option>
                     <option value="480p">480p SD</option>
-                    <option value="best">Best Video</option>
-                    <option value="audio">Audio Only (MP3)</option>
+                    <option value="360p">360p</option>
+                    <option value="none">No Video (Audio Only)</option>
+                  </select>
+                </div>
+
+                {/* Per-Video Audio Override Selector */}
+                <div className="flex items-center gap-1">
+                  <select
+                    value={itemOv.audio || ''}
+                    disabled={batchState.isDownloading}
+                    onChange={(e) => setItemAudioOverride(item.id, e.target.value)}
+                    title="Override Audio Quality for this video"
+                    className={`text-xs rounded-xl px-2.5 py-1.5 border font-medium focus:outline-none focus:ring-1 focus:ring-purple-500 transition-colors cursor-pointer ${
+                      itemOv.audio
+                        ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    <option value="">Audio (Master: {masterAudio.toUpperCase()})</option>
+                    <option value="best">Best Audio</option>
+                    <option value="320k">320 kbps MP3</option>
+                    <option value="256k">256 kbps</option>
+                    <option value="192k">192 kbps</option>
+                    <option value="128k">128 kbps</option>
+                    <option value="none">No Audio (Muted)</option>
                   </select>
                 </div>
               </div>
