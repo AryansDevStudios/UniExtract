@@ -1,6 +1,6 @@
 # Universal Media Extractor - Electron Desktop Application
 
-This document covers running, debugging, and packaging Universal Media Extractor as a native Windows desktop app using Electron.
+This document covers running, debugging, and packaging Universal Media Extractor as a native desktop app using Electron across Windows, Linux, and macOS.
 
 ---
 
@@ -20,10 +20,11 @@ This command:
 
 ---
 
-## 📦 Production Builds (Installer & Portable)
+## 📦 Production Builds (Multi-Platform)
 
-To bundle the application into production Windows executables:
+To bundle the application into production executables:
 
+### 1. Windows (x64 & ARM64)
 ```bash
 # Build both x64 and ARM64 (default):
 npm run dist:win
@@ -41,6 +42,13 @@ The compiled executables will be generated in `dist-electron/`:
   - `UniversalMediaExtractor-2.0.0-arm64-Setup.exe` (Native ARM64 NSIS Installer)
   - `UniversalMediaExtractor-Portable-2.0.0-arm64.exe` (Native ARM64 Portable)
 
+### 2. Linux & macOS
+```bash
+npm run dist:linux   # Builds Linux .AppImage and .deb packages
+npm run dist:mac     # Builds macOS .dmg and .zip archives
+npm run dist:all     # Builds all supported targets
+```
+
 ---
 
 ### 🤖 Automated GitHub Release Workflow
@@ -53,13 +61,13 @@ git push origin v2.0.0
 ```
 
 GitHub Actions (`.github/workflows/release.yml`) will automatically:
-1. Spin up a clean Windows virtual machine runner (`windows-latest`).
+1. Spin up a multi-platform runner matrix (`windows-latest`, `ubuntu-latest`, `macos-latest`).
 2. Fetch dependencies, bundle `ffmpeg-static` and `yt-dlp`.
-3. Package both **x64** and **ARM64** NSIS installers and Portable executables.
-4. Calculate SHA-256 checksums for all four binaries.
-5. Publish a official **GitHub Release** with direct download links attached.
+3. Package **Windows** (x64 & ARM64 NSIS + Portable), **Linux** (.AppImage & .deb), and **macOS** (.dmg & .zip).
+4. Calculate SHA-256 checksums (`checksums.txt`) for all release binaries.
+5. Publish an official **GitHub Release** with all installers and checksums attached.
 
-You can also trigger builds manually anytime from the GitHub repository by going to **Actions** → **Build & Release Windows App** → **Run workflow**.
+You can also trigger builds manually anytime from the GitHub repository by going to **Actions** → **Build & Release Desktop Apps** → **Run workflow**.
 
 ---
 

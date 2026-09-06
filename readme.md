@@ -9,7 +9,8 @@ A modern, high-performance, multi-platform media extraction and transcoding engi
 | Document | Link | Description |
 |---|---|---|
 | 🚀 **Deployment Modes & Pairing** | [docs/DEPLOYMENT_MODES.md](docs/DEPLOYMENT_MODES.md) | Architectural pairing scenarios (Netlify + Render/VPS, PWA, Headless API, systemd setup) |
-| 💻 **Electron Desktop App** | [docs/ELECTRON.md](docs/ELECTRON.md) | Windows NSIS installer, standalone portable build, and self-contained binary packaging |
+| 💻 **Electron Desktop App** | [docs/ELECTRON.md](docs/ELECTRON.md) | Windows (x64 & ARM64), Linux (.AppImage/.deb), macOS (.dmg/.zip) packaging |
+| 🤖 **CI/CD & GitHub Workflows** | [Automated Workflows](#-automated-cicd--github-workflows) | Cross-platform releases, continuous integration, Docker multi-arch, & scheduled health checks |
 | ⚡ **Modular Quick Start** | [Quick Start Guide](#-modular-download--quick-start) | Sparse-checkout commands to download only what you need without cloning full repository |
 | 📡 **REST API Reference** | [API Reference](#-rest-api-reference) | Complete JSON API specification for extraction, streaming, and conversion endpoints |
 
@@ -348,6 +349,27 @@ Converts and streams high-resolution video thumbnails as PNG files (bypassing CO
 ### 11. `GET /api/subtitle`
 Extracts and converts standalone subtitle tracks.
 - **Query Params**: `?url=...&lang=en&format=srt&title=...` (formats: `srt`, `vtt`, `txt`, `ass`, `lrc`).
+
+---
+
+## 🤖 Automated CI/CD & GitHub Workflows
+
+Universal Media Extractor includes a production-grade automated CI/CD suite powered by **GitHub Actions** across 4 dedicated workflows:
+
+| Workflow | File | Trigger | Description |
+|---|---|---|---|
+| 🚀 **Cross-Platform Desktop Releases** | [`.github/workflows/release.yml`](.github/workflows/release.yml) | Tag push (`v*`) or Manual dispatch | Builds native packages for **Windows** (x64 & ARM64 NSIS + Portable), **Linux** (.AppImage & .deb), and **macOS** (.dmg & .zip), generates SHA-256 checksums, and publishes an official GitHub Release. |
+| 🛡️ **Continuous Integration (CI)** | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Push / PR to `main` | Runs matrix validation across **Ubuntu** and **Windows**, verifying backend syntax (`node -c`), compiling the React client, and probing server boot & health endpoints. |
+| ⏰ **yt-dlp Health & Compatibility Probe** | [`.github/workflows/ytdlp-check.yml`](.github/workflows/ytdlp-check.yml) | Every Monday at 06:00 UTC | Probes live media extraction against a permanent test stream and checks for newer upstream releases. On failure, logs diagnostics to `$GITHUB_STEP_SUMMARY` and triggers private maintainer email alerts. |
+| 🐳 **Multi-Arch Docker Container Build** | [`.github/workflows/docker.yml`](.github/workflows/docker.yml) | Push to `main` or Tag push (`v*`) | Uses QEMU and Docker Buildx to compile and publish multi-platform container images (`linux/amd64` and `linux/arm64`) directly to GitHub Container Registry (`ghcr.io`). |
+
+### 🚀 Publishing a Multi-Platform Release
+When you are ready to publish a new release:
+```bash
+git tag v2.0.0
+git push origin v2.0.0
+```
+GitHub Actions will spin up Windows, Ubuntu, and macOS runners in parallel, package all native desktop binaries, compute SHA-256 checksums, and attach all installer files to the release automatically.
 
 ---
 

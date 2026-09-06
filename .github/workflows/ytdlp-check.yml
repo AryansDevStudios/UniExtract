@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   check-health:
@@ -31,15 +30,10 @@ jobs:
         id: probe
         run: node scripts/test-ytdlp-health.js
 
-      - name: Open GitHub Issue on Failure
+      - name: Write Diagnostic Summary on Failure
         if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '🚨 [CRITICAL] Scheduled yt-dlp extraction failure detected',
-              body: `The scheduled yt-dlp extraction health test failed on ${new Date().toISOString()}.\n\nThis usually indicates that YouTube or an upstream provider modified their video player signatures or bot protection.\n\nWorkflow logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              labels: ['bug', 'automated-alert']
-            });
+        run: |
+          echo "## 🚨 Scheduled yt-dlp Health Check Failed" >> $GITHUB_STEP_SUMMARY
+          echo "A media extraction failure was detected at $(date -u)." >> $GITHUB_STEP_SUMMARY
+          echo "This typically indicates YouTube or an upstream provider updated their video signatures or bot challenge algorithms." >> $GITHUB_STEP_SUMMARY
+          echo "GitHub Actions automatically sends a private failure notification email to the repository owner." >> $GITHUB_STEP_SUMMARY

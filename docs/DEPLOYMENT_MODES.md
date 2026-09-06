@@ -11,7 +11,7 @@ Universal Media Extractor (UME) is designed with a **fully decoupled, modular ar
 | **1** | **All-in-One Full-Stack (PWA)** | Full Repository | Local PC / Mac / Linux | Unified Express server serving bundled React client on `localhost:3000`. Installs as standalone PWA. |
 | **2** | **Backend Only (Headless Media API)** | `server.js`, `package.json`, `scripts/` | Render, Railway, Fly.io, Linux VPS, Docker | Headless media extraction, FFmpeg transcoding, and REST API. Zero frontend or Electron dependencies. |
 | **3** | **Frontend Only (Static Web Client)** | `client/` folder only | Netlify, Vercel, Cloudflare Pages | Pure static React + Vite SPA. Zero Node backend needed on host. Connects to any remote backend. |
-| **4** | **Native Desktop (Electron)** | Full Repository | Windows 10/11 | Bundled `.exe` (NSIS installer or Portable). Auto-manages backend and persistent desktop cookies. |
+| **4** | **Native Desktop (Electron)** | Full Repository | Windows 10/11, macOS, Linux | Bundled packages for Windows (x64/ARM64), macOS (dmg/zip), Linux (AppImage/deb). |
 | **5** | **Pre-Built Static GUI** | `server.js` + `public/` | Low-RAM nodes, Raspberry Pi, Home Servers | Complete pre-compiled modern React production bundle in `public/`. Zero frontend build step or memory overhead required on device. |
 | **6** | **Docker Container (GHCR)** | Pre-built image or `Dockerfile` | Linux VPS, Unraid, TrueNAS, Synology | Fully containerized multi-arch (amd64 / arm64) image with FFmpeg, Python 3, and healthcheck. |
 
@@ -166,14 +166,19 @@ npm run build
 
 ---
 
-### Mode 4: Native Windows Desktop App (Electron)
+### Mode 4: Native Desktop App (Electron - Windows / macOS / Linux)
 
-See [docs/ELECTRON.md](ELECTRON.md) for full instructions on running and building Windows NSIS installers and Portable executables.
+See [docs/ELECTRON.md](ELECTRON.md) for full instructions on running and packaging native desktop apps across Windows, macOS, and Linux.
 
 ```bash
-# Install and build Windows executable
-npm install
+# Windows executables (x64 and ARM64 NSIS + Portable)
 npm run dist:win
+
+# Linux packages (.AppImage and .deb)
+npm run dist:linux
+
+# macOS packages (.dmg and .zip)
+npm run dist:mac
 ```
 
 ---
