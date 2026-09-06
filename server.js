@@ -5,12 +5,13 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { execSync, spawn, spawnSync, exec } = require('child_process');
 const cors = require('cors');
+const archiver = require('archiver');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const COOKIES = path.join(__dirname, 'cookies.txt');
-const TEMP_DIR = path.join(__dirname, 'temp');
-const CACHE_DIR = path.join(__dirname, 'cache');
+const TEMP_DIR = process.env.TEMP_DIR || path.join(__dirname, 'temp');
+const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, 'cache');
 
 // --- INITIALIZATION ---
 let ytDlpPath = null;
@@ -63,9 +64,10 @@ const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
 
     // 3. Immediately purge partial downloaded files to save disk space
     try {
+        const shortId = jobId.substring(0, 8);
         const files = fs.readdirSync(TEMP_DIR);
         files.forEach(f => {
-            if (f.includes(jobId) || (job.baseName && f.includes(job.baseName))) {
+            if (f.startsWith(shortId) || f.includes(shortId) || f.includes(jobId) || (job.baseName && f.includes(path.basename(job.baseName)))) {
                 try { fs.unlinkSync(path.join(TEMP_DIR, f)); } catch (e) {}
             }
         });
@@ -130,6 +132,145 @@ const logger = (jobId, message, type = 'INFO') => {
     const idTag = jobId ? `[Job: ${jobId.substring(0, 8)}]` : '[SYSTEM]';
     const typeTag = `[${type}]`.padEnd(8);
     console.log(`${timestamp} ${idTag} ${typeTag} ${message}`);
+};
+
+const parseTimeToSeconds = (value) => {
+    if (!value || typeof value !== 'string') return null;
+    const cleaned = value.trim();
+    if (!cleaned) return null;
+    const match = cleaned.match(/^((?:\d+:)?\d{1,2}:\d{2})(?:\.\d+)?$/) || cleaned.match(/^(\d+)(?:\.(\d+))?$/);
+    if (!match) return null;
+
+    if (/^\d+(?:\.\d+)?$/.test(cleaned)) {
+        return Number(cleaned);
+    }
+
+    const parts = cleaned.split(':').map(Number);
+    if (parts.length === 2) {
+        return parts[0] * 60 + parts[1];
+    }
+    if (parts.length === 3) {
+        return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    return null;
+};
+
+const formatSecondsToClock = (seconds) => {
+    if (seconds === null || Number.isNaN(seconds) || !Number.isFinite(seconds)) return '00:00:00';
+    const total = Math.max(0, Math.floor(seconds));
+    const hours = String(Math.floor(total / 3600)).padStart(2, '0');
+    const minutes = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const secs = String(total % 60).padStart(2, '0');
+    return `${hours}:${minutes}:${secs}`;
+};
+
+const collectAudioTracks = (info) => {
+    const map = new Map();
+    const allFormats = Array.isArray(info?.formats) ? info.formats : [];
+
+    for (const fmt of allFormats) {
+        if (!fmt || (!fmt.acodec || fmt.acodec === 'none')) continue;
+        const id = fmt.format_id || `${fmt.ext}-${fmt.abr || 'audio'}`;
+        const language = fmt.language || fmt.language_code || 'Unknown';
+        if (map.has(id)) continue;
+        map.set(id, {
+            id,
+            language,
+            label: fmt.format_note || fmt.ext?.toUpperCase() || 'Audio',
+            ext: fmt.ext || 'audio'
+        });
+    }
+
+    return [...map.values()].slice(0, 50);
+};
+
+const collectSubtitleOptions = (info) => {
+    const combined = new Map();
+
+    // 1. Process creator/manual subtitles first
+    if (info?.subtitles && typeof info.subtitles === 'object') {
+        for (const [lang, entries] of Object.entries(info.subtitles)) {
+            const list = Array.isArray(entries) ? entries : [];
+            const name = list[0]?.name || lang;
+            combined.set(lang, {
+                id: lang,
+                lang,
+                name,
+                isAuto: false
+            });
+        }
+    }
+
+    // 2. Process automatic captions (prioritizing original speech tracks like en-orig)
+    if (info?.automatic_captions && typeof info.automatic_captions === 'object') {
+        for (const [lang, entries] of Object.entries(info.automatic_captions)) {
+            const list = Array.isArray(entries) ? entries : [];
+            const rawName = list[0]?.name;
+            const isOrig = lang.endsWith('-orig');
+
+            // Skip noisy cross-translated auto-sub combinations (e.g. 'aa-ar', 'ab-vi')
+            if (lang.includes('-') && !isOrig && !['zh-Hans', 'zh-Hant', 'pt-BR', 'es-419', 'en-US', 'en-GB'].includes(lang)) {
+                continue;
+            }
+
+            if (isOrig) {
+                // Original speech-to-text track (e.g. 'en-orig' -> 'English (Original)')
+                const label = rawName || (lang.startsWith('en') ? 'English (Original)' : `${lang} (Original)`);
+                combined.set(lang, {
+                    id: lang,
+                    lang,
+                    name: label,
+                    isAuto: true,
+                    isOrig: true
+                });
+            } else if (!combined.has(lang)) {
+                // Primary auto-caption language not already covered by manual subtitles
+                const label = rawName ? `${rawName} (Auto)` : `${lang.toUpperCase()} (Auto)`;
+                combined.set(lang, {
+                    id: lang,
+                    lang,
+                    name: label,
+                    isAuto: true,
+                    isOrig: false
+                });
+            }
+        }
+    }
+
+    // 3. Sort intelligently: Original & English tracks first, then alphabetical
+    const all = [...combined.values()];
+    return all.sort((a, b) => {
+        const getPriority = (item) => {
+            if (item.isOrig || item.lang === 'en-orig') return 0;
+            if (item.lang === 'en' && !item.isAuto) return 1;
+            if (item.lang === 'en') return 2;
+            if (!item.isAuto) return 3;
+            return 4;
+        };
+        const pDiff = getPriority(a) - getPriority(b);
+        if (pDiff !== 0) return pDiff;
+        return (a.name || a.lang).localeCompare(b.name || b.lang);
+    });
+};
+
+const createChapterZip = async (jobId, files, title) => {
+    const zipPath = path.join(TEMP_DIR, `${jobId}_chapters.zip`);
+    const output = fs.createWriteStream(zipPath);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    return new Promise((resolve, reject) => {
+        output.on('close', () => resolve(zipPath));
+        output.on('error', reject);
+        archive.on('error', reject);
+        archive.pipe(output);
+
+        files.forEach((filePath) => {
+            const name = path.basename(filePath);
+            archive.file(filePath, { name });
+        });
+
+        archive.finalize();
+    });
 };
 
 // --- ENSURE YT-DLP BINARY ---
@@ -723,7 +864,19 @@ app.post('/api/analyze', async (req, res) => {
             };
         });
 
-        const responseData = { title: info.title, thumbnail: info.thumbnail, formats };
+        const responseData = {
+            title: info.title,
+            thumbnail: info.thumbnail,
+            duration: info.duration || 0,
+            formats,
+            chapters: Array.isArray(info.chapters) ? info.chapters.map(ch => ({
+                title: ch.title,
+                start_time: ch.start_time,
+                end_time: ch.end_time
+            })) : [],
+            audioTracks: collectAudioTracks(info),
+            subtitles: collectSubtitleOptions(info)
+        };
         setCachedAnalysis(cleanedUrl, responseData);
         
         // SAVE RAW METADATA FOR INSTANT DOWNLOAD START
@@ -774,9 +927,120 @@ app.get('/api/thumbnail', (req, res) => {
     });
 });
 
+// --- API: STANDALONE SUBTITLE DOWNLOADER ---
+app.get('/api/subtitle', async (req, res) => {
+    const { url, lang, format, title } = req.query;
+    if (!url) return res.status(400).send('No video URL provided');
+
+    const targetLang = (lang || 'en-orig').trim();
+    const reqFormat = (format || 'srt').toLowerCase().trim();
+    const isTxt = reqFormat === 'txt';
+    const convFormat = isTxt ? 'srt' : (['srt', 'vtt', 'ass', 'lrc'].includes(reqFormat) ? reqFormat : 'srt');
+    const safeTitle = (title || 'subtitles').replace(/[\/\\?%*:|"<>]/g, '_').trim() || 'subtitles';
+    const cleanedUrl = cleanMediaUrl(url);
+
+    try {
+        await ensureYtDlp();
+        const subId = uuidv4().substring(0, 8);
+        const subOutTemplate = path.join(TEMP_DIR, `${subId}_%(title)s.%(ext)s`);
+
+        logger(null, `Direct subtitle extraction requested: lang=${targetLang}, format=${reqFormat} for "${cleanedUrl}"`, "INFO");
+
+        const ytdlpArgs = [
+            '--skip-download',
+            '--write-subs',
+            '--write-auto-subs',
+            '--sub-langs', targetLang,
+            '--convert-subs', convFormat,
+            '--no-playlist',
+            '-o', subOutTemplate
+        ];
+
+        if (COOKIES && fs.existsSync(COOKIES)) {
+            ytdlpArgs.push('--cookies', COOKIES);
+        }
+
+        ytdlpArgs.push(cleanedUrl);
+
+        const subProc = spawnSync(ytDlpPath || 'yt-dlp', ytdlpArgs, { encoding: 'utf8', timeout: 45000 });
+        if (subProc.error) {
+            throw subProc.error;
+        }
+
+        const candidates = fs.readdirSync(TEMP_DIR)
+            .filter(name => name.startsWith(subId) && (name.endsWith(`.${convFormat}`) || name.endsWith('.vtt') || name.endsWith('.srt') || name.endsWith('.ass') || name.endsWith('.lrc')))
+            .map(name => path.join(TEMP_DIR, name));
+
+        if (candidates.length === 0 || !fs.existsSync(candidates[0])) {
+            return res.status(404).send(`Subtitle track '${targetLang}' not found.`);
+        }
+
+        const subFile = candidates[0];
+        const finalExt = isTxt ? 'txt' : (path.extname(subFile).replace('.', '') || convFormat);
+        const outFileName = `${safeTitle}.${targetLang}.${finalExt}`;
+
+        let contentType = 'application/x-subrip';
+        if (finalExt === 'vtt') contentType = 'text/vtt';
+        else if (finalExt === 'ass') contentType = 'text/x-ssa';
+        else if (finalExt === 'lrc') contentType = 'text/plain';
+        else if (finalExt === 'txt') contentType = 'text/plain; charset=utf-8';
+
+        res.setHeader('Content-Disposition', `attachment; filename="${outFileName}"`);
+        res.setHeader('Content-Type', contentType);
+
+        if (isTxt) {
+            const rawContent = fs.readFileSync(subFile, 'utf8');
+            const cleanText = rawContent
+                .replace(/\r\n/g, '\n')
+                .replace(/^\d+\s*$/gm, '')
+                .replace(/^\d{2}:\d{2}:\d{2}[,\.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,\.]\d{3}.*$/gm, '')
+                .replace(/<[^>]+>/g, '')
+                .split('\n')
+                .map(l => l.trim())
+                .filter(Boolean)
+                .filter((line, idx, arr) => idx === 0 || line !== arr[idx - 1])
+                .join('\n');
+
+            try { if (fs.existsSync(subFile)) fs.unlinkSync(subFile); } catch (e) {}
+            return res.send(cleanText);
+        }
+
+        const stream = fs.createReadStream(subFile);
+        stream.pipe(res);
+        stream.on('end', () => {
+            try { if (fs.existsSync(subFile)) fs.unlinkSync(subFile); } catch (e) {}
+        });
+        stream.on('error', () => {
+            try { if (fs.existsSync(subFile)) fs.unlinkSync(subFile); } catch (e) {}
+        });
+    } catch (err) {
+        logger(null, `Subtitle extraction failed: ${err.message}`, "ERROR");
+        res.status(500).send(`Failed to extract subtitles: ${err.message}`);
+    }
+});
+
 // --- API: DOWNLOAD & PROCESS ---
 app.post('/api/download', async (req, res) => {
-    const { url, vId, aId, vLabel, aLabel, title, qualityPreset, videoQuality, audioQuality, thumbnail, artist, container } = req.body;
+    const {
+        url,
+        vId,
+        aId,
+        vLabel,
+        aLabel,
+        title,
+        qualityPreset,
+        videoQuality,
+        audioQuality,
+        thumbnail,
+        artist,
+        container,
+        splitChapters,
+        clipStart,
+        clipEnd,
+        audioLang,
+        embedSubs,
+        subLang
+    } = req.body;
     const cleanedUrl = cleanMediaUrl(url);
     const jobId = uuidv4();
     
@@ -785,6 +1049,21 @@ app.post('/api/download', async (req, res) => {
     let formatSelection = '';
     let extension = 'mp4';
     let namingTag = '';
+    const clipStartSeconds = parseTimeToSeconds(clipStart);
+    const clipEndSeconds = parseTimeToSeconds(clipEnd);
+    let resolvedClipStart = null;
+    let resolvedClipEnd = null;
+
+    if (clipStartSeconds !== null && clipEndSeconds !== null) {
+        if (clipStartSeconds < clipEndSeconds) {
+            resolvedClipStart = formatSecondsToClock(clipStartSeconds);
+            resolvedClipEnd = formatSecondsToClock(clipEndSeconds);
+        } else {
+            logger(jobId, `Warning: Inverted clip range requested (${clipStart} -> ${clipEnd}). Clip disabled to prevent failure.`, "WARN");
+        }
+    } else if (clipStartSeconds !== null && clipEndSeconds === null) {
+        resolvedClipStart = formatSecondsToClock(clipStartSeconds);
+    }
 
     const heightMap = {
         '8k': 4320,
@@ -890,6 +1169,14 @@ app.post('/api/download', async (req, res) => {
         namingTag = `${vLabel || 'NoVideo'}_${aLabel || 'NoAudio'}`;
     }
 
+    if (audioLang && audioLang !== 'default' && audioLang !== '') {
+        if (isAudioOnly) {
+            formatSelection = audioLang;
+        } else if (vId && !isMuted) {
+            formatSelection = `${vId}+${audioLang}`;
+        }
+    }
+
     jobs[jobId] = { 
         status: 'downloading', 
         progress: '0%', 
@@ -907,7 +1194,13 @@ app.post('/api/download', async (req, res) => {
         lastProgressTime: Date.now(),
         downloadInstance: null,
         activeFfmpeg: null,
-        baseName: null
+        baseName: null,
+        splitChapters: !!splitChapters,
+        clipStart: resolvedClipStart,
+        clipEnd: resolvedClipEnd,
+        embedSubs: !!embedSubs,
+        subLang: subLang || null,
+        hasZipBundle: false
     };
 
     logger(jobId, `Download initiated for "${title}" [Format: ${extension.toUpperCase()}]`, "START");
@@ -963,11 +1256,19 @@ app.post('/api/download', async (req, res) => {
         });
     }
 
-    if (isAudioOnly) {
-        ffmpegArgs.push('--no-playlist');
-    } else {
-        ffmpegArgs.push('--no-playlist');
+    if (splitChapters) {
+        ffmpegArgs.push('--split-chapters');
     }
+    if (resolvedClipStart && resolvedClipEnd) {
+        ffmpegArgs.push('--download-sections', `*${resolvedClipStart}-${resolvedClipEnd}`);
+    } else if (resolvedClipStart && resolvedClipStart !== '00:00:00') {
+        ffmpegArgs.push('--download-sections', `*${resolvedClipStart}-inf`);
+    }
+    if (embedSubs && subLang) {
+        ffmpegArgs.push('--write-subs', '--write-auto-subs', '--sub-langs', subLang, '--convert-subs', 'srt');
+    }
+
+    ffmpegArgs.push('--no-playlist');
 
     const download = ytdlp.download(cleanedUrl);
     jobs[jobId].downloadInstance = download;
@@ -980,9 +1281,11 @@ app.post('/api/download', async (req, res) => {
     download.on('progress', (p) => {
         if (jobs[jobId] && jobs[jobId].status === 'downloading') {
             jobs[jobId].progress = p.percentage_str || '0%';
+            jobs[jobId].speed = p.speed_str || null;
+            jobs[jobId].eta = p.eta_str || null;
             jobs[jobId].lastProgressTime = Date.now();
             const pInt = parseInt(p.percentage_str);
-            if (pInt % 25 === 0) logger(jobId, `Progress: ${p.percentage_str}`, "PROGRESS");
+            if (pInt % 25 === 0) logger(jobId, `Progress: ${p.percentage_str}${p.speed_str ? ` (${p.speed_str})` : ''}`, "PROGRESS");
         }
     });
 
@@ -1009,6 +1312,35 @@ app.post('/api/download', async (req, res) => {
                 }
 
                 if (jobs[jobId] && jobs[jobId].status === 'cancelled') return; // Exit if aborted
+
+                if (jobs[jobId]?.splitChapters) {
+                    const chapterFiles = fs.readdirSync(TEMP_DIR)
+                        .filter((name) => (name.startsWith(jobId.substring(0, 8)) || name.startsWith(`${jobId}_`)) && !name.endsWith('_chapters.zip'))
+                        .filter((name) => /\.(mp4|mkv|webm|mp3|m4a|opus|flac|wav|aac|ogg)$/i.test(name))
+                        .map((name) => path.join(TEMP_DIR, name))
+                        .filter((p) => p !== finalFile);
+
+                    if (chapterFiles.length > 1) {
+                        try {
+                            const zipPath = await createChapterZip(jobId, chapterFiles, title || 'chapter_bundle');
+                            // Reclaim disk space by cleaning up individual slice files immediately
+                            chapterFiles.forEach((cf) => {
+                                try { if (fs.existsSync(cf)) fs.unlinkSync(cf); } catch (e) {}
+                            });
+                            try { if (fs.existsSync(finalFile)) fs.unlinkSync(finalFile); } catch (e) {}
+
+                            jobs[jobId].file = path.basename(zipPath);
+                            jobs[jobId].extension = 'zip';
+                            jobs[jobId].hasZipBundle = true;
+                            jobs[jobId].status = 'completed';
+                            jobs[jobId].progress = '100%';
+                            logger(jobId, `Chapter bundle created: ${jobs[jobId].file}`, 'SUCCESS');
+                            return;
+                        } catch (zipErr) {
+                            logger(jobId, `Chapter zip creation failed: ${zipErr.message}`, 'WARN');
+                        }
+                    }
+                }
 
                 // TASK 2: Convert/remux into target format with full metadata and cover art
                 if (fs.existsSync(finalFile)) {
@@ -1116,60 +1448,119 @@ app.post('/api/download', async (req, res) => {
                                     embeddedFile
                                 ];
                             }
-                        } else if (isMuted) {
-                            embedArgs = [
-                                '-y', '-threads', '0', '-i', finalFile,
-                                ...(thumbFile ? ['-i', thumbFile] : []),
-                                '-map', '0:v:0',
-                                ...(thumbFile ? ['-map', '1:0'] : []),
-                                '-c:v:0', 'copy',
-                                '-an',
-                                ...(thumbFile ? ['-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic'] : []),
+                        } else {
+                            // Subtitle extraction & mapping for both muted and standard video
+                            let subtitleFile = null;
+                            if (jobs[jobId].embedSubs && jobs[jobId].subLang) {
+                                const subCandidates = fs.readdirSync(TEMP_DIR)
+                                    .filter((name) => name.startsWith(jobId.substring(0, 8)) && /\.(vtt|srt|ass)$/i.test(name))
+                                    .map((name) => path.join(TEMP_DIR, name));
+                                if (subCandidates.length > 0 && fs.existsSync(subCandidates[0])) {
+                                    subtitleFile = subCandidates[0];
+                                }
+                            }
+
+                            // Build input list and track stream mappings
+                            const inputs = ['-y', '-i', finalFile];
+                            let nextInputIdx = 1;
+                            let subInputIdx = -1;
+                            let thumbInputIdx = -1;
+
+                            if (subtitleFile) {
+                                inputs.push('-i', subtitleFile);
+                                subInputIdx = nextInputIdx++;
+                            }
+                            if (thumbFile && targetExt !== 'mkv') {
+                                inputs.push('-i', thumbFile);
+                                thumbInputIdx = nextInputIdx++;
+                            }
+
+                            // Format-specific subtitle codec & stream metadata
+                            let subCodecArgs = [];
+                            if (subInputIdx !== -1) {
+                                const sLang = (jobs[jobId].subLang || 'en').toLowerCase();
+                                const sLang3 = sLang.startsWith('en') ? 'eng' : sLang.slice(0, 3);
+                                const sTitle = sLang.includes('orig') ? 'English (Original)' : sLang.toUpperCase();
+
+                                if (targetExt === 'mp4' || targetExt === 'm4v') {
+                                    subCodecArgs = ['-c:s', 'mov_text', '-metadata:s:s:0', `language=${sLang3}`, '-metadata:s:s:0', `title=${sTitle}`];
+                                } else if (targetExt === 'webm') {
+                                    subCodecArgs = ['-c:s', 'webvtt', '-metadata:s:s:0', `language=${sLang3}`, '-metadata:s:s:0', `title=${sTitle}`];
+                                } else {
+                                    subCodecArgs = ['-c:s', 'copy', '-metadata:s:s:0', `language=${sLang3}`, '-metadata:s:s:0', `title=${sTitle}`];
+                                }
+                            }
+
+                            const metaArgs = [
                                 '-metadata', `title=${mTitle}`,
                                 '-metadata', `artist=${mArtist}`,
                                 '-metadata', `album_artist=${mArtist}`,
                                 '-metadata', `album=${mArtist} (YouTube)`,
                                 '-metadata', `date=${mDate}`,
-                                '-metadata', `year=${mDate}`,
-                                embeddedFile
+                                '-metadata', `year=${mDate}`
                             ];
-                        } else {
-                            const isTranscode = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy';
-                            const audioCodecArgs = isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio, '-ac', '2'] : ['-c:a', 'copy'];
-                            
-                            if (targetExt === 'mkv') {
-                                embedArgs = [
-                                    '-y', '-i', finalFile,
-                                    '-map', '0:v:0', '-map', '0:a:0?',
-                                    '-c:v:0', 'copy',
-                                    ...audioCodecArgs,
-                                    ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
-                                    '-metadata', `title=${mTitle}`,
-                                    '-metadata', `artist=${mArtist}`,
-                                    '-metadata', `album_artist=${mArtist}`,
-                                    '-metadata', `album=${mArtist} (YouTube)`,
-                                    '-metadata', `date=${mDate}`,
-                                    '-metadata', `year=${mDate}`,
-                                    embeddedFile
-                                ];
+
+                            if (isMuted) {
+                                const streamMaps = ['-map', '0:v:0'];
+                                if (subInputIdx !== -1) streamMaps.push('-map', `${subInputIdx}:0`);
+                                if (thumbInputIdx !== -1) streamMaps.push('-map', `${thumbInputIdx}:0`);
+
+                                if (targetExt === 'mkv') {
+                                    embedArgs = [
+                                        ...inputs,
+                                        ...streamMaps,
+                                        '-c:v:0', 'copy',
+                                        '-an',
+                                        ...subCodecArgs,
+                                        ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
+                                        ...metaArgs,
+                                        embeddedFile
+                                    ];
+                                } else {
+                                    embedArgs = [
+                                        ...inputs,
+                                        ...streamMaps,
+                                        '-c:v:0', 'copy',
+                                        '-an',
+                                        ...subCodecArgs,
+                                        '-movflags', '+faststart',
+                                        ...(thumbInputIdx !== -1 ? ['-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic'] : []),
+                                        ...metaArgs,
+                                        embeddedFile
+                                    ];
+                                }
                             } else {
-                                embedArgs = [
-                                    '-y', '-i', finalFile,
-                                    ...(thumbFile ? ['-i', thumbFile] : []),
-                                    '-map', '0:v:0', '-map', '0:a:0?',
-                                    ...(thumbFile ? ['-map', '1:0'] : []),
-                                    '-c:v:0', 'copy',
-                                    ...audioCodecArgs,
-                                    '-movflags', '+faststart',
-                                    ...(thumbFile ? ['-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic'] : []),
-                                    '-metadata', `title=${mTitle}`,
-                                    '-metadata', `artist=${mArtist}`,
-                                    '-metadata', `album_artist=${mArtist}`,
-                                    '-metadata', `album=${mArtist} (YouTube)`,
-                                    '-metadata', `date=${mDate}`,
-                                    '-metadata', `year=${mDate}`,
-                                    embeddedFile
-                                ];
+                                const isTranscode = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy';
+                                const audioCodecArgs = isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio, '-ac', '2'] : ['-c:a', 'copy'];
+
+                                const streamMaps = ['-map', '0:v:0', '-map', '0:a:0?'];
+                                if (subInputIdx !== -1) streamMaps.push('-map', `${subInputIdx}:0`);
+                                if (thumbInputIdx !== -1) streamMaps.push('-map', `${thumbInputIdx}:0`);
+
+                                if (targetExt === 'mkv') {
+                                    embedArgs = [
+                                        ...inputs,
+                                        ...streamMaps,
+                                        '-c:v:0', 'copy',
+                                        ...audioCodecArgs,
+                                        ...subCodecArgs,
+                                        ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
+                                        ...metaArgs,
+                                        embeddedFile
+                                    ];
+                                } else {
+                                    embedArgs = [
+                                        ...inputs,
+                                        ...streamMaps,
+                                        '-c:v:0', 'copy',
+                                        ...audioCodecArgs,
+                                        ...subCodecArgs,
+                                        '-movflags', '+faststart',
+                                        ...(thumbInputIdx !== -1 ? ['-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic'] : []),
+                                        ...metaArgs,
+                                        embeddedFile
+                                    ];
+                                }
                             }
                         }
 
@@ -1196,6 +1587,7 @@ app.post('/api/download', async (req, res) => {
                         if (task2Result.status === 0 && fs.existsSync(embeddedFile) && fs.statSync(embeddedFile).size > 1000) {
                             fs.unlinkSync(finalFile);
                             if (thumbFile && fs.existsSync(thumbFile)) fs.unlinkSync(thumbFile);
+                            if (subtitleFile && fs.existsSync(subtitleFile)) fs.unlinkSync(subtitleFile);
                             finalFile = embeddedFile;
                             jobs[jobId].extension = targetExt;
                             logger(jobId, `Task 2 Packaging Successful: Output is authentic ${targetExt.toUpperCase()}`, "META");
@@ -1245,6 +1637,7 @@ app.post('/api/download', async (req, res) => {
         .catch((err) => {
             if (jobs[jobId] && jobs[jobId].status !== 'cancelled') {
                 jobs[jobId].status = 'error';
+                jobs[jobId].error = err.message || 'Download or processing failed';
                 logger(jobId, `Download/Merge error: ${err.message}`, "ERROR");
             }
         });
@@ -1269,6 +1662,8 @@ app.get('/api/status/:jobId', (req, res) => {
     res.json({
         status: job.status,
         progress: job.progress,
+        speed: job.speed || null,
+        eta: job.eta || null,
         file: job.file,
         title: job.title,
         extension: job.extension,
@@ -1278,7 +1673,8 @@ app.get('/api/status/:jobId', (req, res) => {
         targetVideo: job.targetVideo,
         targetAudio: job.targetAudio,
         resolvedFormat: job.resolvedFormat,
-        error: job.error
+        error: job.error,
+        bundleType: job.hasZipBundle ? 'zip' : null
     });
 });
 
@@ -1288,11 +1684,11 @@ app.get('/api/file/:jobId/:title', (req, res) => {
     if (!job || job.status !== 'completed') return res.status(400).send('File not ready');
 
     const filePath = path.join(TEMP_DIR, job.file);
-    const safeTitle = req.params.title.replace(/[^a-z0-9]/gi, '_');
+    const safeTitle = req.params.title.replace(/[\/\\?%*:|"<>]/g, '_').trim() || 'media';
 
     // Dynamically use the correct extension (MP4 or MP3)
     const finalExt = job.extension || 'mp4';
-    const finalName = `${safeTitle}_${job.customTag}.${finalExt}`;
+    const finalName = job.hasZipBundle ? `${safeTitle}_chapters.zip` : `${safeTitle}_${job.customTag}.${finalExt}`;
 
     const fileSizeMb = (fs.statSync(filePath).size / (1024 * 1024)).toFixed(2);
     logger(req.params.jobId, `Transmitting file to client: ${finalName} (${fileSizeMb} MB)`, "SEND");
@@ -1311,6 +1707,11 @@ app.get('/api/file/:jobId/:title', (req, res) => {
                         fs.unlinkSync(filePath);
                         logger(req.params.jobId, `CLEANUP: Deleted temporary file ${job.file} (grace period expired)`, "DELETE");
                     }
+                    const shortId = req.params.jobId.substring(0, 8);
+                    const remaining = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(shortId) || f.includes(shortId));
+                    remaining.forEach(rf => {
+                        try { fs.unlinkSync(path.join(TEMP_DIR, rf)); } catch (e) {}
+                    });
                     delete jobs[req.params.jobId];
                     logger(req.params.jobId, `Session closed. Memory purged.`, "PURGE");
                 } catch (e) {
@@ -1392,4 +1793,4 @@ const warmUpYtDlp = () => {
         // Non-blocking: prime the yt-dlp disk cache while server is already accepting requests
         warmUpYtDlp();
     });
-})();
+})();

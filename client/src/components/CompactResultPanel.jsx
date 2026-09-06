@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Image as ImageIcon, Video, Music, DownloadCloud, Loader2, ChevronDown, Check, X, SlidersHorizontal } from 'lucide-react';
+import ClipPanel, { toSeconds } from './ClipPanel';
+import LanguagePanel from './LanguagePanel';
 
 function formatBytes(bytes) {
   if (!bytes) return '-- MB';
@@ -84,12 +86,20 @@ export default function CompactResultPanel({
   selectedVideo, setSelectedVideo, 
   selectedAudio, setSelectedAudio, 
   selectedContainer, setSelectedContainer,
+  splitChapters, setSplitChapters,
+  clipStart, setClipStart,
+  clipEnd, setClipEnd,
+  audioLang, setAudioLang,
+  embedSubs, setEmbedSubs,
+  subLang, setSubLang,
   onDownloadThumb, 
   onDownloadMedia,
   onCancelDownload,
   isDownloading,
   progress,
-  status
+  status,
+  downloadSpeed,
+  downloadEta
 }) {
   const [advancedMode, setAdvancedMode] = useState(false);
 
@@ -348,6 +358,41 @@ export default function CompactResultPanel({
             />
           </div>
 
+          {metadata?.chapters && metadata.chapters.length > 0 && (
+            <div className="mt-4 flex items-center justify-between rounded-2xl border border-slate-200 dark:border-slate-700 bg-indigo-50/60 dark:bg-indigo-950/30 px-4 py-3">
+              <span className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-700 dark:text-indigo-300">✂️ Split by Chapters</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={splitChapters}
+                  onChange={(e) => setSplitChapters(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-300 dark:bg-slate-700 rounded-full peer-checked:bg-indigo-500 transition-colors" />
+                <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
+              </label>
+            </div>
+          )}
+
+          <ClipPanel
+            clipStart={clipStart}
+            setClipStart={setClipStart}
+            clipEnd={clipEnd}
+            setClipEnd={setClipEnd}
+            metadata={metadata}
+          />
+
+          <LanguagePanel
+            metadata={metadata}
+            audioLang={audioLang}
+            setAudioLang={setAudioLang}
+            embedSubs={embedSubs}
+            setEmbedSubs={setEmbedSubs}
+            subLang={subLang}
+            setSubLang={setSubLang}
+            isVideoSelected={Boolean(selectedVideo.id)}
+          />
+
           {/* BOTTOM ACTION BAR */}
           <div className="mt-6 md:mt-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-slate-200/60 dark:border-slate-700/60 pt-5">
             <div className="flex flex-col gap-1.5">
@@ -391,13 +436,19 @@ export default function CompactResultPanel({
                   </div>
                 )}
 
-                <button 
-                  onClick={onDownloadMedia}
-                  disabled={!selectedVideo.id && !selectedAudio.id}
-                  className="px-6 md:px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl md:rounded-2xl text-sm transition-all hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 shadow-xl shadow-slate-900/10 dark:shadow-white/10 disabled:opacity-50 disabled:hover:translate-y-0 h-[46px]"
-                >
-                  <DownloadCloud size={18} /> Download
-                </button>
+                {(() => {
+                  const isClipInverted = Boolean(clipStart && clipEnd && toSeconds(clipStart) >= toSeconds(clipEnd));
+                  return (
+                    <button 
+                      onClick={onDownloadMedia}
+                      disabled={(!selectedVideo.id && !selectedAudio.id) || isClipInverted}
+                      title={isClipInverted ? "Start time must be earlier than end time" : "Download"}
+                      className="px-6 md:px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl md:rounded-2xl text-sm transition-all hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 shadow-xl shadow-slate-900/10 dark:shadow-white/10 disabled:opacity-50 disabled:hover:translate-y-0 h-[46px]"
+                    >
+                      <DownloadCloud size={18} /> Download
+                    </button>
+                  );
+                })()}
               </div>
             ) : (
               <div className="flex items-center gap-3 w-64 md:w-[280px] bg-slate-900 text-white p-2.5 pr-3 rounded-xl md:rounded-2xl shadow-xl shadow-indigo-500/10 transition-all duration-300">
@@ -417,9 +468,11 @@ export default function CompactResultPanel({
                 <div className="flex-1 flex flex-col justify-center gap-1.5 w-full">
                   <div className="flex justify-between items-center text-[9px] md:text-[10px] font-bold uppercase tracking-wider leading-none">
                     <span className={status === 'error' ? 'text-red-400' : 'text-indigo-300'}>
-                      {status === 'error' ? 'Failed' : 'Downloading'}
+                      {status === 'error' ? 'Failed' : (downloadSpeed ? downloadSpeed : 'Downloading')}
                     </span>
-                    <span className="text-slate-300 font-mono tracking-tight">{progress}</span>
+                    <span className="text-slate-300 font-mono tracking-tight">
+                      {progress}{downloadEta ? ` (${downloadEta})` : ''}
+                    </span>
                   </div>
                   <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden shadow-inner">
                     <motion.div 

@@ -24,6 +24,7 @@ Thumbs.db
 
 # Build output
 dist/
+dist-electron/
 build/
 
 # Logs

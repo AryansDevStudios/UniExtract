@@ -2,14 +2,19 @@
   "name": "universal-media-extractor",
   "version": "2.0.0",
   "description": "A multi-platform media downloader using Express, FFmpeg, and yt-dlp",
-  "main": "server.js",
+  "main": "electron/main.js",
   "scripts": {
     "postinstall": "node scripts/install-ytdlp.js",
     "build": "npm run build --prefix client",
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "server": "node server.js",
     "client:dev": "npm run dev --prefix client",
-    "client:build": "npm run build --prefix client"
+    "client:build": "npm run build --prefix client",
+    "electron": "electron .",
+    "electron:dev": "concurrently -k \"npm run server\" \"npm run client:dev\" \"wait-on http://localhost:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
+    "electron:prod": "npm run client:build && cross-env ELECTRON_START_URL=http://localhost:3000 electron .",
+    "dist:win": "npm run client:build && electron-builder --win"
   },
   "dependencies": {
     "archiver": "^8.0.0",
@@ -19,8 +24,53 @@
     "ytdlp-nodejs": "^3.4.4"
   },
   "devDependencies": {
+    "concurrently": "^9.2.0",
+    "cross-env": "^10.0.0",
+    "electron": "^38.1.0",
+    "electron-builder": "^26.0.0",
     "nodemon": "^3.1.14",
-    "puppeteer-core": "^25.10.0"
+    "puppeteer-core": "^25.10.0",
+    "wait-on": "^9.0.0"
+  },
+  "build": {
+    "appId": "com.aryansdev.universalmediaextractor",
+    "productName": "Universal Media Extractor",
+    "artifactName": "UniversalMediaExtractor-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "server.js",
+      "electron/**",
+      "client/dist/**",
+      "public/**",
+      "cache/**",
+      "temp/**",
+      "cookies.txt",
+      "favicon.ico",
+      "package.json",
+      "node_modules/**"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "favicon.ico",
+      "uninstallerIcon": "favicon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Universal Media Extractor"
+    },
+    "portable": {
+      "artifactName": "UniversalMediaExtractor-Portable-${version}.${ext}",
+      "unicode": true
+    }
   },
   "keywords": [
     "youtube",

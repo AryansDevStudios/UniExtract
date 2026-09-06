@@ -19,9 +19,17 @@ function App() {
   const [selectedVideo, setSelectedVideo] = useState({ id: '', size: 0, label: '' });
   const [selectedAudio, setSelectedAudio] = useState({ id: '', size: 0, label: '' });
   const [selectedContainer, setSelectedContainer] = useState('default');
+  const [splitChapters, setSplitChapters] = useState(false);
+  const [clipStart, setClipStart] = useState('00:00:00');
+  const [clipEnd, setClipEnd] = useState('');
+  const [audioLang, setAudioLang] = useState('default');
+  const [embedSubs, setEmbedSubs] = useState(false);
+  const [subLang, setSubLang] = useState('en');
   
   const [downloadJob, setDownloadJob] = useState(null);
   const [progress, setProgress] = useState('0%');
+  const [downloadSpeed, setDownloadSpeed] = useState('');
+  const [downloadEta, setDownloadEta] = useState('');
   const [jobStatus, setJobStatus] = useState('');
   const pollIntervalRef = useRef(null);
 
@@ -80,6 +88,12 @@ function App() {
     else setSelectedAudio({ id: '', size: 0, label: 'PreMerged' });
     
     setSelectedContainer('default');
+    setSplitChapters(false);
+    setClipStart('00:00:00');
+    setClipEnd('');
+    setAudioLang('default');
+    setEmbedSubs(false);
+    setSubLang((data.subtitles && data.subtitles[0]?.lang) || 'en');
   };
 
   const handleAnalyze = async (url) => {
@@ -146,6 +160,8 @@ function App() {
     activeJobIdRef.current = null;
     setJobStatus('');
     setProgress('0%');
+    setDownloadSpeed('');
+    setDownloadEta('');
     setDownloadJob(null);
 
     if (jobId) {
@@ -161,6 +177,8 @@ function App() {
 
     setJobStatus('downloading');
     setProgress('0%');
+    setDownloadSpeed('');
+    setDownloadEta('');
     setDownloadJob(true);
 
     try {
@@ -176,7 +194,13 @@ function App() {
           title: metadata.title,
           container: selectedContainer !== 'default' 
             ? selectedContainer 
-            : (!selectedVideo.id ? (selectedAudio.id === 'm4a' ? 'm4a' : 'mp3') : undefined)
+            : (!selectedVideo.id ? (selectedAudio.id === 'm4a' ? 'm4a' : 'mp3') : undefined),
+          splitChapters,
+          clipStart: clipStart || '',
+          clipEnd: clipEnd || '',
+          audioLang,
+          embedSubs,
+          subLang
         })
       });
       
@@ -190,17 +214,23 @@ function App() {
             clearInterval(pollIntervalRef.current);
             activeJobIdRef.current = null;
             setJobStatus('');
+            setDownloadSpeed('');
+            setDownloadEta('');
             setDownloadJob(null);
             return;
           }
 
           if (s.progress) setProgress(s.progress);
+          if (s.speed !== undefined) setDownloadSpeed(s.speed || '');
+          if (s.eta !== undefined) setDownloadEta(s.eta || '');
           
           if (s.status === 'completed') {
             clearInterval(pollIntervalRef.current);
             activeJobIdRef.current = null;
             setJobStatus('completed');
             setProgress('100%');
+            setDownloadSpeed('');
+            setDownloadEta('');
             showToast("File ready! Downloading...", "success");
             const downloadUrl = `/api/file/${jobId}/${encodeURIComponent(metadata.title)}`;
             const a = document.createElement('a');
@@ -217,7 +247,9 @@ function App() {
             clearInterval(pollIntervalRef.current);
             activeJobIdRef.current = null;
             setJobStatus('error');
-            showToast("Processing failed.", "error");
+            setDownloadSpeed('');
+            setDownloadEta('');
+            showToast(s.error ? `Failed: ${s.error}` : "Processing failed.", "error");
           }
         } catch(e) {}
       }, 1000);
@@ -322,12 +354,20 @@ function App() {
                 selectedVideo={selectedVideo} setSelectedVideo={setSelectedVideo}
                 selectedAudio={selectedAudio} setSelectedAudio={setSelectedAudio}
                 selectedContainer={selectedContainer} setSelectedContainer={setSelectedContainer}
+                splitChapters={splitChapters} setSplitChapters={setSplitChapters}
+                clipStart={clipStart} setClipStart={setClipStart}
+                clipEnd={clipEnd} setClipEnd={setClipEnd}
+                audioLang={audioLang} setAudioLang={setAudioLang}
+                embedSubs={embedSubs} setEmbedSubs={setEmbedSubs}
+                subLang={subLang} setSubLang={setSubLang}
                 onDownloadThumb={handleDownloadThumbnail}
                 onDownloadMedia={startDownload}
                 onCancelDownload={cancelDownload}
                 isDownloading={!!downloadJob}
                 progress={progress}
                 status={jobStatus}
+                downloadSpeed={downloadSpeed}
+                downloadEta={downloadEta}
               />
             )
           ) : null}
