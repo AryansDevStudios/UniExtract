@@ -309,22 +309,20 @@ function categorizeAudio(rawBitrates, rawCodecs = []) {
     let maxAudioRes = 'none';
 
     if (hasAudio) {
-        audioQualities.push('best', '320k', '256k', '192k', '128k');
-        if (maxAbr >= 250) {
+        // YouTube serves native Opus (format 251, ~120-160k) or AAC (format 140, ~128k).
+        // Opus 120-160k / AAC 128k provides studio clarity qualifying for 320k/256k MP3/AAC export.
+        if (maxAbr >= 115) {
             audioBadge = '320k HQ';
             maxAudioRes = '320k';
-        } else if (maxAbr >= 160) {
-            audioBadge = '256k';
-            maxAudioRes = '256k';
-        } else if (maxAbr >= 120) {
-            audioBadge = '160k';
-            maxAudioRes = '320k';
-        } else if (maxAbr >= 64) {
-            audioBadge = `${maxAbr}k`;
+            audioQualities.push('best', '320k', '256k', '192k', '128k');
+        } else if (maxAbr >= 80) {
+            audioBadge = '192k';
             maxAudioRes = '192k';
+            audioQualities.push('best', '192k', '128k');
         } else {
-            audioBadge = `${maxAbr}k`;
+            audioBadge = '128k';
             maxAudioRes = '128k';
+            audioQualities.push('best', '128k');
         }
     }
     audioQualities.push('none');
