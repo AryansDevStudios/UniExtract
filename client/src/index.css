@@ -3,9 +3,14 @@
 @tailwind utilities;
 
 @layer utilities {
+  /* Subtle zinc scrollbar */
   .custom-scroll::-webkit-scrollbar { width: 4px; }
-  .custom-scroll::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 10px; }
-  .badge-8k { background: linear-gradient(135deg, #f5e020, #fa9c0f); color: white; }
-  .badge-4k { background: #ef4444; color: white; }
-  .badge-hd { background: #3b82f6; color: white; }
+  .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+  .custom-scroll::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
+  .custom-scroll::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+  /* Resolution badge utilities — muted zinc with colored text */
+  .badge-8k { background: #27272a; color: #fbbf24; font-weight: 700; }
+  .badge-4k { background: #27272a; color: #f87171; font-weight: 700; }
+  .badge-hd { background: #27272a; color: #60a5fa; font-weight: 700; }
 }

@@ -37,8 +37,8 @@ export default function Header({
     <header className="w-full flex justify-between items-center py-6 px-4 md:px-8 max-w-5xl mx-auto">
       <div className="flex items-center gap-3 md:gap-4">
         <img src="/favicon.ico" className="w-10 h-10 md:w-12 md:h-12 rounded-xl shadow-md" alt="Logo" />
-        <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100">
-          Uni <span className="font-light text-slate-400">Extract</span>
+        <h1 className="text-lg font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">
+          Uni <span className="font-light text-zinc-400">Extract</span>
         </h1>
       </div>
       <div className="flex items-center gap-2.5">
@@ -46,31 +46,31 @@ export default function Header({
           <button
             onClick={onOpenUpdate}
             title={`New version available: v${updateInfo.latestVersion}${updateInfo.channel === 'beta' ? ' (Beta Track)' : ''} (Click for details)`}
-            className="relative flex items-center gap-1.5 px-3 py-2 rounded-full bg-indigo-500/10 dark:bg-indigo-500/20 border border-indigo-500/30 hover:border-indigo-500 hover:scale-105 transition-all text-indigo-600 dark:text-indigo-400 shadow-sm text-xs font-semibold group"
+            className="relative flex items-center gap-1.5 px-3 min-h-[44px] rounded-lg bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-500/30 hover:border-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all text-indigo-600 dark:text-indigo-400 shadow-sm text-xs font-semibold group"
           >
-            <Sparkles size={14} className="text-indigo-500 group-hover:rotate-12 transition-transform" />
+            <Sparkles size={14} className="text-indigo-500 transition-transform" />
             <span>v{updateInfo.latestVersion}</span>
             {updateInfo.channel === 'beta' && (
               <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold uppercase">
                 Beta
               </span>
             )}
-            <span className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.9)]" />
+            <span className="w-2 h-2 rounded-full bg-indigo-500" />
           </button>
         )}
         {showServerSelector && (
           <button
             onClick={onOpenServer}
             title={envInfo.headerTooltip}
-            className="relative flex items-center gap-2 px-3 py-2 rounded-full bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200 dark:border-slate-700 hover:scale-105 transition-all text-slate-600 dark:text-slate-300 shadow-sm text-xs font-semibold"
+            className="relative flex items-center gap-2 px-3 min-h-[44px] rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all text-zinc-600 dark:text-zinc-300 shadow-sm text-xs font-semibold"
           >
-            <Server size={16} className={hasCustomServer ? 'text-indigo-500' : 'text-slate-400'} />
+            <Server size={16} className={hasCustomServer ? 'text-indigo-500' : 'text-zinc-400'} />
             <span className="hidden sm:inline">{envInfo.headerPill}</span>
             <span
               className={`w-2 h-2 rounded-full ${
                 hasCustomServer
-                  ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.9)]'
-                  : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]'
+                  ? 'bg-indigo-500'
+                  : 'bg-emerald-500'
               }`}
             />
           </button>
@@ -86,24 +86,24 @@ export default function Header({
               ? `Cookies active (${cookieStatus.count})`
               : 'Configure media cookies'
           }
-          className="relative flex items-center gap-2 px-3 py-2 rounded-full bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200 dark:border-slate-700 hover:scale-105 transition-all text-slate-600 dark:text-slate-300 shadow-sm text-xs font-semibold"
+          className="relative flex items-center gap-2 px-3 min-h-[44px] rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all text-zinc-600 dark:text-zinc-300 shadow-sm text-xs font-semibold"
         >
-          <Cookie size={16} className={hasCookies ? 'text-amber-500' : 'text-slate-400'} />
+          <Cookie size={16} className={hasCookies ? 'text-amber-500' : 'text-zinc-400'} />
           <span className="hidden sm:inline">Cookies</span>
           <span
             className={`w-2 h-2 rounded-full ${
               isYouTubeAuthed
-                ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]'
+                ? 'bg-emerald-500'
                 : hasCookies
                 ? 'bg-amber-500'
-                : 'bg-slate-400 dark:bg-slate-600'
+                : 'bg-zinc-400 dark:bg-zinc-600'
             }`}
           />
         </button>
 
         <button 
           onClick={toggleTheme} 
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200 dark:border-slate-700 hover:scale-105 transition-all text-slate-600 dark:text-slate-300 shadow-sm"
+          className="w-11 h-11 flex items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all text-zinc-600 dark:text-zinc-300 shadow-sm touch-manipulation"
           title={isDark ? "Switch to light mode" : "Switch to dark mode"}
         >
           {isDark ? <Sun size={18} /> : <Moon size={18} />}
@@ -111,10 +111,10 @@ export default function Header({
 
         <button 
           onClick={onOpenSettings} 
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200 dark:border-slate-700 hover:scale-105 transition-all text-slate-600 dark:text-slate-300 shadow-sm group"
+          className="w-11 h-11 flex items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all text-zinc-600 dark:text-zinc-300 shadow-sm group touch-manipulation"
           title="Settings, Preferences & Credits"
         >
-          <Settings size={18} className="group-hover:rotate-45 transition-transform duration-300" />
+          <Settings size={18} className="transition-transform duration-300" />
         </button>
       </div>
     </header>

@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 function App() {
   const [isDark, setIsDark] = useState(() => {
-    return localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    return localStorage.theme === 'dark' || (!localStorage.theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
   });
   
   const [history, setHistory] = useState(() => JSON.parse(localStorage.getItem('umx_recent') || '[]'));
@@ -108,10 +108,8 @@ function App() {
   useEffect(() => {
     if (isDark) {
       document.documentElement.classList.add('dark');
-      localStorage.theme = 'dark';
     } else {
       document.documentElement.classList.remove('dark');
-      localStorage.theme = 'light';
     }
   }, [isDark]);
 
@@ -359,18 +357,7 @@ function App() {
     <div className="min-h-screen relative font-sans flex flex-col selection:bg-indigo-500/30 selection:text-indigo-900 dark:selection:text-indigo-100">
       
       {/* Dynamic Background */}
-      <div className="fixed inset-0 pointer-events-none -z-10 bg-slate-50 dark:bg-slate-950 transition-colors duration-500" />
-      <motion.div 
-        className="fixed inset-0 pointer-events-none -z-10 opacity-40 dark:opacity-20"
-        animate={{
-          backgroundPosition: ['0% 0%', '100% 100%', '0% 0%'],
-        }}
-        transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-        style={{
-          backgroundImage: 'radial-gradient(circle at 50% 0%, #6366f1 0%, transparent 50%), radial-gradient(circle at 100% 100%, #a855f7 0%, transparent 50%)',
-          backgroundSize: '200% 200%'
-        }}
-      />
+      <div className="fixed inset-0 -z-10 bg-white dark:bg-zinc-950 transition-colors duration-200" />
 
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         <AnimatePresence>
@@ -380,8 +367,8 @@ function App() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className={`px-4 py-3 rounded-xl text-white font-medium text-xs md:text-sm shadow-xl flex items-center gap-2 backdrop-blur-md ${
-                t.type === 'error' ? 'bg-red-500/90' : t.type === 'success' ? 'bg-emerald-500/90' : 'bg-slate-800/90'
+              className={`px-4 py-3 rounded-xl font-medium text-xs md:text-sm shadow-sm flex items-center gap-2 bg-zinc-800 border border-zinc-700 text-zinc-100 ${
+                t.type === 'error' ? 'border-l-4 border-l-red-500' : t.type === 'success' ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-indigo-500'
               }`}
             >
               {t.message}
@@ -392,7 +379,23 @@ function App() {
 
       <Header 
         isDark={isDark} 
-        toggleTheme={() => setIsDark(!isDark)} 
+        toggleTheme={(mode) => {
+          if (mode === 'system') {
+            localStorage.removeItem('theme');
+            setIsDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
+          } else if (mode === 'light') {
+            localStorage.theme = 'light';
+            setIsDark(false);
+          } else if (mode === 'dark') {
+            localStorage.theme = 'dark';
+            setIsDark(true);
+          } else {
+            // Legacy toggle fallback
+            const next = !isDark;
+            localStorage.theme = next ? 'dark' : 'light';
+            setIsDark(next);
+          }
+        }} 
         cookieStatus={cookieStatus}
         onOpenCookies={() => setCookieModalOpen(true)}
         onOpenServer={() => setServerModalOpen(true)}
@@ -406,7 +409,7 @@ function App() {
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
         
         <motion.div 
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           className="w-full space-y-3"
         >
@@ -417,14 +420,13 @@ function App() {
           {isAnalyzing ? (
             <motion.div 
               key="loading"
-              initial={{ opacity: 0, y: 15 }}
+              initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="mt-16 flex flex-col items-center justify-center gap-4 text-slate-400 dark:text-slate-500"
+              exit={{ opacity: 0, y: 4 }}
+              className="mt-16 flex flex-col items-center justify-center gap-4 text-zinc-400 dark:text-zinc-500"
             >
               <div className="relative">
-                <div className="w-12 h-12 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin" />
-                <div className="absolute inset-0 bg-indigo-500/10 blur-xl rounded-full animate-pulse" />
+                <div className="w-10 h-10 rounded-full border-2 border-zinc-800 border-t-indigo-500 animate-spin" />
               </div>
               <span className="text-sm font-bold tracking-widest uppercase mt-2 text-indigo-500/70">Scanning Media...</span>
             </motion.div>
@@ -497,7 +499,23 @@ function App() {
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
         isDark={isDark}
-        toggleTheme={() => setIsDark(!isDark)}
+        toggleTheme={(mode) => {
+          if (mode === 'system') {
+            localStorage.removeItem('theme');
+            setIsDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
+          } else if (mode === 'light') {
+            localStorage.theme = 'light';
+            setIsDark(false);
+          } else if (mode === 'dark') {
+            localStorage.theme = 'dark';
+            setIsDark(true);
+          } else {
+            // Legacy toggle fallback
+            const next = !isDark;
+            localStorage.theme = next ? 'dark' : 'light';
+            setIsDark(next);
+          }
+        }}
         history={history}
         onClearHistory={() => setHistory([])}
         onOpenCookies={() => setCookieModalOpen(true)}
