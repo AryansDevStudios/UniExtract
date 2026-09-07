@@ -1961,6 +1961,7 @@ app.post('/api/download', async (req, res) => {
     } else if (clipStartSeconds !== null && clipEndSeconds === null) {
         resolvedClipStart = formatSecondsToClock(clipStartSeconds);
     }
+    const clipRequested = Boolean(resolvedClipStart || resolvedClipEnd);
 
     const heightMap = {
         '8k': 4320,
@@ -2095,6 +2096,7 @@ app.post('/api/download', async (req, res) => {
         splitChapters: !!splitChapters,
         clipStart: resolvedClipStart,
         clipEnd: resolvedClipEnd,
+        clipRequested,
         embedSubs: !!embedSubs,
         subLang: subLang || null,
         hasZipBundle: false
@@ -2158,8 +2160,10 @@ app.post('/api/download', async (req, res) => {
     }
     if (resolvedClipStart && resolvedClipEnd) {
         ffmpegArgs.push('--download-sections', `*${resolvedClipStart}-${resolvedClipEnd}`);
+        ffmpegArgs.push('--force-keyframes-at-cuts');
     } else if (resolvedClipStart && resolvedClipStart !== '00:00:00') {
         ffmpegArgs.push('--download-sections', `*${resolvedClipStart}-inf`);
+        ffmpegArgs.push('--force-keyframes-at-cuts');
     }
     if (embedSubs && subLang) {
         ffmpegArgs.push('--write-subs', '--write-auto-subs', '--sub-langs', subLang, '--convert-subs', 'srt');
@@ -2265,12 +2269,16 @@ app.post('/api/download', async (req, res) => {
                         const embeddedFile = baseName + '_final.' + targetExt;
                         let embedArgs = [];
                         let subtitleFile = null;
+                        const clipTimestampArgs = clipRequested
+                            ? ['-fflags', '+genpts', '-avoid_negative_ts', 'make_zero']
+                            : [];
 
                         if (isAudioOnly) {
                             if (targetExt === 'flac' || targetExt === 'wav') {
                                 embedArgs = [
                                     '-y', '-threads', '0', '-i', finalFile,
                                     ...(thumbFile ? ['-i', thumbFile] : []),
+                                    ...clipTimestampArgs,
                                     '-map', '0:a:0',
                                     ...(thumbFile ? ['-map', '1:0'] : []),
                                     '-c:a', targetExt === 'flac' ? 'flac' : 'pcm_s16le',
@@ -2286,6 +2294,7 @@ app.post('/api/download', async (req, res) => {
                             } else if (targetExt === 'mkv') {
                                 embedArgs = [
                                     '-y', '-threads', '0', '-i', finalFile,
+                                    ...clipTimestampArgs,
                                     '-map', '0:a:0',
                                     '-c:a', 'copy',
                                     ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
@@ -2304,6 +2313,7 @@ app.post('/api/download', async (req, res) => {
                                 embedArgs = [
                                     '-y', '-threads', '0', '-i', finalFile,
                                     ...(thumbFile ? ['-i', thumbFile] : []),
+                                    ...clipTimestampArgs,
                                     '-map', '0:a:0',
                                     ...(thumbFile ? ['-map', '1:0'] : []),
                                     ...aCodecArgs,
@@ -2322,6 +2332,7 @@ app.post('/api/download', async (req, res) => {
                                 const aCodecArgs = isSourceOpus ? ['-c:a', 'copy'] : ['-c:a', 'libopus', '-b:a', '160k'];
                                 embedArgs = [
                                     '-y', '-threads', '0', '-i', finalFile,
+                                    ...clipTimestampArgs,
                                     '-map', '0:a:0',
                                     ...aCodecArgs,
                                     '-metadata', `title=${mTitle}`,
@@ -2337,6 +2348,7 @@ app.post('/api/download', async (req, res) => {
                                 embedArgs = [
                                     '-y', '-threads', '0', '-i', finalFile,
                                     ...(thumbFile ? ['-i', thumbFile] : []),
+                                    ...clipTimestampArgs,
                                     '-map', '0:a:0',
                                     ...(thumbFile ? ['-map', '1:0'] : []),
                                     '-c:a', 'libmp3lame', ...lameBitrate, '-ac', '2',
@@ -2411,6 +2423,7 @@ app.post('/api/download', async (req, res) => {
                                 if (targetExt === 'mkv') {
                                     embedArgs = [
                                         ...inputs,
+                                        ...clipTimestampArgs,
                                         ...streamMaps,
                                         '-c:v:0', 'copy',
                                         '-an',
@@ -2422,6 +2435,7 @@ app.post('/api/download', async (req, res) => {
                                 } else {
                                     embedArgs = [
                                         ...inputs,
+                                        ...clipTimestampArgs,
                                         ...streamMaps,
                                         '-c:v:0', 'copy',
                                         '-an',
@@ -2443,6 +2457,7 @@ app.post('/api/download', async (req, res) => {
                                 if (targetExt === 'mkv') {
                                     embedArgs = [
                                         ...inputs,
+                                        ...clipTimestampArgs,
                                         ...streamMaps,
                                         '-c:v:0', 'copy',
                                         ...audioCodecArgs,
@@ -2454,6 +2469,7 @@ app.post('/api/download', async (req, res) => {
                                 } else {
                                     embedArgs = [
                                         ...inputs,
+                                        ...clipTimestampArgs,
                                         ...streamMaps,
                                         '-c:v:0', 'copy',
                                         ...audioCodecArgs,

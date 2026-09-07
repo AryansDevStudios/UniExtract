@@ -2,15 +2,124 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer utilities {
-  /* Subtle zinc scrollbar */
-  .custom-scroll::-webkit-scrollbar { width: 4px; }
-  .custom-scroll::-webkit-scrollbar-track { background: transparent; }
-  .custom-scroll::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
-  .custom-scroll::-webkit-scrollbar-thumb:hover { background: #52525b; }
+@layer base {
+  body {
+    @apply bg-slate-100 text-slate-900 dark:bg-[#090b10] dark:text-slate-100 antialiased selection:bg-cyan-500/20 selection:text-cyan-900 dark:selection:text-cyan-100;
+    background-color: #f4f7fb;
+  }
 
-  /* Resolution badge utilities — muted zinc with colored text */
-  .badge-8k { background: #27272a; color: #fbbf24; font-weight: 700; }
-  .badge-4k { background: #27272a; color: #f87171; font-weight: 700; }
-  .badge-hd { background: #27272a; color: #60a5fa; font-weight: 700; }
+  html.dark body { background-color: #090b10; }
+
+  html:not(.dark) input,
+  html:not(.dark) select,
+  html:not(.dark) textarea { color-scheme: light; }
+  
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.05); border-radius: 4px; }
+  .dark ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.2); }
+  ::-webkit-scrollbar-thumb { background: rgba(6, 182, 212, 0.4); border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(6, 182, 212, 0.7); }
+  * { scrollbar-width: thin; scrollbar-color: rgba(6, 182, 212, 0.4) transparent; }
+}
+
+@layer utilities {
+  .badge-8k { background: linear-gradient(135deg, #8B5CF6, #C084FC); color: white; }
+  .badge-4k { background: linear-gradient(135deg, #06B6D4, #3B82F6); color: white; }
+  .badge-hd { background: linear-gradient(135deg, #10B981, #34D399); color: white; }
+  
+  .glass-panel {
+    @apply bg-white/85 border border-slate-200/80 dark:bg-slate-900/70 dark:border-slate-800/80 backdrop-blur-md shadow-xl;
+  }
+
+  /* Keep legacy dark utility tokens readable on light surfaces. */
+  html:not(.dark) .bg-slate-900\/40 { background-color: rgb(248 250 252 / 0.92); }
+  html:not(.dark) .bg-slate-900\/60 { background-color: rgb(248 250 252 / 0.96); }
+  html:not(.dark) .bg-slate-900\/80 { background-color: rgb(241 245 249 / 0.96); }
+  html:not(.dark) .bg-slate-900\/90 { background-color: rgb(255 255 255 / 0.98); }
+  html:not(.dark) .bg-slate-900 { background-color: rgb(248 250 252); }
+  html:not(.dark) .bg-slate-800\/60 { background-color: rgb(241 245 249 / 0.96); }
+  html:not(.dark) .bg-slate-800\/80 { background-color: rgb(226 232 240 / 0.9); }
+  html:not(.dark) .bg-slate-800 { background-color: rgb(226 232 240); }
+  html:not(.dark) .bg-slate-700 { background-color: rgb(203 213 225); }
+  html:not(.dark) .bg-zinc-900 { background-color: rgb(30 41 59); }
+  html:not(.dark) .bg-zinc-800 { background-color: rgb(226 232 240); }
+  html:not(.dark) .bg-black\/60 { background-color: rgb(255 255 255 / 0.98); }
+  html:not(.dark) .border-slate-700\/80,
+  html:not(.dark) .border-slate-700\/60,
+  html:not(.dark) .border-slate-700 { border-color: rgb(203 213 225); }
+  html:not(.dark) .border-zinc-700 { border-color: rgb(203 213 225); }
+  html:not(.dark) .text-slate-200 { color: rgb(30 41 59); }
+  html:not(.dark) .text-slate-300 { color: rgb(51 65 85); }
+  html:not(.dark) .text-slate-400 { color: rgb(71 85 105); }
+  html:not(.dark) .text-zinc-100 { color: rgb(15 23 42); }
+  html:not(.dark) .text-zinc-200 { color: rgb(30 41 59); }
+  html:not(.dark) .text-zinc-300 { color: rgb(51 65 85); }
+  html:not(.dark) .text-zinc-400 { color: rgb(71 85 105); }
+  html:not(.dark) .text-zinc-500 { color: rgb(71 85 105); }
+  html:not(.dark) .text-cyan-400 { color: rgb(15 118 110); }
+  html:not(.dark) .text-cyan-300 { color: rgb(15 118 110); }
+  html:not(.dark) .bg-cyan-500 { background-color: rgb(15 118 110); }
+  html:not(.dark) .hover\:bg-cyan-400:hover { background-color: rgb(13 148 136); }
+  html:not(.dark) .hover\:bg-slate-800:hover,
+  html:not(.dark) .hover\:bg-zinc-800:hover { background-color: rgb(226 232 240); }
+  html:not(.dark) [class~="bg-amber-500"]:not([class~="text-white"]) {
+    background-color: rgb(255 251 235);
+    border-color: rgb(245 158 11);
+  }
+  html:not(.dark) [class~="bg-emerald-500"]:not([class~="text-white"]) {
+    background-color: rgb(236 253 245);
+    border-color: rgb(52 211 153);
+  }
+  html:not(.dark) [class~="bg-sky-500"]:not([class~="text-white"]) {
+    background-color: rgb(239 246 255);
+    border-color: rgb(96 165 250);
+  }
+  html:not(.dark) [class~="bg-purple-500"]:not([class~="text-white"]) {
+    background-color: rgb(245 243 255);
+    border-color: rgb(167 139 250);
+  }
+  html:not(.dark) [class~="bg-indigo-500"]:not([class~="text-white"]):not([class~="text-cyan-400"]) {
+    background-color: rgb(238 242 255);
+    border-color: rgb(129 140 248);
+  }
+  html:not(.dark) [class~="bg-amber-500"][class~="text-white"] { background-color: rgb(180 83 9); }
+  html:not(.dark) [class~="bg-emerald-500"][class~="text-white"] { background-color: rgb(4 120 87); }
+  html:not(.dark) [class~="bg-sky-500"][class~="text-white"] { background-color: rgb(3 105 161); }
+  html:not(.dark) [class~="bg-purple-500"][class~="text-white"] { background-color: rgb(109 40 217); }
+  html:not(.dark) [class~="bg-indigo-500"][class~="text-cyan-400"] { color: white; }
+  html:not(.dark) input,
+  html:not(.dark) select,
+  html:not(.dark) textarea {
+    background-color: #ffffff;
+    border-color: #cbd5e1;
+    color: #1e293b;
+  }
+  html:not(.dark) input::placeholder,
+  html:not(.dark) textarea::placeholder { color: #64748b; opacity: 1; }
+  
+  .neon-glow {
+    box-shadow: 0 0 15px rgba(6, 182, 212, 0.4);
+  }
+  
+  .neon-glow-violet {
+    box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
+  }
+
+  .download-progress-fill {
+    background: linear-gradient(90deg, #0f766e 0%, #14b8a6 52%, #4f46e5 100%);
+    box-shadow: 0 0 12px rgb(20 184 166 / 0.5);
+  }
+
+  .download-progress-fill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(110deg, transparent 20%, rgb(255 255 255 / 0.45) 50%, transparent 80%);
+    transform: translateX(-100%);
+    animation: download-progress-shimmer 1.8s ease-in-out infinite;
+  }
+
+  @keyframes download-progress-shimmer {
+    to { transform: translateX(100%); }
+  }
 }

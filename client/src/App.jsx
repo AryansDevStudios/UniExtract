@@ -8,7 +8,9 @@ import AuthModal from './components/AuthModal';
 import ServerModal from './components/ServerModal';
 import UpdateModal from './components/UpdateModal';
 import SettingsModal from './components/SettingsModal';
+import DownloadPage from './components/DownloadPage';
 import { apiUrl, apiFetch, getCustomServerUrl, shouldShowServerSelector } from './utils/api';
+import { isOnlineFrontend } from './utils/environment';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function App() {
@@ -46,6 +48,8 @@ function App() {
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const showDownloadButton = isOnlineFrontend();
 
   const fetchCookieStatus = async () => {
     try {
@@ -108,8 +112,10 @@ function App() {
   useEffect(() => {
     if (isDark) {
       document.documentElement.classList.add('dark');
+      localStorage.theme = 'dark';
     } else {
       document.documentElement.classList.remove('dark');
+      localStorage.theme = 'light';
     }
   }, [isDark]);
 
@@ -356,8 +362,11 @@ function App() {
   return (
     <div className="min-h-screen relative font-sans flex flex-col selection:bg-indigo-500/30 selection:text-indigo-900 dark:selection:text-indigo-100">
       
-      {/* Dynamic Background */}
-      <div className="fixed inset-0 -z-10 bg-white dark:bg-zinc-950 transition-colors duration-200" />
+      {/* Ambient Background (Light & Dark Mode) */}
+      <div className="fixed inset-0 pointer-events-none -z-10 bg-slate-50 dark:bg-[#090b10] transition-colors duration-500">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-400/10 dark:bg-indigo-600/10 rounded-full blur-[120px] -mr-20 -mt-20"></div>
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-cyan-400/10 dark:bg-cyan-600/10 rounded-full blur-[120px] -ml-20 -mb-20"></div>
+      </div>
 
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         <AnimatePresence>
@@ -367,7 +376,7 @@ function App() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className={`px-4 py-3 rounded-xl font-medium text-xs md:text-sm shadow-sm flex items-center gap-2 bg-zinc-800 border border-zinc-700 text-zinc-100 ${
+                className={`px-4 py-3 rounded-xl font-medium text-xs md:text-sm shadow-sm flex items-center gap-2 bg-white border border-slate-200 text-slate-800 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100 ${
                 t.type === 'error' ? 'border-l-4 border-l-red-500' : t.type === 'success' ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-indigo-500'
               }`}
             >
@@ -379,23 +388,7 @@ function App() {
 
       <Header 
         isDark={isDark} 
-        toggleTheme={(mode) => {
-          if (mode === 'system') {
-            localStorage.removeItem('theme');
-            setIsDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
-          } else if (mode === 'light') {
-            localStorage.theme = 'light';
-            setIsDark(false);
-          } else if (mode === 'dark') {
-            localStorage.theme = 'dark';
-            setIsDark(true);
-          } else {
-            // Legacy toggle fallback
-            const next = !isDark;
-            localStorage.theme = next ? 'dark' : 'light';
-            setIsDark(next);
-          }
-        }} 
+        toggleTheme={() => setIsDark(!isDark)} 
         cookieStatus={cookieStatus}
         onOpenCookies={() => setCookieModalOpen(true)}
         onOpenServer={() => setServerModalOpen(true)}
@@ -403,10 +396,17 @@ function App() {
         showServerSelector={shouldShowServerSelector()}
         updateInfo={updateInfo}
         onOpenUpdate={() => setUpdateModalOpen(true)}
+        onOpenDownloads={() => setDownloadsOpen(true)}
+        showDownloadButton={showDownloadButton}
         onOpenSettings={() => setSettingsModalOpen(true)}
       />
 
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 md:px-8 flex flex-col items-center justify-center -mt-10 py-20">
+      {downloadsOpen && showDownloadButton ? (
+        <main className="flex-1 w-full">
+          <DownloadPage updateInfo={updateInfo} onBack={() => setDownloadsOpen(false)} />
+        </main>
+      ) : (
+      <main className="flex-1 w-full max-w-6xl mx-auto px-3 sm:px-6 md:px-8 flex flex-col items-center justify-center -mt-4 sm:-mt-10 py-8 sm:py-20">
         
         <motion.div 
           initial={{ opacity: 0, y: 4 }}
@@ -423,7 +423,7 @@ function App() {
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 4 }}
-              className="mt-16 flex flex-col items-center justify-center gap-4 text-zinc-400 dark:text-zinc-500"
+              className="mt-10 sm:mt-16 flex flex-col items-center justify-center gap-3 sm:gap-4 text-zinc-400 dark:text-zinc-500"
             >
               <div className="relative">
                 <div className="w-10 h-10 rounded-full border-2 border-zinc-800 border-t-indigo-500 animate-spin" />
@@ -469,6 +469,7 @@ function App() {
           onDelete={(url) => setHistory(prev => prev.filter(h => h.url !== url))} 
         />
       </main>
+      )}
 
       {/* Spacer replacing homepage footer credits */}
       <div className="w-full py-4" />
@@ -499,23 +500,7 @@ function App() {
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
         isDark={isDark}
-        toggleTheme={(mode) => {
-          if (mode === 'system') {
-            localStorage.removeItem('theme');
-            setIsDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
-          } else if (mode === 'light') {
-            localStorage.theme = 'light';
-            setIsDark(false);
-          } else if (mode === 'dark') {
-            localStorage.theme = 'dark';
-            setIsDark(true);
-          } else {
-            // Legacy toggle fallback
-            const next = !isDark;
-            localStorage.theme = next ? 'dark' : 'light';
-            setIsDark(next);
-          }
-        }}
+        toggleTheme={() => setIsDark(!isDark)}
         history={history}
         onClearHistory={() => setHistory([])}
         onOpenCookies={() => setCookieModalOpen(true)}

@@ -168,44 +168,44 @@ export default function SettingsModal({
  };
 
  return (
- <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-5 md:p-6 bg-black/50 ">
+ <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm sm:p-5 md:p-6">
  <motion.div 
  initial={{ opacity: 0, y: 4 }}
  animate={{ opacity: 1, y: 0 }}
  exit={{ opacity: 0, y: 4 }}
  transition={{ duration: 0.15 }}
- className="w-full max-w-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-lg overflow-hidden flex flex-col max-h-[92vh]"
+ className="w-full h-full max-w-none max-h-full glass-panel rounded-none border-x-0 border-y border-slate-700/80 shadow-[0_0_30px_rgba(0,0,0,0.7)] overflow-hidden flex flex-col sm:h-auto sm:max-w-2xl sm:max-h-[92vh] sm:rounded-2xl sm:border-x sm:border-y"
  >
  {/* Header */}
- <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+ <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-6 sm:py-5 border-b border-slate-700/80 bg-slate-900/60">
  <div className="flex items-center gap-3">
- <div className="p-2.5 rounded-lg bg-indigo-500 text-indigo-500 border border-indigo-500">
+ <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-inner">
  <Settings size={22} />
  </div>
  <div>
- <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
+ <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-wider uppercase">
  Settings & Preferences
  </h2>
- <p className="text-xs text-zinc-500 dark:text-zinc-400">
+ <p className="text-xs text-slate-400 font-mono mt-0.5">
  Configure media defaults, enterprise update policies & credits
  </p>
  </div>
  </div>
  <button onClick={onClose}
-  className="touch-manipulation p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+  className="touch-manipulation p-2 text-slate-500 hover:text-cyan-400 rounded-lg hover:bg-slate-800 transition-colors"
  >
  <X size={20} />
  </button>
  </div>
 
  {/* Navigation Tabs */}
- <div className="flex border-b border-zinc-200 dark:border-zinc-800 px-6 bg-zinc-50 dark:bg-zinc-900 text-xs font-bold">
+ <div className="flex overflow-x-auto border-b border-slate-700/80 px-3 sm:px-6 bg-slate-900/40 text-xs font-bold font-mono tracking-wider uppercase">
  <button
  onClick={() => setActiveTab('preferences')}
- className={`py-3 px-4 border-b-2 transition-all flex items-center gap-2 ${
+ className={`shrink-0 py-3 px-3 sm:px-4 border-b-2 transition-all flex items-center gap-2 ${
  activeTab === 'preferences'
- ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
- : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+ ? 'border-cyan-400 text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]'
+ : 'border-transparent text-slate-500 hover:text-slate-300'
  }`}
  >
  <Layers size={14} />
@@ -213,77 +213,46 @@ export default function SettingsModal({
  </button>
  <button
  onClick={() => setActiveTab('updates')}
- className={`py-3 px-4 border-b-2 transition-all flex items-center gap-2 ${
+ className={`shrink-0 py-3 px-3 sm:px-4 border-b-2 transition-all flex items-center gap-2 ${
  activeTab === 'updates'
- ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
- : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+ ? 'border-cyan-400 text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]'
+ : 'border-transparent text-slate-500 hover:text-slate-300'
  }`}
  >
  <Sparkles size={14} />
- Updates & Enterprise
+ Updates & Policies
  </button>
  <button
  onClick={() => setActiveTab('about')}
- className={`py-3 px-4 border-b-2 transition-all flex items-center gap-2 ${
+ className={`shrink-0 py-3 px-3 sm:px-4 border-b-2 transition-all flex items-center gap-2 ${
  activeTab === 'about'
- ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
- : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+ ? 'border-cyan-400 text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]'
+ : 'border-transparent text-slate-500 hover:text-slate-300'
  }`}
  >
  <Info size={14} />
- About & Credits
+ About
  </button>
  </div>
 
  {/* Tab Content Body */}
- <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+ <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-6 sm:px-6 sm:py-5 sm:pb-8 space-y-6">
  {activeTab === 'preferences' && (
  <div className="space-y-5">
- {/* Appearance Mode */}
-              <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {isDark ? <Moon size={16} className="text-indigo-400" /> : <Sun size={16} className="text-amber-500" />}
-                    <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Interface Theme</span>
-                  </div>
-                </div>
-                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  Choose your preferred theme. System mode follows your OS preference.
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => { localStorage.removeItem('theme'); window.dispatchEvent(new Event('theme-change')); if(toggleTheme) toggleTheme('system'); }}
-                    className="touch-manipulation py-2 px-2.5 rounded-lg text-xs font-bold transition-all text-center border bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-700"
-                  >
-                    System
-                  </button>
-                  <button
-                    onClick={() => { localStorage.theme = 'light'; window.dispatchEvent(new Event('theme-change')); if(toggleTheme) toggleTheme('light'); }}
-                    className="touch-manipulation py-2 px-2.5 rounded-lg text-xs font-bold transition-all text-center border bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-700"
-                  >
-                    Light
-                  </button>
-                  <button
-                    onClick={() => { localStorage.theme = 'dark'; window.dispatchEvent(new Event('theme-change')); if(toggleTheme) toggleTheme('dark'); }}
-                    className="touch-manipulation py-2 px-2.5 rounded-lg text-xs font-bold transition-all text-center border bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-700"
-                  >
-                    Dark
-                  </button>
-                </div>
-              </div>
+
 
               {/* Default Container */}
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-3">
+ <div className="p-4 rounded-lg bg-slate-900/40 border border-slate-700/80 space-y-3">
  <div className="flex items-center justify-between">
- <label className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
- <FileVideo size={16} className="text-indigo-500" />
+ <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+ <FileVideo size={16} className="text-cyan-400" />
  Default Media Container
  </label>
- <span className="text-[10px] uppercase font-bold text-indigo-500 tracking-wider bg-indigo-500 px-2 py-0.5 rounded-md">
+ <span className="text-[10px] uppercase font-bold text-cyan-400 tracking-wider bg-indigo-500 px-2 py-0.5 rounded-md">
  {defaultContainer.toUpperCase()}
  </span>
  </div>
- <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+ <p className="text-[11px] text-slate-400">
  The initial format selected when analyzing video or audio streams.
  </p>
  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
@@ -301,8 +270,8 @@ export default function SettingsModal({
  onClick={() => handleSavePref('umx_pref_container', c.id, setDefaultContainer)}
  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all text-center border ${
  defaultContainer === c.id
- ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
- : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
+ ? 'bg-cyan-500 text-white border-cyan-400 shadow-sm'
+ : 'bg-slate-800/60 text-slate-300 border-slate-700/80 hover:border-zinc-300 dark:hover:border-zinc-600'
  }`}
  >
  {c.label}
@@ -312,110 +281,98 @@ export default function SettingsModal({
  </div>
 
  {/* Automation Controls */}
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-4">
- <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
- <Subtitles size={16} className="text-indigo-500" />
+ <div className="p-4 rounded-lg bg-slate-900/40 border border-slate-700/80 space-y-4">
+ <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+ <Subtitles size={16} className="text-cyan-400" />
  Extraction Automation Controls
  </div>
 
  {/* Auto-embed subs */}
  <div className="flex items-center justify-between pt-1">
  <div className="space-y-0.5">
- <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+ <div className="text-xs font-semibold text-slate-300">
  Auto-Embed Subtitles
  </div>
- <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+ <div className="text-[11px] text-slate-400">
  Automatically activate subtitle muxing if available in source media
  </div>
  </div>
  <button
  type="button"
  onClick={() => handleSavePref('umx_pref_embed_subs', (!defaultEmbedSubs).toString(), () => setDefaultEmbedSubs(!defaultEmbedSubs))}
- className={`w-11 h-6 flex items-center rounded-md p-1 transition-colors duration-200 ease-in-out ${
- defaultEmbedSubs ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'
- }`}
+ className={`w-11 h-6 flex items-center rounded-full p-1 transition-all duration-200 ease-in-out border ${defaultEmbedSubs ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]' : 'bg-slate-800 border-slate-700'}`}
  >
  <div
- className={`bg-white w-4 h-4 rounded-md shadow-md transform transition-transform duration-200 ease-in-out ${
- defaultEmbedSubs ? 'tranzinc-x-5' : 'tranzinc-x-0'
- }`}
+ className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${defaultEmbedSubs ? 'translate-x-5' : 'translate-x-0'}`}
  />
  </button>
  </div>
 
  {/* Auto-split chapters */}
- <div className="flex items-center justify-between border-t border-zinc-200 dark:border-zinc-700 pt-3">
+ <div className="flex items-center justify-between border-t border-slate-700/80 pt-3">
  <div className="space-y-0.5">
- <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+ <div className="text-xs font-semibold text-slate-300">
  Auto-Split Chapters
  </div>
- <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+ <div className="text-[11px] text-slate-400">
  Split media into individual chapter tracks when chapters are present
  </div>
  </div>
  <button
  type="button"
  onClick={() => handleSavePref('umx_pref_split_chapters', (!defaultSplitChapters).toString(), () => setDefaultSplitChapters(!defaultSplitChapters))}
- className={`w-11 h-6 flex items-center rounded-md p-1 transition-colors duration-200 ease-in-out ${
- defaultSplitChapters ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'
- }`}
+ className={`w-11 h-6 flex items-center rounded-full p-1 transition-all duration-200 ease-in-out border ${defaultSplitChapters ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]' : 'bg-slate-800 border-slate-700'}`}
  >
  <div
- className={`bg-white w-4 h-4 rounded-md shadow-md transform transition-transform duration-200 ease-in-out ${
- defaultSplitChapters ? 'tranzinc-x-5' : 'tranzinc-x-0'
- }`}
+ className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${defaultSplitChapters ? 'translate-x-5' : 'translate-x-0'}`}
  />
  </button>
  </div>
 
  {/* History Persistence */}
- <div className="flex items-center justify-between border-t border-zinc-200 dark:border-zinc-700 pt-3">
+ <div className="flex items-center justify-between border-t border-slate-700/80 pt-3">
  <div className="space-y-0.5">
- <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+ <div className="text-xs font-semibold text-slate-300">
  Save History Locally
  </div>
- <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+ <div className="text-[11px] text-slate-400">
  Store recent analyzed links in your browser/app storage
  </div>
  </div>
  <button
  type="button"
  onClick={() => handleSavePref('umx_pref_remember_history', (!rememberHistory).toString(), () => setRememberHistory(!rememberHistory))}
- className={`w-11 h-6 flex items-center rounded-md p-1 transition-colors duration-200 ease-in-out ${
- rememberHistory ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'
- }`}
+ className={`w-11 h-6 flex items-center rounded-full p-1 transition-all duration-200 ease-in-out border ${rememberHistory ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]' : 'bg-slate-800 border-slate-700'}`}
  >
  <div
- className={`bg-white w-4 h-4 rounded-md shadow-md transform transition-transform duration-200 ease-in-out ${
- rememberHistory ? 'tranzinc-x-5' : 'tranzinc-x-0'
- }`}
+ className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${rememberHistory ? 'translate-x-5' : 'translate-x-0'}`}
  />
  </button>
  </div>
  </div>
 
  {/* Data & Quick Management */}
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-3">
- <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+ <div className="p-4 rounded-lg bg-slate-900/40 border border-slate-700/80 space-y-3">
+ <div className="text-xs font-bold text-slate-200">
  Quick Modals & Management
  </div>
  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
  <button
  type="button"
  onClick={() => { onClose(); onOpenServer(); }}
- className="flex items-center justify-center gap-1.5 p-2.5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 text-xs font-semibold text-zinc-700 dark:text-zinc-300 transition-all shadow-sm group"
+ className="flex items-center justify-center gap-1.5 p-2.5 rounded-lg bg-slate-800/60 border border-slate-700/80 hover:border-cyan-400 text-xs font-semibold text-slate-300 transition-all shadow-sm group"
  title={envInfo.headerTooltip}
  >
- <Server size={14} className="text-indigo-500 shrink-0" />
+ <Server size={14} className="text-cyan-400 shrink-0" />
  <span>Server</span>
- <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-medium">
+ <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-cyan-900/10 text-cyan-400 font-medium">
  {envInfo.badgeText}
  </span>
  </button>
  <button
  type="button"
  onClick={() => { onClose(); onOpenCookies(); }}
- className="flex items-center justify-center gap-2 p-2.5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-amber-500 text-xs font-semibold text-zinc-700 dark:text-zinc-300 transition-all shadow-sm"
+ className="flex items-center justify-center gap-2 p-2.5 rounded-lg bg-slate-800/60 border border-slate-700/80 hover:border-amber-500 text-xs font-semibold text-slate-300 transition-all shadow-sm"
  >
  <Cookie size={14} className="text-amber-500" />
  Media Cookies
@@ -423,7 +380,7 @@ export default function SettingsModal({
  <button
  type="button"
  onClick={() => { onClose(); onOpenUpdate(); }}
- className="flex items-center justify-center gap-2 p-2.5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-emerald-500 text-xs font-semibold text-zinc-700 dark:text-zinc-300 transition-all shadow-sm"
+ className="flex items-center justify-center gap-2 p-2.5 rounded-lg bg-slate-800/60 border border-slate-700/80 hover:border-emerald-500 text-xs font-semibold text-slate-300 transition-all shadow-sm"
  >
  <Sparkles size={14} className="text-emerald-500" />
  Check Updates
@@ -431,8 +388,8 @@ export default function SettingsModal({
  </div>
 
  {/* History Clear */}
- <div className="pt-2 flex items-center justify-between border-t border-zinc-200 dark:border-zinc-700">
- <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+ <div className="pt-2 flex items-center justify-between border-t border-slate-700/80">
+ <span className="text-[11px] text-slate-400">
  History cache ({history?.length || 0} items)
  </span>
  <button
@@ -471,11 +428,11 @@ export default function SettingsModal({
  )}
 
  {/* Release Channel Selector */}
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-3">
+ <div className="p-4 rounded-lg bg-slate-900/40 border border-slate-700/80 space-y-3">
  <div className="flex items-center justify-between">
  <div className="flex items-center gap-2">
- <Radio size={16} className="text-indigo-500" />
- <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Release Track / Ring</span>
+ <Radio size={16} className="text-cyan-400" />
+ <span className="text-xs font-bold text-slate-200">Release Track / Ring</span>
  </div>
  <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
  updateChannel === 'beta'
@@ -485,7 +442,7 @@ export default function SettingsModal({
  {updateChannel === 'beta' ? 'Beta Track' : 'Production Stable'}
  </span>
  </div>
- <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+ <p className="text-[11px] text-slate-400">
  Select your deployment stream. Enterprise deployments typically remain on the Production Stable ring.
  </p>
  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
@@ -493,15 +450,15 @@ export default function SettingsModal({
  onClick={() => handleChannelChange('stable')}
  className={`p-3.5 rounded-lg border-2 cursor-pointer transition-all ${
  updateChannel === 'stable'
- ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950 ring-1 ring-indigo-500/20'
- : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
+ ? 'border-cyan-400 bg-cyan-900/10 ring-1 ring-indigo-500/20'
+ : 'border-slate-700/80 hover:border-zinc-300'
  }`}
  >
  <div className="flex items-center justify-between">
- <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Stable (Production)</span>
- {updateChannel === 'stable' && <Check size={14} className="text-indigo-600 dark:text-indigo-400" />}
+ <span className="text-xs font-bold text-slate-200">Stable (Production)</span>
+ {updateChannel === 'stable' && <Check size={14} className="text-cyan-400" />}
  </div>
- <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1">
+ <p className="text-[10px] text-slate-400 mt-1">
  Thoroughly validated releases. Best for general use and production workloads.
  </p>
  </div>
@@ -510,15 +467,15 @@ export default function SettingsModal({
  onClick={() => handleChannelChange('beta')}
  className={`p-3.5 rounded-lg border-2 cursor-pointer transition-all ${
  updateChannel === 'beta'
- ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950 ring-1 ring-indigo-500/20'
- : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'
+ ? 'border-cyan-400 bg-cyan-900/10 ring-1 ring-indigo-500/20'
+ : 'border-slate-700/80 hover:border-zinc-300'
  }`}
  >
  <div className="flex items-center justify-between">
- <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Beta / Preview</span>
- {updateChannel === 'beta' && <Check size={14} className="text-indigo-600 dark:text-indigo-400" />}
+ <span className="text-xs font-bold text-slate-200">Beta / Preview</span>
+ {updateChannel === 'beta' && <Check size={14} className="text-cyan-400" />}
  </div>
- <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1">
+ <p className="text-[10px] text-slate-400 mt-1">
  Early access to newly released extractor features, fixes, and engine updates.
  </p>
  </div>
@@ -526,44 +483,40 @@ export default function SettingsModal({
  </div>
 
  {/* Automation & Background Download Policies */}
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-4">
- <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
- <Bell size={16} className="text-indigo-500" />
+ <div className="p-4 rounded-lg bg-slate-900/40 border border-slate-700/80 space-y-4">
+ <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+ <Bell size={16} className="text-cyan-400" />
  Enterprise Automation & Cadence
  </div>
 
  {/* Auto-download in background */}
  <div className="flex items-center justify-between pt-1">
  <div className="space-y-0.5">
- <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+ <div className="text-xs font-semibold text-slate-300">
  Automatic Background Download
  </div>
- <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+ <div className="text-[11px] text-slate-400">
  Download installers quietly in the background without prompting. Disables on metered connections.
  </div>
  </div>
  <button
  type="button"
  onClick={handleAutoDownloadToggle}
- className={`w-11 h-6 flex items-center rounded-md p-1 transition-colors duration-200 ease-in-out ${
- autoDownload ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'
- }`}
+ className={`w-11 h-6 flex items-center rounded-full p-1 transition-all duration-200 ease-in-out border ${autoDownload ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]' : 'bg-slate-800 border-slate-700'}`}
  >
  <div
- className={`bg-white w-4 h-4 rounded-md shadow-md transform transition-transform duration-200 ease-in-out ${
- autoDownload ? 'tranzinc-x-5' : 'tranzinc-x-0'
- }`}
+ className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${autoDownload ? 'translate-x-5' : 'translate-x-0'}`}
  />
  </button>
  </div>
 
  {/* Check Cadence */}
- <div className="border-t border-zinc-200 dark:border-zinc-700 pt-3 space-y-2">
+ <div className="border-t border-slate-700/80 pt-3 space-y-2">
  <div className="flex items-center justify-between">
- <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+ <span className="text-xs font-semibold text-slate-300">
  Check Cadence Frequency
  </span>
- <span className="text-[10px] font-mono text-indigo-500 font-bold uppercase">
+ <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase">
  {checkCadence === 'startup_and_interval' ? 'Every 4 Hours' : checkCadence === 'daily' ? 'Daily' : 'Manual'}
  </span>
  </div>
@@ -579,8 +532,8 @@ export default function SettingsModal({
  onClick={() => handleCadenceChange(cad.id)}
  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all text-center border ${
  checkCadence === cad.id
- ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
- : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300'
+ ? 'bg-cyan-500 text-white border-cyan-400 shadow-sm'
+ : 'bg-slate-800/60 text-slate-300 border-slate-700/80 hover:border-zinc-300'
  }`}
  >
  {cad.label}
@@ -591,15 +544,15 @@ export default function SettingsModal({
  </div>
 
  {/* Enterprise Custom Update Feed (Corporate Mirrors / Air-gap) */}
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-3">
- <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center justify-between">
+ <div className="p-4 rounded-lg bg-slate-900/40 border border-slate-700/80 space-y-3">
+ <div className="text-xs font-bold text-slate-200 flex items-center justify-between">
  <div className="flex items-center gap-1.5">
- <Globe size={16} className="text-indigo-500" />
+ <Globe size={16} className="text-cyan-400" />
  <span>Custom Enterprise Update Feed</span>
  </div>
- <span className="text-[10px] text-zinc-400 font-normal">Optional</span>
+ <span className="text-[10px] text-slate-500 font-normal">Optional</span>
  </div>
- <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+ <p className="text-[11px] text-slate-400">
  For air-gapped corporate intranets, private mirrors, or internal software distribution servers. Leave blank for official GitHub releases.
  </p>
  <div className="flex gap-2">
@@ -608,12 +561,12 @@ export default function SettingsModal({
  value={customFeedInput}
  onChange={(e) => setCustomFeedInput(e.target.value)}
  placeholder="https://updates.internal.corp/uniextract or empty"
- className="flex-1 text-xs font-mono px-3.5 py-2.5 rounded-lg bg-white dark:bg-black/50 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+ className="flex-1 text-xs font-mono px-3.5 py-2.5 rounded-lg bg-white dark:bg-black/60 backdrop-blur-sm border border-slate-700/80 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
  />
  <button
  type="button"
  onClick={handleSaveFeed}
- className="touch-manipulation px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm transition-colors"
+ className="touch-manipulation px-4 py-2.5 rounded-lg bg-cyan-500 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm transition-colors"
  >
  Save
  </button>
@@ -621,13 +574,13 @@ export default function SettingsModal({
  </div>
 
  {/* Cryptographic Verification & Cache Diagnostics */}
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
+ <div className="p-4 rounded-lg bg-slate-900/40 border border-slate-700/80 flex items-center justify-between">
  <div className="space-y-0.5">
- <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+ <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
  <ShieldCheck size={14} className="text-emerald-500" />
  <span>Cryptographic Verification & Staging</span>
  </div>
- <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+ <div className="text-[11px] text-slate-400">
  Publisher: AryansDevStudios • Authenticode Signed • SHA-512 Enforced
  </div>
  </div>
@@ -635,7 +588,7 @@ export default function SettingsModal({
  type="button"
  onClick={handleWipeUpdaterCache}
  disabled={isWipingCache}
- className="touch-manipulation px-3.5 py-1.5 text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:text-red-500 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg transition-colors shadow-sm disabled:opacity-50"
+ className="touch-manipulation px-3.5 py-1.5 text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:text-red-500 bg-slate-800/60 border border-slate-700/80 rounded-lg transition-colors shadow-sm disabled:opacity-50"
  >
  {isWipingCache ? 'Wiping...' : 'Wipe Update Cache'}
  </button>
@@ -647,35 +600,35 @@ export default function SettingsModal({
  {activeTab === 'about' && (
  <div className="space-y-5">
  {/* Product Info Banner */}
- <div className="p-5 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-center space-y-3">
- <div className="inline-flex p-3 rounded-lg bg-white dark:bg-zinc-800 shadow-md shadow-sm border border-zinc-200 dark:border-zinc-700">
+ <div className="p-5 rounded-lg bg-slate-900/40 border border-slate-700/80 text-center space-y-3">
+ <div className="inline-flex p-3 rounded-lg bg-slate-800/60 shadow-md shadow-sm border border-slate-700/80">
  <img src="/favicon.ico" alt="Logo" className="w-12 h-12 rounded-lg" />
  </div>
  <div>
- <h3 className="text-xl font-black text-zinc-900 dark:text-zinc-100 tracking-tight">
- Uni <span className="text-indigo-500">Extract</span>
+ <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+ Uni <span className="text-cyan-400">Extract</span>
  </h3>
  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mt-1 rounded-md text-[11px] font-bold bg-indigo-500 text-indigo-600 dark:text-indigo-300 border border-indigo-500">
  v{currentVersion} • Production Release
  </div>
  </div>
- <p className="text-xs text-zinc-600 dark:text-zinc-400 max-w-md mx-auto leading-relaxed">
+ <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
  A high-performance universal media extraction, video downloader, audio demuxer and stream transcoder engine.
  </p>
  </div>
 
  {/* Developer & Community Links */}
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-3">
- <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+ <div className="p-4 rounded-lg bg-slate-900/40 border border-slate-700/80 space-y-3">
+ <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
  <Heart size={14} className="text-rose-500" />
  Author & Publisher Credit
  </div>
- <div className="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+ <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/60 border border-slate-700/80">
  <div className="space-y-0.5">
- <div className="text-xs font-black text-indigo-600 dark:text-indigo-400 font-bold">
+ <div className="text-xs font-black text-cyan-400 font-bold">
  AryansDevStudios
  </div>
- <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+ <div className="text-[11px] text-slate-400">
  Engineering & Design • Open-Source Project
  </div>
  </div>
@@ -684,18 +637,18 @@ export default function SettingsModal({
  target="_blank"
  rel="noreferrer"
  onClick={(e) => handleOpenExternal(e, 'https://github.com/AryansDevStudios')}
- className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-200 transition-colors"
+ className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-400 text-slate-100 hover:text-cyan-300 transition-all shadow-sm"
  >
  <span>Developer Profile</span>
- <ExternalLink size={12} />
+ <ExternalLink size={12} className="text-cyan-400" />
  </a>
  </div>
  </div>
 
  {/* Community and Documentation Links */}
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-3">
- <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
- <Github size={15} className="text-zinc-700 dark:text-zinc-300" />
+ <div className="p-4 rounded-lg bg-slate-900/40 border border-slate-700/80 space-y-3">
+ <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+ <Github size={15} className="text-cyan-400" />
  GitHub Repository & Community
  </div>
  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -704,13 +657,13 @@ export default function SettingsModal({
  target="_blank"
  rel="noreferrer"
  onClick={(e) => handleOpenExternal(e, 'https://github.com/AryansDevStudios/UniExtract')}
- className="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 transition-all text-xs group"
+ className="flex items-center justify-between p-3 rounded-lg bg-slate-800/60 border border-slate-700/80 hover:border-cyan-400 hover:bg-slate-800 transition-all text-xs group"
  >
  <div className="flex items-center gap-2">
- <Github size={16} className="text-zinc-500 group-hover:text-indigo-500 transition-colors" />
- <span className="font-bold text-zinc-700 dark:text-zinc-200">Main Repository</span>
+ <Github size={16} className="text-slate-400 group-hover:text-cyan-400 transition-colors" />
+ <span className="font-bold text-slate-200 group-hover:text-white">Main Repository</span>
  </div>
- <ExternalLink size={13} className="text-zinc-400" />
+ <ExternalLink size={13} className="text-slate-500 group-hover:text-cyan-400 transition-colors" />
  </a>
 
  <a
@@ -718,13 +671,13 @@ export default function SettingsModal({
  target="_blank"
  rel="noreferrer"
  onClick={(e) => handleOpenExternal(e, 'https://github.com/AryansDevStudios/UniExtract/releases')}
- className="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 transition-all text-xs group"
+ className="flex items-center justify-between p-3 rounded-lg bg-slate-800/60 border border-slate-700/80 hover:border-cyan-400 hover:bg-slate-800 transition-all text-xs group"
  >
  <div className="flex items-center gap-2">
- <Sparkles size={16} className="text-zinc-500 group-hover:text-indigo-500 transition-colors" />
- <span className="font-bold text-zinc-700 dark:text-zinc-200">Releases & Builds</span>
+ <Sparkles size={16} className="text-slate-400 group-hover:text-cyan-400 transition-colors" />
+ <span className="font-bold text-slate-200 group-hover:text-white">Releases & Builds</span>
  </div>
- <ExternalLink size={13} className="text-zinc-400" />
+ <ExternalLink size={13} className="text-slate-500 group-hover:text-cyan-400 transition-colors" />
  </a>
 
  <a
@@ -732,13 +685,13 @@ export default function SettingsModal({
  target="_blank"
  rel="noreferrer"
  onClick={(e) => handleOpenExternal(e, 'https://github.com/AryansDevStudios/UniExtract/issues')}
- className="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 transition-all text-xs group"
+ className="flex items-center justify-between p-3 rounded-lg bg-slate-800/60 border border-slate-700/80 hover:border-cyan-400 hover:bg-slate-800 transition-all text-xs group"
  >
  <div className="flex items-center gap-2">
- <Shield size={16} className="text-zinc-500 group-hover:text-indigo-500 transition-colors" />
- <span className="font-bold text-zinc-700 dark:text-zinc-200">Report an Issue</span>
+ <Shield size={16} className="text-slate-400 group-hover:text-cyan-400 transition-colors" />
+ <span className="font-bold text-slate-200 group-hover:text-white">Report an Issue</span>
  </div>
- <ExternalLink size={13} className="text-zinc-400" />
+ <ExternalLink size={13} className="text-slate-500 group-hover:text-cyan-400 transition-colors" />
  </a>
 
  <a
@@ -746,39 +699,39 @@ export default function SettingsModal({
  target="_blank"
  rel="noreferrer"
  onClick={(e) => handleOpenExternal(e, 'https://github.com/AryansDevStudios/UniExtract/blob/main/LICENSE')}
- className="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 transition-all text-xs group"
+ className="flex items-center justify-between p-3 rounded-lg bg-slate-800/60 border border-slate-700/80 hover:border-cyan-400 hover:bg-slate-800 transition-all text-xs group"
  >
  <div className="flex items-center gap-2">
- <Terminal size={16} className="text-zinc-500 group-hover:text-indigo-500 transition-colors" />
- <span className="font-bold text-zinc-700 dark:text-zinc-200">MIT Open-Source</span>
+ <Terminal size={16} className="text-slate-400 group-hover:text-cyan-400 transition-colors" />
+ <span className="font-bold text-slate-200 group-hover:text-white">MIT Open-Source</span>
  </div>
- <ExternalLink size={13} className="text-zinc-400" />
+ <ExternalLink size={13} className="text-slate-500 group-hover:text-cyan-400 transition-colors" />
  </a>
  </div>
  </div>
 
  {/* Core Engine Powered By */}
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-2.5">
- <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
- <Cpu size={14} className="text-indigo-500" />
+ <div className="p-4 rounded-lg bg-slate-900/40 border border-slate-700/80 space-y-2.5">
+ <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+ <Cpu size={14} className="text-cyan-400" />
  Powered by Open Source
  </div>
  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
- <div className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
- <div className="font-black text-zinc-800 dark:text-zinc-200">yt-dlp</div>
- <div className="text-[10px] text-zinc-400">Stream Extraction</div>
+ <div className="p-2 rounded-lg bg-slate-800/60 border border-slate-700/80">
+ <div className="font-black text-slate-200">yt-dlp</div>
+ <div className="text-[10px] text-slate-500">Stream Extraction</div>
  </div>
- <div className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
- <div className="font-black text-zinc-800 dark:text-zinc-200">FFmpeg</div>
- <div className="text-[10px] text-zinc-400">Audio/Video Muxer</div>
+ <div className="p-2 rounded-lg bg-slate-800/60 border border-slate-700/80">
+ <div className="font-black text-slate-200">FFmpeg</div>
+ <div className="text-[10px] text-slate-500">Audio/Video Muxer</div>
  </div>
- <div className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
- <div className="font-black text-zinc-800 dark:text-zinc-200">Electron</div>
- <div className="text-[10px] text-zinc-400">Desktop Shell</div>
+ <div className="p-2 rounded-lg bg-slate-800/60 border border-slate-700/80">
+ <div className="font-black text-slate-200">Electron</div>
+ <div className="text-[10px] text-slate-500">Desktop Shell</div>
  </div>
- <div className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
- <div className="font-black text-zinc-800 dark:text-zinc-200">React + Vite</div>
- <div className="text-[10px] text-zinc-400">Fast Reactive UI</div>
+ <div className="p-2 rounded-lg bg-slate-800/60 border border-slate-700/80">
+ <div className="font-black text-slate-200">React + Vite</div>
+ <div className="text-[10px] text-slate-500">Fast Reactive UI</div>
  </div>
  </div>
  </div>
@@ -787,14 +740,14 @@ export default function SettingsModal({
  </div>
 
  {/* Footer Close Button */}
- <div className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-900">
- <div className="text-[11px] text-zinc-400">
+ <div className="shrink-0 px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-700/80 flex items-center justify-between gap-3 bg-slate-900/90">
+ <div className="text-[11px] text-slate-400 font-mono">
  UniExtract v{currentVersion} • AryansDevStudios
  </div>
  <button
  type="button"
  onClick={onClose}
- className="touch-manipulation px-5 py-2 text-xs font-bold rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white transition-all shadow-md active:scale-[0.98]"
+ className="touch-manipulation px-6 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 transition-all shadow-[0_0_15px_rgba(6,182,212,0.35)] active:scale-[0.98]"
  >
  Done
  </button>

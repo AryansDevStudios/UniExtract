@@ -81,6 +81,13 @@ export function isCloudWebHost() {
 }
 
 /**
+ * Returns true for browser-hosted frontends, but never for localhost or Electron.
+ */
+export function isOnlineFrontend() {
+  return !isLocalhost();
+}
+
+/**
  * Returns the default backend base URL for the active environment when no custom server is specified.
  * - On Localhost / Desktop: Returns '' (relative path /api, handled by local Express or Vite proxy)
  * - On Netlify, web.app, Render, or cloud PWA: Returns the cloud Render backend directly

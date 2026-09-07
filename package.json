@@ -1,6 +1,6 @@
 {
   "name": "uni-extract",
-  "version": "2.6.7",
+  "version": "2.6.8-dev.1",
   "description": "A modern high-performance media downloader and transcoder using Express, FFmpeg, and yt-dlp",
   "main": "electron/main.js",
   "scripts": {

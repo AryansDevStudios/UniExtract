@@ -83,9 +83,9 @@ export default function LanguagePanel({
  }
 
  return (
- <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-700/80 bg-zinc-50 dark:bg-zinc-800 p-4 shadow-sm">
+ <div className="mt-4 rounded-lg border border-slate-700/80 bg-slate-900/40 p-4 shadow-sm">
  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-zinc-600 dark:text-zinc-300 mb-3">
- <Globe2 size={15} className="text-indigo-500" /> Language & Captions
+ <Globe2 size={15} className="text-cyan-400" /> Language & Captions
  </div>
 
  {audioOptions.length > 1 && (
@@ -137,8 +137,8 @@ export default function LanguagePanel({
  onClick={() => setSubFormat(f.id)}
  className={`py-1.5 px-1 rounded-lg text-center transition-all border min-h-[44px] touch-manipulation ${
  subFormat === f.id
- ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs'
- : 'border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700'
+ ? 'border-cyan-400 bg-cyan-500/20 text-cyan-300 font-bold shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+ : 'border-slate-700 bg-slate-800/80 text-slate-300 hover:border-cyan-400 hover:text-white'
  }`}
  >
  <div className="text-xs font-mono font-bold leading-tight">.{f.label}</div>
@@ -167,7 +167,7 @@ export default function LanguagePanel({
  className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 transition-colors cursor-pointer disabled:cursor-not-allowed"
  />
  <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
- <Languages size={14} className={isVideoSelected ?"text-indigo-500" :"text-zinc-400"} /> 
+ <Languages size={14} className={isVideoSelected ?"text-cyan-400" :"text-zinc-400"} /> 
  <span>Embed Subtitles into Video</span>
  {!isVideoSelected && (
  <span className="text-[10px] font-normal text-zinc-400 italic">(Video only)</span>

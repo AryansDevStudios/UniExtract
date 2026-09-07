@@ -142,17 +142,17 @@ export default function UpdateModal({
  categories.performance.length > 0;
 
  return (
- <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 ">
+ <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm ">
  <motion.div
  initial={{ opacity: 0, y: 4 }}
  animate={{ opacity: 1, y: 0 }}
  exit={{ opacity: 0, y: 4 }}
- className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-lg overflow-hidden flex flex-col max-h-[92vh]"
+ className="relative w-full max-w-2xl glass-panel rounded-2xl border border-slate-700/80 shadow-[0_0_30px_rgba(0,0,0,0.7)] overflow-hidden flex flex-col max-h-[92vh]"
  >
  {/* Header */}
- <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+ <div className="flex items-center justify-between px-6 py-5 border-b border-slate-700/80 bg-zinc-50 dark:bg-zinc-900">
  <div className="flex items-center gap-3">
- <div className="w-10 h-10 rounded-lg bg-indigo-500 text-indigo-500 flex items-center justify-center border border-indigo-500">
+ <div className="w-10 h-10 rounded-lg bg-indigo-500 text-cyan-400 flex items-center justify-center border border-indigo-500">
  <Sparkles size={20} />
  </div>
  <div>
@@ -165,7 +165,7 @@ export default function UpdateModal({
  New Release
  </span>
  ) : (
- <span className="px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-zinc-500 text-zinc-600 dark:text-zinc-400 border border-zinc-500">
+ <span className="px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-zinc-500 text-slate-400 border border-zinc-500">
  Up to date
  </span>
  )}
@@ -176,7 +176,7 @@ export default function UpdateModal({
  </span>
  )}
  {bumpType === 'minor' && (
- <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-500 text-indigo-600 dark:text-indigo-400 border border-indigo-500 uppercase tracking-wider">
+ <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-500 text-cyan-400 border border-indigo-500 uppercase tracking-wider">
  Feature Update
  </span>
  )}
@@ -189,13 +189,13 @@ export default function UpdateModal({
  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
  channel === 'beta'
  ? 'bg-amber-500 text-amber-600 dark:text-amber-400 border-amber-500'
- : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+ : 'bg-slate-800/60 text-zinc-600 dark:text-zinc-300 border-slate-700/80'
  }`}>
  {channel === 'beta' ? 'Beta Track' : 'Stable Track'}
  </span>
  </div>
- <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
- Current: <span className="font-semibold text-zinc-700 dark:text-zinc-300 font-mono">v{currentVersion}</span> • Target: <span className="font-semibold text-indigo-600 dark:text-indigo-400 font-mono">v{latestVersion}</span>
+ <p className="text-xs text-slate-400 mt-0.5">
+ Current: <span className="font-semibold text-slate-300 font-mono">v{currentVersion}</span> • Target: <span className="font-semibold text-cyan-400 font-mono">v{latestVersion}</span>
  </p>
  </div>
  </div>
@@ -204,27 +204,64 @@ export default function UpdateModal({
  <button
  onClick={onRefreshUpdate}
  title="Check for updates again"
- className="p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
+ className="p-2 text-slate-500 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-slate-800 rounded-md transition-colors"
  >
  <RefreshCw size={16} />
  </button>
  <button
  onClick={onClose}
- className="p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
+ className="p-2 text-slate-500 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-slate-800 rounded-md transition-colors"
  >
  <X size={18} />
  </button>
  </div>
  </div>
 
+ {/* Enterprise Navigation Tabs */}
+ <div className="flex flex-wrap border-b border-slate-200 dark:border-slate-700/80 px-6 bg-white dark:bg-zinc-900 text-xs font-bold">
+ <button
+ onClick={() => setActiveTab('overview')}
+ className={`py-3 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
+ activeTab === 'overview'
+ ? 'border-cyan-500 text-teal-700 dark:border-cyan-400 dark:text-cyan-400'
+ : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-zinc-500 dark:hover:text-zinc-300'
+ }`}
+ >
+ <Sparkles size={13} />
+ Overview & Action
+ </button>
+ <button
+ onClick={() => setActiveTab('changelog')}
+ className={`py-3 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
+ activeTab === 'changelog'
+ ? 'border-cyan-500 text-teal-700 dark:border-cyan-400 dark:text-cyan-400'
+ : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-zinc-500 dark:hover:text-zinc-300'
+ }`}
+ >
+ <ListFilter size={13} />
+ Changelog & Notes
+ </button>
+ <button
+ onClick={() => setActiveTab('manual')}
+ className={`py-3 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
+ activeTab === 'manual'
+ ? 'border-cyan-500 text-teal-700 dark:border-cyan-400 dark:text-cyan-400'
+ : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-zinc-500 dark:hover:text-zinc-300'
+ }`}
+ >
+ <Download size={13} />
+ Platform Packages ({assets.length})
+ </button>
+ </div>
+
  {/* Traffic Status Safety Banner */}
- <div className="px-6 py-2.5 bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between text-xs">
+ <div className="px-6 py-2.5 bg-slate-800/60 border-b border-slate-700/80 flex items-center justify-between text-xs">
  <div className="flex items-center gap-2">
  <ShieldCheck size={16} className="text-emerald-500" />
- <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+ <span className="font-semibold text-slate-300">
  Zero-Interruption Policy:
  </span>
- <span className="text-zinc-500 dark:text-zinc-400">
+ <span className="text-slate-400">
  {activeJobsCount > 0 
  ? `${activeJobsCount} download(s) active. Updates will not interrupt media streams.`
  : 'Server idle. Safe to update anytime.'}
@@ -239,52 +276,15 @@ export default function UpdateModal({
  </div>
  </div>
 
- {/* Enterprise Navigation Tabs */}
- <div className="flex border-b border-zinc-200 dark:border-zinc-800 px-6 bg-zinc-50 dark:bg-zinc-900 text-xs font-bold">
- <button
- onClick={() => setActiveTab('overview')}
- className={`py-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
- activeTab === 'overview'
- ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
- : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
- }`}
- >
- <Sparkles size={13} />
- Overview & Action
- </button>
- <button
- onClick={() => setActiveTab('changelog')}
- className={`py-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
- activeTab === 'changelog'
- ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
- : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
- }`}
- >
- <ListFilter size={13} />
- Changelog & Notes
- </button>
- <button
- onClick={() => setActiveTab('manual')}
- className={`py-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
- activeTab === 'manual'
- ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
- : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
- }`}
- >
- <Download size={13} />
- Platform Packages ({assets.length})
- </button>
- </div>
-
  {/* Content Body */}
- <div className="p-6 overflow-y-auto space-y-5 flex-1 text-zinc-700 dark:text-zinc-300">
+ <div className="p-6 overflow-y-auto space-y-5 flex-1 text-slate-300">
  
  {activeTab === 'overview' && (
  <div className="space-y-4">
  {/* Release Title Banner */}
- <div className="flex items-center justify-between p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+ <div className="flex items-center justify-between p-4 rounded-lg bg-slate-900/40 border border-slate-700/80">
  <div>
- <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+ <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
  <span>{releaseName}</span>
  {updateInfo.isPrerelease && (
  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500 text-amber-600 dark:text-amber-400 border border-amber-500">
@@ -293,7 +293,7 @@ export default function UpdateModal({
  )}
  </div>
  {updateInfo.publishedAt && (
- <p className="text-xs text-zinc-400 mt-0.5">
+ <p className="text-xs text-slate-500 mt-0.5">
  Published {new Date(updateInfo.publishedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
  </p>
  )}
@@ -303,7 +303,7 @@ export default function UpdateModal({
  target="_blank"
  rel="noreferrer"
  onClick={(e) => handleOpenExternal(e, releaseUrl)}
- className="text-xs font-semibold text-indigo-500 hover:text-indigo-600 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950 border border-indigo-500"
+ className="text-xs font-semibold text-cyan-400 hover:text-indigo-600 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-900/10 border border-indigo-500"
  >
  GitHub Release <ExternalLink size={12} />
  </a>
@@ -311,11 +311,11 @@ export default function UpdateModal({
 
  {/* Electron In-App Auto-Updater Panel */}
  {isElectron ? (
- <div className="p-4 rounded-lg bg-indigo-50 dark:bg-indigo-950 border border-indigo-100 dark:border-indigo-900 space-y-3">
+ <div className="p-4 rounded-lg bg-cyan-900/10 border border-indigo-100 dark:border-indigo-900 space-y-3">
  <div className="flex items-center justify-between">
  <div className="flex items-center gap-2">
- <Laptop size={16} className="text-indigo-500" />
- <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+ <Laptop size={16} className="text-cyan-400" />
+ <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">
  Desktop Background Engine
  </span>
  </div>
@@ -338,7 +338,7 @@ export default function UpdateModal({
  style={{ width: `${electronState.percent}%` }}
  />
  </div>
- <div className="flex justify-between text-[11px] text-zinc-400">
+ <div className="flex justify-between text-[11px] text-slate-500">
  <span>Progress: {electronState.percent}%</span>
  <span>Speed: {formatBytes(electronState.speed)}/s</span>
  </div>
@@ -361,14 +361,14 @@ export default function UpdateModal({
  <>
  <button
  onClick={handleDownloadUpdate}
- className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-all shadow-md shadow-sm active:scale-[0.98]"
+ className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-white font-semibold text-xs transition-all shadow-md shadow-sm active:scale-[0.98]"
  >
  <Download size={14} />
  Download in Background
  </button>
  <button
  onClick={handleSnooze}
- className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 text-xs font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+ className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/80 text-zinc-600 dark:text-zinc-300 text-xs font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
  title="Hide update notification for 24 hours"
  >
  <BellOff size={13} />
@@ -415,13 +415,13 @@ export default function UpdateModal({
  <ServerIcon size={14} className="text-sky-500" />
  <span>Cloud & Web Client Synchronization</span>
  </div>
- <p className="text-zinc-600 dark:text-zinc-400 text-[11px] leading-relaxed">
+ <p className="text-slate-400 text-[11px] leading-relaxed">
  You are accessing UniExtract via web browser or PWA. The backend automatically leverages the latest container and library builds. For standalone offline desktop usage with native FFmpeg hardware acceleration, download a desktop package from the <b>Platform Packages</b> tab.
  </p>
  {updateInfo.updateAvailable && (
  <button
  onClick={handleSnooze}
- className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100"
+ className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 border border-slate-700/80 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100"
  >
  <BellOff size={12} />
  Snooze notification for 24h
@@ -431,15 +431,15 @@ export default function UpdateModal({
  )}
 
  {/* Enterprise Authenticode & Cryptographic Integrity Card */}
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-2.5">
+ <div className="p-4 rounded-lg bg-slate-900/40 border border-slate-700/80 space-y-2.5">
  <div className="flex items-center justify-between">
- <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+ <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
  <ShieldCheck size={14} className="text-emerald-500" />
  Enterprise Security & Cryptographic Integrity
  </span>
  <button
  onClick={handleClearCache}
- className="text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 flex items-center gap-1"
+ className="text-[11px] text-slate-500 hover:text-zinc-600 dark:hover:text-zinc-200 flex items-center gap-1"
  title="Clear cached installer files and temporary staging"
  >
  <Trash2 size={12} />
@@ -447,19 +447,19 @@ export default function UpdateModal({
  </button>
  </div>
  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
- <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
- <div className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Publisher</div>
+ <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-900 border border-slate-700/80 space-y-0.5">
+ <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Publisher</div>
  <div className="font-semibold text-zinc-700 dark:text-zinc-200 truncate">AryansDevStudios</div>
  </div>
- <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
- <div className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Code Signing</div>
+ <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-900 border border-slate-700/80 space-y-0.5">
+ <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Code Signing</div>
  <div className="font-semibold text-emerald-600 dark:text-emerald-400 truncate flex items-center gap-1">
  <Lock size={11} /> Authenticode Valid
  </div>
  </div>
- <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
- <div className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Integrity Enforced</div>
- <div className="font-semibold text-indigo-600 dark:text-indigo-400 truncate">SHA-512 + Blockmap</div>
+ <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-900 border border-slate-700/80 space-y-0.5">
+ <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Integrity Enforced</div>
+ <div className="font-semibold text-cyan-400 truncate">SHA-512 + Blockmap</div>
  </div>
  </div>
  </div>
@@ -476,7 +476,7 @@ export default function UpdateModal({
  <Sparkles size={14} />
  <span>New Features & Capabilities ({categories.features.length})</span>
  </div>
- <ul className="space-y-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+ <ul className="space-y-1.5 text-xs text-slate-300">
  {categories.features.map((item, i) => (
  <li key={i} className="flex items-start gap-2">
  <span className="text-emerald-500 mt-0.5">•</span>
@@ -493,7 +493,7 @@ export default function UpdateModal({
  <Bug size={14} />
  <span>Bug Fixes & Refinements ({categories.fixes.length})</span>
  </div>
- <ul className="space-y-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+ <ul className="space-y-1.5 text-xs text-slate-300">
  {categories.fixes.map((item, i) => (
  <li key={i} className="flex items-start gap-2">
  <span className="text-sky-500 mt-0.5">•</span>
@@ -510,7 +510,7 @@ export default function UpdateModal({
  <ShieldCheck size={14} />
  <span>Security & Hardening ({categories.security.length})</span>
  </div>
- <ul className="space-y-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+ <ul className="space-y-1.5 text-xs text-slate-300">
  {categories.security.map((item, i) => (
  <li key={i} className="flex items-start gap-2">
  <span className="text-purple-500 mt-0.5">•</span>
@@ -527,7 +527,7 @@ export default function UpdateModal({
  <Zap size={14} />
  <span>Performance & Compression ({categories.performance.length})</span>
  </div>
- <ul className="space-y-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+ <ul className="space-y-1.5 text-xs text-slate-300">
  {categories.performance.map((item, i) => (
  <li key={i} className="flex items-start gap-2">
  <span className="text-amber-500 mt-0.5">•</span>
@@ -540,18 +540,18 @@ export default function UpdateModal({
  </div>
  ) : (
  /* Fallback Markdown changelog */
- <div className="p-4 rounded-lg bg-zinc-50 dark:bg-black/50 border border-zinc-200 dark:border-zinc-800 text-xs leading-relaxed max-h-72 overflow-y-auto whitespace-pre-wrap font-mono text-zinc-600 dark:text-zinc-300">
+ <div className="p-4 rounded-lg bg-zinc-50 dark:bg-black/60 backdrop-blur-sm border border-slate-700/80 text-xs leading-relaxed max-h-72 overflow-y-auto whitespace-pre-wrap font-mono text-zinc-600 dark:text-zinc-300">
  {releaseNotes}
  </div>
  )}
 
  {/* Raw Release Notes toggle */}
  {hasCategorizedNotes && (
- <details className="text-xs text-zinc-400 cursor-pointer">
+ <details className="text-xs text-slate-500 cursor-pointer">
  <summary className="font-semibold hover:text-zinc-600 dark:hover:text-zinc-200">
  View Complete Raw Markdown Changelog
  </summary>
- <div className="mt-2 p-3 rounded-lg bg-zinc-50 dark:bg-black/50 border border-zinc-200 dark:border-zinc-800 text-[11px] font-mono whitespace-pre-wrap">
+ <div className="mt-2 p-3 rounded-lg bg-zinc-50 dark:bg-black/60 backdrop-blur-sm border border-slate-700/80 text-[11px] font-mono whitespace-pre-wrap">
  {releaseNotes}
  </div>
  </details>
@@ -561,7 +561,7 @@ export default function UpdateModal({
 
  {activeTab === 'manual' && (
  <div className="space-y-3">
- <div className="text-xs text-zinc-500 dark:text-zinc-400">
+ <div className="text-xs text-slate-400">
  Direct release artifacts for manual offline installations, enterprise mass-deployment, or custom staging:
  </div>
  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -572,15 +572,15 @@ export default function UpdateModal({
  target="_blank"
  rel="noreferrer"
  onClick={(e) => handleOpenExternal(e, asset.url)}
- className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500 dark:hover:border-indigo-500 bg-white/50 dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all text-xs group"
+ className="flex items-center justify-between p-3 rounded-lg border border-slate-700/80 hover:border-cyan-400 dark:hover:border-cyan-400 bg-white/50 dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all text-xs group"
  >
  <div className="flex items-center gap-2.5 overflow-hidden">
- <Download size={14} className="text-zinc-400 group-hover:text-indigo-500 transition-colors flex-shrink-0" />
+ <Download size={14} className="text-slate-500 group-hover:text-cyan-400 transition-colors flex-shrink-0" />
  <span className="font-semibold text-zinc-700 dark:text-zinc-200 truncate">
  {asset.name}
  </span>
  </div>
- <span className="text-[11px] text-zinc-400 flex-shrink-0 ml-2">
+ <span className="text-[11px] text-slate-500 flex-shrink-0 ml-2">
  {formatBytes(asset.size)}
  </span>
  </a>
@@ -588,14 +588,14 @@ export default function UpdateModal({
  </div>
 
  {/* Docker instruction */}
- <div className="p-3 rounded-lg bg-zinc-100 dark:bg-black/50 border border-zinc-200 dark:border-zinc-800 text-xs flex items-center justify-between">
- <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
+ <div className="p-3 rounded-lg bg-zinc-100 dark:bg-black/60 backdrop-blur-sm border border-slate-700/80 text-xs flex items-center justify-between">
+ <div className="flex items-center gap-2 text-slate-400">
  <ServerIcon size={14} />
  <span>Docker: <code>ghcr.io/aryansdevstudios/uniextract:latest</code></span>
  </div>
  <button
  onClick={() => navigator.clipboard?.writeText('docker pull ghcr.io/aryansdevstudios/uniextract:latest')}
- className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 text-zinc-700 dark:text-zinc-300"
+ className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-slate-800/60 border border-slate-700/80 hover:bg-zinc-50 text-slate-300"
  >
  Copy Pull
  </button>
@@ -605,13 +605,13 @@ export default function UpdateModal({
  </div>
 
  {/* Modal Footer */}
- <div className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 flex items-center justify-between">
- <div className="text-[11px] text-zinc-400">
+ <div className="px-6 py-4 border-t border-slate-700/80 bg-slate-900/90 flex items-center justify-between">
+ <div className="text-[11px] text-slate-500">
  Channel: <b className="uppercase">{channel}</b> • Bump: <b className="capitalize">{bumpType}</b>
  </div>
  <button
  onClick={onClose}
- className="px-5 py-2 text-xs font-semibold rounded-lg bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-colors"
+ className="px-6 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 transition-all shadow-[0_0_15px_rgba(6,182,212,0.35)] active:scale-[0.98]"
  >
  Close
  </button>

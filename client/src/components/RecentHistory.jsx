@@ -11,8 +11,8 @@ export default function RecentHistory({ history, onSelect, onDelete }) {
       animate={{ opacity: 1 }}
       className="w-full mt-12 flex flex-col items-center"
     >
-      <div className="flex items-center gap-2 text-zinc-400 text-xs font-bold uppercase tracking-widest mb-4">
-        <Clock size={12} /> Recent
+      <div className="flex items-center gap-2 text-cyan-400 text-xs font-bold font-mono uppercase tracking-widest mb-4">
+        <Clock size={14} className="text-cyan-400" /> Recent
       </div>
       <div className="flex flex-wrap justify-center gap-3 w-full">
         <AnimatePresence>
@@ -24,10 +24,10 @@ export default function RecentHistory({ history, onSelect, onDelete }) {
               exit={{ opacity: 0, scale: 0.9 }}
               layout
               onClick={() => onSelect(item.url)}
-              className="flex items-center gap-3 p-2 pr-4 bg-zinc-100 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all duration-300 group max-w-[200px] min-h-[44px] touch-manipulation"
+              className="flex items-center gap-3 p-2 pr-4 bg-slate-900/80 rounded-xl border border-slate-700/80 cursor-pointer hover:border-cyan-500/50 hover:shadow-[0_0_15px_rgba(6,182,212,0.2)] transition-all duration-300 group max-w-[200px] min-h-[44px] touch-manipulation"
             >
-              <img src={item.thumb} alt="thumb" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
-              <h4 className="font-medium text-xs text-zinc-700 dark:text-zinc-300 truncate w-full group-hover:text-indigo-500 transition-colors">
+              <img src={item.thumb} alt="thumb" className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-slate-700" />
+              <h4 className="font-medium text-xs text-slate-300 truncate w-full group-hover:text-cyan-300 transition-colors">
                 {item.title}
               </h4>
               <button 

@@ -21,23 +21,21 @@ function CustomSelect({ label, icon: Icon, options, value, onChange, placeholder
  return (
  <div className="space-y-1.5 w-full">
  {label && (
- <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
- {Icon && <Icon size={12} />} {label}
+ <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+ {Icon && <Icon size={12} className="text-cyan-500 dark:text-cyan-400" />} {label}
  </label>
  )}
- <div 
- className="relative w-full"
- tabIndex={0}
+ <div className={`relative w-full ${isOpen ? 'z-50' : 'z-10'}`} tabIndex={0}
  onBlur={(e) => {
  if (!e.currentTarget.contains(e.relatedTarget)) setIsOpen(false);
  }}
  >
  <div 
  onClick={() => setIsOpen(!isOpen)}
- className="w-full flex items-center justify-between bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-indigo-500/50 dark:hover:border-indigo-500/50 rounded-lg px-3.5 py-3 text-sm text-zinc-700 dark:text-zinc-200 cursor-pointer transition-colors shadow-sm select-none"
+ className="w-full flex items-center justify-between bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/80 hover:border-cyan-500/50 rounded-xl px-3.5 py-3 text-sm text-slate-800 dark:text-slate-200 cursor-pointer transition-all shadow-sm select-none"
  >
- <span className="truncate pr-1 font-medium">{selectedOption.display}</span>
- <ChevronDown size={16} className={`text-zinc-400 transition-transform duration-200 flex-shrink-0 ${isOpen ? 'rotate-180 text-indigo-500' : ''}`} />
+ <span className="truncate pr-1 font-mono">{selectedOption.display}</span>
+ <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 flex-shrink-0 ${isOpen ? 'rotate-180 text-cyan-500 dark:text-cyan-400' : ''}`} />
  </div>
 
  <AnimatePresence>
@@ -47,14 +45,14 @@ function CustomSelect({ label, icon: Icon, options, value, onChange, placeholder
  animate={{ opacity: 1, y: 0 }}
  exit={{ opacity: 0, y: dropUp ? -4 : 4 }}
  transition={{ duration: 0.15 }}
- className={`absolute z-50 ${dropUp ? 'bottom-full mb-2' : 'mt-2'} w-full min-w-[120px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg overflow-hidden `}
+ className={`absolute z-50 ${dropUp ? 'bottom-full mb-2' : 'mt-2'} w-full min-w-[120px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-xl dark:shadow-2xl dark:shadow-black/80 overflow-hidden backdrop-blur-xl`}
  >
  <div className="max-h-60 overflow-y-auto custom-scroll p-1.5 flex flex-col gap-0.5">
  {placeholder && value !== '' && options.some(o => o.id === '') === false && (
  <button
  type="button"
  onClick={() => { onChange(''); setIsOpen(false); }}
- className="flex items-center justify-between w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200"
+ className="flex items-center justify-between w-full text-left px-3 py-2 rounded-lg text-sm transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono"
  >
  {placeholder}
  </button>
@@ -64,8 +62,8 @@ function CustomSelect({ label, icon: Icon, options, value, onChange, placeholder
  key={opt.id}
  type="button"
  onClick={() => { onChange(opt.id); setIsOpen(false); }}
- className={`flex items-center justify-between w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
- value === opt.id ? 'bg-indigo-50 dark:bg-indigo-500 text-indigo-600 dark:text-indigo-400 font-bold' : 'hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200'
+ className={`flex items-center justify-between w-full text-left px-3 py-2 rounded-lg text-sm transition-colors font-mono ${
+ value === opt.id ? 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 font-bold border border-cyan-500/30' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
  }`}
  >
  <span className="truncate">{opt.display}</span>
@@ -253,32 +251,32 @@ export default function CompactResultPanel({
  initial={{ opacity: 0, y: 4 }}
  animate={{ opacity: 1, y: 0 }}
  exit={{ opacity: 0, y: 4 }}
-      className="mt-6 relative z-50 w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700/50 rounded-xl p-6 sm:p-7 md:p-8 lg:p-10 shadow-lg flex flex-col"
+      className="mt-4 sm:mt-6 relative z-50 -mx-4 w-[calc(100%+2rem)] sm:mx-0 sm:w-full glass-panel rounded-none sm:rounded-3xl border-x-0 sm:border-x p-4 sm:p-7 md:p-8 lg:p-10 flex flex-col"
     >
  {/* TOP: TITLE */}
  <div className="mb-5 md:mb-6 pr-2 w-full">
- <h2 className="text-xl md:text-2xl font-extrabold text-zinc-800 dark:text-zinc-100 line-clamp-2 leading-snug tracking-tight">
+ <h2 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white line-clamp-2 leading-snug tracking-tight">
  {metadata.title}
  </h2>
  </div>
 
  {/* BOTTOM: ADAPTIVE ROW */}
- <div className="flex flex-col md:flex-row gap-6 md:gap-8 lg:gap-10 w-full items-center">
+ <div className="flex flex-col md:flex-row gap-6 md:gap-8 lg:gap-10 w-full items-start">
  
- {/* LEFT: THUMBNAIL (Uncropped, natural aspect ratio, tight wrap) */}
- <div className="relative flex-shrink-0 group rounded-lg md:rounded-lg overflow-hidden shadow-lg ring-1 ring-zinc-200/50 dark:ring-zinc-700/50 w-full md:w-fit mx-auto md:mx-0">
+ {/* LEFT: THUMBNAIL */}
+ <div className="relative flex-shrink-0 group rounded-xl overflow-hidden shadow-md dark:shadow-[0_0_15px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-slate-700/60 w-full md:w-fit mx-auto md:mx-0">
  <img 
  src={metadata.thumbnail} 
  alt="Thumbnail" 
- className="w-full md:w-auto h-auto md:max-w-[360px] lg:max-w-[420px] max-h-[420px] object-contain transition-transform duration-700 group-hover:bg-zinc-100 dark:hover:bg-zinc-800 block" 
+ className="w-full md:w-auto h-auto md:max-w-[360px] lg:max-w-[420px] max-h-[420px] object-contain transition-transform duration-700 group-hover:bg-slate-100 dark:hover:bg-zinc-800 block" 
  />
- <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center">
+ <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center backdrop-blur-xs">
  <button 
- onClick={onDownloadThumb} 
- className="bg-white hover:bg-zinc-100 text-zinc-900 border border-zinc-200 font-semibold px-6 py-3 rounded-md flex items-center gap-2.5 transition-all duration-300 shadow-sm text-sm min-h-[44px]"
- >
- <ImageIcon size={18} /> Get Cover
- </button>
+  onClick={onDownloadThumb} 
+  className="bg-white/90 dark:bg-slate-900/90 hover:bg-white dark:hover:bg-slate-800 text-cyan-600 dark:text-cyan-300 border border-cyan-500/40 font-bold px-6 py-3 rounded-xl flex items-center gap-2.5 transition-all duration-300 shadow-md text-sm min-h-[44px]"
+  >
+  <ImageIcon size={18} className="text-cyan-500 dark:text-cyan-400" /> Get Cover
+  </button>
  </div>
  </div>
 
@@ -286,7 +284,7 @@ export default function CompactResultPanel({
  <div className="flex-1 w-full flex flex-col justify-center py-2">
  
  <div className="flex justify-end mb-3 relative z-10">
- <label className="flex items-center gap-2 cursor-pointer text-[10px] font-bold uppercase tracking-widest text-zinc-400 hover:text-indigo-500 transition-colors">
+ <label className="flex items-center gap-2 cursor-pointer text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-cyan-400 transition-colors font-mono">
  <div className="relative">
  <input 
  type="checkbox" 
@@ -303,14 +301,14 @@ export default function CompactResultPanel({
  }
  }} 
  />
- <div className="w-7 h-4 bg-zinc-200 dark:bg-zinc-700 rounded-full peer peer-checked:bg-indigo-500 transition-colors"></div>
+ <div className="w-7 h-4 bg-slate-800 border border-slate-700 rounded-full peer peer-checked:bg-cyan-500 transition-colors"></div>
  <div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform peer-checked:translate-x-3 shadow-sm"></div>
  </div>
  Show All Codecs
  </label>
  </div>
 
- <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 relative z-10">
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 relative z-30">
  {/* VIDEO DROPDOWN */}
  <CustomSelect 
  label="Video Quality"
@@ -359,19 +357,19 @@ export default function CompactResultPanel({
  </div>
 
  {metadata?.chapters && metadata.chapters.length > 0 && (
- <div className="mt-4 flex items-center justify-between rounded-lg border border-zinc-200 dark:border-zinc-700 bg-indigo-50 dark:bg-indigo-950 px-4 py-3">
- <span className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-700 dark:text-indigo-300">✂️ Split by Chapters</span>
- <label className="relative inline-flex items-center cursor-pointer">
- <input
- type="checkbox"
- checked={splitChapters}
- onChange={(e) => setSplitChapters(e.target.checked)}
- className="sr-only peer"
- />
- <div className="w-11 h-6 bg-zinc-300 dark:bg-zinc-700 rounded-full peer-checked:bg-indigo-500 transition-colors" />
- <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
- </label>
- </div>
+  <div className="mt-4 flex items-center justify-between rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 shadow-[0_0_10px_rgba(139,92,246,0.1)]">
+  <span className="text-xs font-bold uppercase tracking-[0.18em] text-violet-300">✂️ Split by Chapters</span>
+  <label className="relative inline-flex items-center cursor-pointer">
+  <input
+  type="checkbox"
+  checked={splitChapters}
+  onChange={(e) => setSplitChapters(e.target.checked)}
+  className="sr-only peer"
+  />
+  <div className="w-11 h-6 bg-slate-800 border border-slate-700 rounded-full peer-checked:bg-violet-600 peer-checked:border-violet-500 transition-colors shadow-inner" />
+  <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-slate-300 transition-transform peer-checked:translate-x-5 peer-checked:bg-white peer-checked:shadow-[0_0_5px_rgba(255,255,255,0.8)]" />
+  </label>
+  </div>
  )}
 
  <ClipPanel
@@ -394,19 +392,19 @@ export default function CompactResultPanel({
  />
 
  {/* BOTTOM ACTION BAR */}
- <div className="mt-6 md:mt-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-zinc-200/60 dark:border-zinc-700/60 pt-5">
+ <div className="mt-6 md:mt-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-slate-200 dark:border-slate-700/60 pt-5">
  <div className="flex flex-col gap-1.5">
- <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+ <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider font-mono">
  Est. Data Consumption
  </span>
  <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
  {selectedVideo.id && (
- <span className="text-zinc-500 dark:text-zinc-400 font-mono text-xs">Video ~{formatBytes(vSize)}</span>
+ <span className="text-cyan-600 dark:text-cyan-400/80 font-mono text-xs">Video ~{formatBytes(vSize)}</span>
  )}
  {selectedAudio.id && (
- <span className="text-zinc-500 dark:text-zinc-400 font-mono text-xs">Audio ~{formatBytes(aSize)}</span>
+ <span className="text-violet-600 dark:text-violet-400/80 font-mono text-xs">Audio ~{formatBytes(aSize)}</span>
  )}
- <span className="text-zinc-500 dark:text-zinc-400 font-mono text-xs">Total ~{sizeText}</span>
+ <span className="text-slate-800 dark:text-slate-300 font-mono text-xs font-bold">Total ~{sizeText}</span>
  </div>
  </div>
 
@@ -437,7 +435,7 @@ export default function CompactResultPanel({
  onClick={onDownloadMedia}
  disabled={(!selectedVideo.id && !selectedAudio.id) || isClipInverted}
  title={isClipInverted ?"Start time must be earlier than end time" :"Download"}
- className="w-full sm:w-auto px-6 md:px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 min-h-[44px]" touch-manipulation
+ className="w-full sm:w-auto px-6 md:px-8 py-3 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 disabled:from-slate-800 disabled:to-slate-800 text-white font-black uppercase tracking-wider rounded-xl text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.3)] disabled:shadow-none disabled:opacity-50 min-h-[44px]" touch-manipulation
  >
  <DownloadCloud size={18} /> Download
  </button>
@@ -445,32 +443,39 @@ export default function CompactResultPanel({
  })()}
  </div>
  ) : (
- <div className="flex items-center gap-3 w-64 md:w-[280px] bg-zinc-900 text-white p-2.5 pr-3 rounded-lg md:rounded-lg shadow-sm transition-all duration-300">
+ <div className="flex items-center gap-4 w-full sm:w-[360px] md:w-[420px] min-h-[84px] bg-white dark:bg-slate-900 border border-cyan-500/40 text-slate-900 dark:text-white p-4 pr-3 rounded-2xl shadow-[0_8px_24px_rgba(15,118,110,0.14)] dark:shadow-[0_0_18px_rgba(6,182,212,0.15)] transition-all duration-300">
  <div className="relative flex items-center justify-center flex-shrink-0 pl-1">
  {status === 'error' ? (
- <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
- <div className="w-2 h-2 rounded-full bg-red-500" />
+ <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center shadow-[0_0_10px_rgba(239,68,68,0.8)]">
+ <div className="w-2 h-2 rounded-full bg-white" />
  </div>
  ) : (
  <>
- <Loader2 size={18} className="animate-spin text-indigo-400 relative z-10" />
- <div className="absolute inset-0 bg-indigo-500 blur-md rounded-full"></div>
+ <Loader2 size={18} className="animate-spin text-cyan-400 relative z-10" />
+ <div className="absolute inset-0 bg-cyan-500 blur-md rounded-full"></div>
  </>
  )}
  </div>
  
- <div className="flex-1 flex flex-col justify-center gap-1.5 w-full">
- <div className="flex justify-between items-center text-[9px] md:text-[10px] font-bold uppercase tracking-wider leading-none">
- <span className={status === 'error' ? 'text-red-400' : 'text-indigo-300'}>
+ <div className="flex-1 flex flex-col justify-center gap-2 w-full min-w-0">
+ <div className="flex justify-between items-center text-[10px] md:text-[11px] font-bold uppercase tracking-wider leading-none font-mono">
+ <span className={status === 'error' ? 'text-red-500' : 'text-teal-700 dark:text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]'}>
  {status === 'error' ? 'Failed' : (downloadSpeed ? downloadSpeed : 'Downloading')}
  </span>
- <span className="text-zinc-300 font-mono tracking-tight">
+ <span className="text-slate-600 dark:text-slate-300 font-mono tracking-tight whitespace-nowrap">
  {progress}{downloadEta ? ` (${downloadEta})` : ''}
  </span>
  </div>
- <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden shadow-inner">
+ <div
+ role="progressbar"
+ aria-label="Download progress"
+ aria-valuemin="0"
+ aria-valuemax="100"
+ aria-valuenow={Number.parseInt(progress, 10) || 0}
+ className="w-full bg-slate-200 dark:bg-slate-800 h-3.5 rounded-full overflow-hidden shadow-inner border border-slate-300/80 dark:border-slate-700"
+ >
  <motion.div 
- className={`h-full relative overflow-hidden ${status === 'error' ? 'bg-red-500' : 'bg-indigo-600'}`}
+ className={`h-full relative overflow-hidden rounded-full ${status === 'error' ? 'bg-red-500' : 'download-progress-fill'}`}
  initial={{ width: '0%' }}
  animate={{ width: progress }}
  transition={{ duration: 0.3, ease: 'easeOut' }}

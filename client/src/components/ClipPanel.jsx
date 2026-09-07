@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Scissors, Clock3, AlertTriangle, ArrowLeftRight, RotateCcw } from 'lucide-react';
 
 const pad = (n) => String(Math.max(0, Math.floor(n))).padStart(2, '0');
@@ -53,6 +53,8 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  const isInverted = clipStart && clipEnd && startSec >= endSec;
  const clipDuration = Math.max(0, endSec - startSec);
  const clipPercent = totalDuration > 0 ? Math.min(100, Math.round((clipDuration / totalDuration) * 100)) : 100;
+ const trackRef = useRef(null);
+ const dragHandleRef = useRef(null);
 
  const handleInputChange = (type, rawVal) => {
  const clean = rawVal.replace(/[^\d:]/g, '').slice(0, 8);
@@ -121,19 +123,57 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  }
  };
 
- const handleSliderStart = (e) => {
- const val = Number(e.target.value);
- const targetSec = Math.round((val / 1000) * totalDuration);
- if (targetSec < endSec) {
- setClipStart(formatClock(targetSec));
+ const setHandleSeconds = (type, targetSec) => {
+ const bounded = Math.max(0, Math.min(totalDuration, Math.round(targetSec)));
+ if (type === 'start' && bounded < endSec) {
+ setClipStart(formatClock(bounded));
+ } else if (type === 'end' && bounded > startSec) {
+ setClipEnd(formatClock(bounded));
  }
  };
 
- const handleSliderEnd = (e) => {
- const val = Number(e.target.value);
- const targetSec = Math.round((val / 1000) * totalDuration);
- if (targetSec > startSec) {
- setClipEnd(formatClock(targetSec));
+ const updateHandleFromPointer = (clientX, type) => {
+ const track = trackRef.current;
+ if (!track || totalDuration <= 0) return;
+ const rect = track.getBoundingClientRect();
+ const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+ setHandleSeconds(type, ratio * totalDuration);
+ };
+
+ const beginHandleDrag = (event, type) => {
+ event.preventDefault();
+ dragHandleRef.current = type;
+ trackRef.current?.setPointerCapture?.(event.pointerId);
+ updateHandleFromPointer(event.clientX, type);
+ };
+
+ const handleTrackPointerDown = (event) => {
+ const clickSeconds = ((event.clientX - event.currentTarget.getBoundingClientRect().left) / event.currentTarget.getBoundingClientRect().width) * totalDuration;
+ const type = Math.abs(clickSeconds - startSec) <= Math.abs(clickSeconds - endSec) ? 'start' : 'end';
+ beginHandleDrag(event, type);
+ };
+
+ const handleTrackPointerMove = (event) => {
+ if (dragHandleRef.current) updateHandleFromPointer(event.clientX, dragHandleRef.current);
+ };
+
+ const stopHandleDrag = (event) => {
+ if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+ event.currentTarget.releasePointerCapture(event.pointerId);
+ }
+ dragHandleRef.current = null;
+ };
+
+ const handleHandleKeyDown = (event, type) => {
+ const current = type === 'start' ? startSec : endSec;
+ let target = current;
+ if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') target -= 1;
+ if (event.key === 'ArrowRight' || event.key === 'ArrowUp') target += 1;
+ if (event.key === 'Home') target = 0;
+ if (event.key === 'End') target = totalDuration;
+ if (target !== current) {
+ event.preventDefault();
+ setHandleSeconds(type, target);
  }
  };
 
@@ -141,16 +181,16 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  const endPercent = totalDuration > 0 ? (endSec / totalDuration) * 100 : 100;
 
  return (
- <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-700/80 bg-zinc-50 dark:bg-zinc-800 p-4 shadow-sm">
+ <div className="mt-4 rounded-xl border border-slate-700/80 bg-slate-900/40 p-4 shadow-inner relative z-0">
  {/* Header */}
  <div className="flex items-center justify-between mb-3">
- <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-zinc-600 dark:text-zinc-300">
- <Scissors size={15} className="text-indigo-500" /> Trim & Clip
+ <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-300 font-mono">
+ <Scissors size={15} className="text-cyan-400" /> Trim & Clip
  </div>
 
  <div className="flex items-center gap-2">
  {hasActiveClip && !isInverted && (
- <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800/60 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 shadow-xs">
+ <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/20 border border-cyan-500/30 px-2.5 py-0.5 text-[11px] font-bold text-cyan-300 shadow-xs font-mono">
  <Clock3 size={12} /> {formatClock(clipDuration)} ({clipPercent}%)
  </span>
  )}
@@ -159,7 +199,7 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  <button
  type="button"
  onClick={() => applyPreset('full')}
- className="text-[11px] font-medium text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors flex items-center gap-1"
+ className="text-[11px] font-medium text-slate-400 hover:text-cyan-300 transition-colors flex items-center gap-1 font-mono"
  title="Reset to full video"
  >
  <RotateCcw size={12} /> Reset
@@ -170,11 +210,20 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
 
  {/* Modern Interactive Visual Scrubber Bar */}
  <div className="mb-4 pt-2">
- <div className="relative h-6 flex items-center">
- <div className="absolute inset-x-0 h-2 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
+ <div
+ ref={trackRef}
+ role="group"
+ aria-label="Clip range"
+ onPointerDown={handleTrackPointerDown}
+ onPointerMove={handleTrackPointerMove}
+ onPointerUp={stopHandleDrag}
+ onPointerCancel={stopHandleDrag}
+ className="relative h-8 flex items-center touch-none"
+ >
+ <div className="absolute inset-x-0 h-2 rounded-full bg-slate-800 border border-slate-700 overflow-hidden">
  {!isInverted && (
  <div
- className="absolute top-0 bottom-0 bg-indigo-600 rounded-full transition-all duration-75 shadow-xs"
+ className="absolute top-0 bottom-0 bg-cyan-500 rounded-full transition-all duration-75 shadow-[0_0_10px_rgba(6,182,212,0.8)]"
  style={{
  left: `${Math.max(0, Math.min(100, startPercent))}%`,
  width: `${Math.max(0, Math.min(100, endPercent - startPercent))}%`
@@ -183,33 +232,27 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  )}
  </div>
 
- {/* Dual Range Sliders */}
- <input
- type="range"
- min="0"
- max="1000"
- value={totalDuration > 0 ? (startSec / totalDuration) * 1000 : 0}
- onChange={handleSliderStart}
- className="absolute inset-x-0 w-full opacity-0 cursor-pointer pointer-events-auto h-6 z-20"
- title="Drag to adjust start time"
- />
- <input
- type="range"
- min="0"
- max="1000"
- value={totalDuration > 0 ? (endSec / totalDuration) * 1000 : 1000}
- onChange={handleSliderEnd}
- className="absolute inset-x-0 w-full opacity-0 cursor-pointer pointer-events-auto h-6 z-30"
- title="Drag to adjust end time"
- />
-
- {/* Visual Handles */}
- <div
- className="absolute -translate-x-1/2 w-4 h-4 rounded-full bg-white dark:bg-indigo-400 border-2 border-indigo-600 shadow-sm pointer-events-none z-10 transition-all duration-75"
+ {/* Pointer and keyboard handles */}
+ <button
+ type="button"
+ aria-label={`Clip start ${formatClock(startSec)}`}
+ onPointerDown={(event) => {
+ event.stopPropagation();
+ beginHandleDrag(event, 'start');
+ }}
+ onKeyDown={(event) => handleHandleKeyDown(event, 'start')}
+ className="absolute -translate-x-1/2 w-6 h-6 rounded-full bg-cyan-400 border-2 border-cyan-200 shadow-[0_0_8px_rgba(6,182,212,0.8)] z-10 transition-all duration-75 focus:outline-none focus:ring-2 focus:ring-cyan-300"
  style={{ left: `${Math.max(0, Math.min(100, startPercent))}%` }}
  />
- <div
- className="absolute -translate-x-1/2 w-4 h-4 rounded-full bg-white dark:bg-purple-400 border-2 border-purple-600 shadow-sm pointer-events-none z-10 transition-all duration-75"
+ <button
+ type="button"
+ aria-label={`Clip end ${formatClock(endSec)}`}
+ onPointerDown={(event) => {
+ event.stopPropagation();
+ beginHandleDrag(event, 'end');
+ }}
+ onKeyDown={(event) => handleHandleKeyDown(event, 'end')}
+ className="absolute -translate-x-1/2 w-6 h-6 rounded-full bg-violet-400 border-2 border-violet-200 shadow-[0_0_8px_rgba(139,92,246,0.8)] z-10 transition-all duration-75 focus:outline-none focus:ring-2 focus:ring-violet-300"
  style={{ left: `${Math.max(0, Math.min(100, endPercent))}%` }}
  />
  </div>
@@ -244,7 +287,7 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  {/* Time inputs with fine stepper nudges */}
  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
  {/* START TIME */}
- <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2.5 shadow-2xs">
+ <div className="rounded-lg border border-slate-700/80 bg-slate-900/80 p-2.5 shadow-2xs">
  <div className="flex items-center justify-between mb-1.5">
  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
  Start Time
@@ -253,7 +296,7 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  <button
  type="button"
  onClick={() => nudgeTime('start', -5)}
- className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-zinc-800 min-h-[40px] min-w-[40px] touch-manipulation"
+ className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-cyan-400 hover:bg-slate-800 min-h-[40px] min-w-[40px] touch-manipulation"
  title="-5 seconds"
  >
  -5s
@@ -261,7 +304,7 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  <button
  type="button"
  onClick={() => nudgeTime('start', 1)}
- className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-zinc-800 min-h-[40px] min-w-[40px] touch-manipulation"
+ className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-cyan-400 hover:bg-slate-800 min-h-[40px] min-w-[40px] touch-manipulation"
  title="+1 second"
  >
  +1s
@@ -269,7 +312,7 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  <button
  type="button"
  onClick={() => nudgeTime('start', 5)}
- className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-zinc-800 min-h-[40px] min-w-[40px] touch-manipulation"
+ className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-cyan-400 hover:bg-slate-800 min-h-[40px] min-w-[40px] touch-manipulation"
  title="+5 seconds"
  >
  +5s
@@ -285,13 +328,13 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  className={`w-full rounded-lg px-2.5 py-1.5 text-base font-mono font-semibold tracking-wider outline-none transition-colors ${
  isInverted
  ? 'border border-amber-400 bg-amber-500 text-amber-700 dark:text-amber-300'
- : 'border border-zinc-200 dark:border-zinc-700/80 bg-zinc-50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100 focus:border-indigo-500'
+ : 'border border-slate-700 bg-slate-800 text-slate-100 focus:border-cyan-400'
  }`}
  />
  </div>
 
  {/* END TIME */}
- <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2.5 shadow-2xs">
+ <div className="rounded-lg border border-slate-700/80 bg-slate-900/80 p-2.5 shadow-2xs">
  <div className="flex items-center justify-between mb-1.5">
  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
  End Time
@@ -300,7 +343,7 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  <button
  type="button"
  onClick={() => nudgeTime('end', -5)}
- className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-zinc-800 min-h-[40px] min-w-[40px] touch-manipulation"
+ className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-cyan-400 hover:bg-slate-800 min-h-[40px] min-w-[40px] touch-manipulation"
  title="-5 seconds"
  >
  -5s
@@ -308,7 +351,7 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  <button
  type="button"
  onClick={() => nudgeTime('end', -1)}
- className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-zinc-800 min-h-[40px] min-w-[40px] touch-manipulation"
+ className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-cyan-400 hover:bg-slate-800 min-h-[40px] min-w-[40px] touch-manipulation"
  title="-1 second"
  >
  -1s
@@ -316,7 +359,7 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  <button
  type="button"
  onClick={() => nudgeTime('end', 5)}
- className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-zinc-800 min-h-[40px] min-w-[40px] touch-manipulation"
+ className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-zinc-400 hover:text-cyan-400 hover:bg-slate-800 min-h-[40px] min-w-[40px] touch-manipulation"
  title="+5 seconds"
  >
  +5s
@@ -332,7 +375,7 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  className={`w-full rounded-lg px-2.5 py-1.5 text-base font-mono font-semibold tracking-wider outline-none transition-colors ${
  isInverted
  ? 'border border-amber-400 bg-amber-500 text-amber-700 dark:text-amber-300'
- : 'border border-zinc-200 dark:border-zinc-700/80 bg-zinc-50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100 focus:border-indigo-500'
+ : 'border border-slate-700 bg-slate-800 text-slate-100 focus:border-cyan-400'
  }`}
  />
  </div>
@@ -346,14 +389,14 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  <button
  type="button"
  onClick={() => applyPreset('first30')}
- className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all shadow-2xs active:scale-[0.98]"
+ className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all shadow-2xs active:scale-[0.98]"
  >
  First 30s
  </button>
  <button
  type="button"
  onClick={() => applyPreset('first60')}
- className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all shadow-2xs active:scale-[0.98]"
+ className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all shadow-2xs active:scale-[0.98]"
  >
  First 1m
  </button>
@@ -361,7 +404,7 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  <button
  type="button"
  onClick={() => applyPreset('last60')}
- className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all shadow-2xs active:scale-[0.98]"
+ className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all shadow-2xs active:scale-[0.98]"
  >
  Last 1m
  </button>
@@ -369,7 +412,7 @@ export default function ClipPanel({ clipStart, setClipStart, clipEnd, setClipEnd
  <button
  type="button"
  onClick={() => applyPreset('full')}
- className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all shadow-2xs active:scale-[0.98]"
+ className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all shadow-2xs active:scale-[0.98]"
  >
  Full Video
  </button>
