@@ -1090,6 +1090,12 @@ export default function PlaylistView({ playlist, onToast }) {
                     href={item.url}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={(e) => {
+                      if (typeof window !== 'undefined' && window.electronAPI?.openExternal && item.url) {
+                        e.preventDefault();
+                        window.electronAPI.openExternal(item.url);
+                      }
+                    }}
                     className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 hover:text-indigo-500 transition-colors line-clamp-1 block"
                     title={item.title}
                   >

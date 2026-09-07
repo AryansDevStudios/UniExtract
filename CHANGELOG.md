@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.7] - 2026-09-07 (DEV / Pre-release)
+
+### 🌐 Desktop Browser & External Link Integration
+- **Default OS Browser Redirection**:
+  - Configured Electron's window management to intercept all external links (`target="_blank"`, `window.open()`, and non-local navigation) and open them in the user's default OS web browser (e.g. Chrome, Edge, Firefox, Brave) rather than internal Electron Chromium windows.
+  - Added direct IPC bridge `window.electronAPI.openExternal(url)` through `electron/preload.js` and `electron/main.js`.
+  - Updated all external UI links in `SettingsModal` (Developer Profile, Main Repository, Releases, Issue Tracker, MIT License), `UpdateModal` (GitHub Release page, direct installer assets), and `PlaylistView` (video source URLs) to cleanly delegate to the external default browser.
+
+---
+
 ## [2.6.6] - 2026-09-07 (DEV / Pre-release)
 
 ### 🐛 Critical Desktop Reliability Fixes

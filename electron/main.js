@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { spawn } = require('child_process');
 const path = require('path');
@@ -367,6 +367,19 @@ function setupAutoUpdater() {
 
     return { status: 'waiting_for_idle', activeJobs: activeCount };
   });
+
+  // Shell open external link handler for renderer
+  ipcMain.handle('shell:open-external', async (_event, url) => {
+    if (url && (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('mailto:'))) {
+      try {
+        await shell.openExternal(url);
+        return { success: true };
+      } catch (e) {
+        return { success: false, error: e.message };
+      }
+    }
+    return { success: false, error: 'Invalid URL scheme' };
+  });
 }
 
 function createWindow() {
@@ -390,6 +403,23 @@ function createWindow() {
 
   mainWindow.setMenuBarVisibility(false);
   mainWindow.setMenu(null);
+
+  // Open any external target="_blank" or window.open links in the user's default OS browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('mailto:')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  // Intercept in-app navigation so external links open in default OS browser, not inside the Electron window
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const isLocalApp = url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost') || url.startsWith('file:');
+    if (!isLocalApp && (url.startsWith('http:') || url.startsWith('https:'))) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
 
   const startUrl = process.env.ELECTRON_START_URL || 'http://127.0.0.1:3000';
   

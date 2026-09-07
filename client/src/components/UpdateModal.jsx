@@ -75,6 +75,13 @@ export default function UpdateModal({
   const bumpType = updateInfo.bumpType || 'none';
   const categories = updateInfo.categories || { features: [], fixes: [], security: [], performance: [], general: [] };
 
+  const handleOpenExternal = (e, url) => {
+    if (typeof window !== 'undefined' && window.electronAPI?.openExternal) {
+      e.preventDefault();
+      window.electronAPI.openExternal(url);
+    }
+  };
+
   const handleDownloadUpdate = async () => {
     if (!isElectron) return;
     try {
@@ -295,6 +302,7 @@ export default function UpdateModal({
                   href={releaseUrl}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={(e) => handleOpenExternal(e, releaseUrl)}
                   className="text-xs font-semibold text-indigo-500 hover:text-indigo-600 flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-500/20"
                 >
                   GitHub Release <ExternalLink size={12} />
@@ -563,6 +571,7 @@ export default function UpdateModal({
                     href={asset.url}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={(e) => handleOpenExternal(e, asset.url)}
                     className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500/50 dark:hover:border-indigo-500/50 bg-white/50 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all text-xs group"
                   >
                     <div className="flex items-center gap-2.5 overflow-hidden">

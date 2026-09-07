@@ -160,6 +160,12 @@ export default function SettingsModal({
   const currentVersion = updateInfo?.currentVersion || appVersion;
   const envInfo = getEnvironmentInfo(getCustomServerUrl());
   const isSnoozed = snoozeUntil && Date.now() < Number(snoozeUntil);
+  const handleOpenExternal = (e, url) => {
+    if (typeof window !== 'undefined' && window.electronAPI?.openExternal) {
+      e.preventDefault();
+      window.electronAPI.openExternal(url);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-md">
@@ -664,6 +670,7 @@ export default function SettingsModal({
                     href="https://github.com/AryansDevStudios"
                     target="_blank"
                     rel="noreferrer"
+                    onClick={(e) => handleOpenExternal(e, 'https://github.com/AryansDevStudios')}
                     className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors"
                   >
                     <span>Developer Profile</span>
@@ -683,6 +690,7 @@ export default function SettingsModal({
                     href="https://github.com/AryansDevStudios/UniExtract"
                     target="_blank"
                     rel="noreferrer"
+                    onClick={(e) => handleOpenExternal(e, 'https://github.com/AryansDevStudios/UniExtract')}
                     className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-all text-xs group"
                   >
                     <div className="flex items-center gap-2">
@@ -696,6 +704,7 @@ export default function SettingsModal({
                     href="https://github.com/AryansDevStudios/UniExtract/releases"
                     target="_blank"
                     rel="noreferrer"
+                    onClick={(e) => handleOpenExternal(e, 'https://github.com/AryansDevStudios/UniExtract/releases')}
                     className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-all text-xs group"
                   >
                     <div className="flex items-center gap-2">
@@ -709,6 +718,7 @@ export default function SettingsModal({
                     href="https://github.com/AryansDevStudios/UniExtract/issues"
                     target="_blank"
                     rel="noreferrer"
+                    onClick={(e) => handleOpenExternal(e, 'https://github.com/AryansDevStudios/UniExtract/issues')}
                     className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-all text-xs group"
                   >
                     <div className="flex items-center gap-2">
@@ -722,6 +732,7 @@ export default function SettingsModal({
                     href="https://github.com/AryansDevStudios/UniExtract/blob/main/LICENSE"
                     target="_blank"
                     rel="noreferrer"
+                    onClick={(e) => handleOpenExternal(e, 'https://github.com/AryansDevStudios/UniExtract/blob/main/LICENSE')}
                     className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-all text-xs group"
                   >
                     <div className="flex items-center gap-2">
