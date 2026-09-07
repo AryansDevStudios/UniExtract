@@ -152,18 +152,18 @@ export function getEnvironmentInfo(customServerUrl = '') {
     };
   }
 
-  // 3. Deployed on Netlify (*.netlify.app)
+  // 3. Deployed on Cloud Web Platform (*.netlify.app)
   if (isNet) {
     return {
-      envId: 'netlify',
-      name: 'Netlify Cloud Deployment',
-      badgeText: 'Netlify ➔ Render',
-      badgeColor: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20',
-      headerPill: 'Netlify Cloud',
-      headerTooltip: `Netlify Frontend -> Direct Render Backend (${DEFAULT_RENDER_SERVER})`,
-      serverTitle: 'Render Cloud Backend (Direct Connection)',
-      serverMessage: 'This web app is hosted on Netlify Edge CDN. Requests bypass Netlify proxy timeouts and connect directly to our dedicated Render Cloud Server (universal-media-extractor-vav8.onrender.com). Localhost is NOT used here—all media processing runs in the cloud with zero setup.',
-      defaultOptionDesc: 'Connects directly to our cloud Render server (universal-media-extractor-vav8.onrender.com). Fast, reliable, and requires zero software on your PC.',
+      envId: 'cloud_web',
+      name: 'Cloud Web Platform',
+      badgeText: 'Cloud Online',
+      badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+      headerPill: 'Cloud Server',
+      headerTooltip: 'UniExtract Cloud Web Platform',
+      serverTitle: 'Cloud Media Server',
+      serverMessage: 'Connected directly to the dedicated UniExtract Cloud Server. All media extraction, stream analysis, and FFmpeg remuxing run seamlessly in the cloud with zero installation or local dependencies required.',
+      defaultOptionDesc: 'Connects directly to the high-performance UniExtract Cloud extraction engine. Fast, reliable, and requires zero software on your PC.',
       targetEndpoint: DEFAULT_RENDER_SERVER,
       isCloud: true
     };
@@ -173,14 +173,14 @@ export function getEnvironmentInfo(customServerUrl = '') {
   if (isRen) {
     return {
       envId: 'render',
-      name: 'Render Cloud Deployment',
-      badgeText: 'Render Cloud',
+      name: 'Cloud Web Platform',
+      badgeText: 'Cloud Online',
       badgeColor: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
-      headerPill: 'Render Cloud',
-      headerTooltip: `Direct Cloud Hosting on Render (${DEFAULT_RENDER_SERVER})`,
-      serverTitle: 'Render Fullstack Cloud Server',
-      serverMessage: 'This app is hosted directly on Render Cloud Infrastructure. The frontend interface and backend media engine (yt-dlp & FFmpeg) run natively together on our Render cloud server. Localhost is NOT used here—everything runs on the cloud instance.',
-      defaultOptionDesc: 'Connects directly to Render cloud backend infrastructure. Integrated yt-dlp & FFmpeg engine with zero setup.',
+      headerPill: 'Cloud Server',
+      headerTooltip: 'UniExtract Cloud Platform',
+      serverTitle: 'Cloud Media Server',
+      serverMessage: 'Running on dedicated UniExtract Cloud Infrastructure. The web interface and media engine (yt-dlp & FFmpeg) run natively together on high-speed cloud instances.',
+      defaultOptionDesc: 'Connects directly to the dedicated cloud media engine with zero setup.',
       targetEndpoint: DEFAULT_RENDER_SERVER,
       isCloud: true
     };
@@ -190,14 +190,14 @@ export function getEnvironmentInfo(customServerUrl = '') {
   if (isCloudWeb) {
     return {
       envId: 'cloud_web',
-      name: 'Web.app Cloud Deployment',
-      badgeText: 'Web.app ➔ Render',
+      name: 'Cloud Web Platform',
+      badgeText: 'Cloud Online',
       badgeColor: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20',
       headerPill: 'Cloud Server',
-      headerTooltip: `Web Frontend -> Direct Render Backend (${DEFAULT_RENDER_SERVER})`,
-      serverTitle: 'Render Cloud Backend (Direct Connection)',
-      serverMessage: 'Hosted on cloud web infrastructure. Requests connect directly to our dedicated Render Cloud Server (universal-media-extractor-vav8.onrender.com). Localhost is NOT used here—all transcoding executes in the cloud.',
-      defaultOptionDesc: 'Connects directly to our cloud Render server (universal-media-extractor-vav8.onrender.com) with zero configuration.',
+      headerTooltip: 'UniExtract Cloud Web Platform',
+      serverTitle: 'Cloud Media Server',
+      serverMessage: 'Connected directly to the dedicated UniExtract Cloud Server. All stream extraction and media processing execute in the cloud with zero local software required.',
+      defaultOptionDesc: 'Connects directly to the cloud media extraction engine with zero configuration.',
       targetEndpoint: DEFAULT_RENDER_SERVER,
       isCloud: true
     };
