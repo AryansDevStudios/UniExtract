@@ -1,7 +1,7 @@
 {
-  "version": "2.6.2",
-  "gitCommit": "v2.6.2",
+  "version": "2.6.8-dev.2",
+  "gitCommit": "v2.6.8-dev.2",
   "gitBranch": "main",
   "gitDate": "2026-09-07",
-  "buildTime": "2026-09-07T13:52:00.000Z"
+  "buildTime": "2026-09-08T00:00:00.000Z"
 }
