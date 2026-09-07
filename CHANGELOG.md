@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.5] - 2026-09-07 (DEV / Pre-release)
+
+### 🐛 Critical Bug Fixes
+- **Desktop Electron Server Startup Fix**:
+  - Resolved fatal `ReferenceError: startServer is not defined` crash at launch on Windows desktop builds.
+  - Restored `startServer()`, `sendUpdateEvent()`, `getCookiesPath()`, and `queryActiveJobs()` helpers in `electron/main.js`.
+  - Ensured background Express server boots reliably when launched from Start Menu, Desktop shortcut, or terminal.
+
+---
+
 ## [2.6.4] - 2026-09-07 (DEV / Pre-release)
 
 ### 🚀 Highlights & Enterprise Features

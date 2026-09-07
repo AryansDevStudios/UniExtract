@@ -1,7 +1,7 @@
 {
   "name": "uni-extract-client",
   "private": true,
-  "version": "2.6.4",
+  "version": "2.6.5",
   "type": "module",
   "scripts": {
     "dev": "vite",

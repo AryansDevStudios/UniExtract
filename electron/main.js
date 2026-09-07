@@ -32,6 +32,93 @@ let updateState = {
 
 let updaterCadenceTimer = null;
 
+function sendUpdateEvent(data) {
+  updateState = { ...updateState, ...data };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('updater:event', updateState);
+  }
+}
+
+function getCookiesPath() {
+  const rootDir = path.join(__dirname, '..');
+  const appData = app.getPath('userData');
+  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
+  
+  if (portableDir) {
+    const pCookies = path.join(portableDir, 'cookies.txt');
+    if (fs.existsSync(pCookies)) return pCookies;
+  }
+  
+  const userCookies = path.join(appData, 'cookies.txt');
+  if (fs.existsSync(userCookies)) return userCookies;
+  
+  return path.join(rootDir, 'cookies.txt');
+}
+
+function startServer() {
+  const rootDir = path.join(__dirname, '..');
+  const serverScript = path.join(rootDir, 'server.js');
+  const isProd = app.isPackaged;
+  const cookiesPath = getCookiesPath();
+
+  const env = {
+    ...process.env,
+    NODE_ENV: 'production',
+    PORT: process.env.PORT || '3000',
+    TEMP_DIR: path.join(app.getPath('temp'), 'ume-temp'),
+    CACHE_DIR: path.join(app.getPath('userData'), 'cache'),
+    COOKIES_PATH: cookiesPath,
+    IS_ELECTRON: 'true',
+    ELECTRON_IS_PACKAGED: isProd ? 'true' : 'false',
+    ELECTRON_PORTABLE: process.env.PORTABLE_EXECUTABLE_DIR ? 'true' : 'false',
+    ELECTRON_APP_VERSION: app.getVersion()
+  };
+
+  try {
+    if (isProd) {
+      serverProcess = spawn(process.execPath, [serverScript], {
+        cwd: rootDir,
+        env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+        stdio: 'ignore',
+        detached: false
+      });
+    } else {
+      serverProcess = spawn('node', [serverScript], {
+        cwd: rootDir,
+        env,
+        stdio: 'ignore',
+        detached: false
+      });
+    }
+
+    serverProcess.on('error', (err) => {
+      console.error('[ELECTRON] Failed to start bundled server:', err);
+    });
+  } catch (err) {
+    console.error('[ELECTRON] Error spawning server process:', err);
+  }
+}
+
+// Query local server to inspect active in-flight downloads / transcoding
+function queryActiveJobs() {
+  return new Promise((resolve) => {
+    const req = http.get('http://127.0.0.1:3000/api/updates/active-jobs', { timeout: 1500 }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          resolve(json.activeJobsCount || 0);
+        } catch (e) {
+          resolve(0);
+        }
+      });
+    });
+    req.on('error', () => resolve(0));
+    req.on('timeout', () => { req.destroy(); resolve(0); });
+  });
+}
+
 function getUpdaterPolicyPath() {
   return path.join(app.getPath('userData'), 'updater-policy.json');
 }
