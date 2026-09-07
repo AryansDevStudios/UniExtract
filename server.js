@@ -674,6 +674,11 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+app.get('/api/version', (req, res) => {
+    const appVersion = require('./package.json').version || '2.6.2';
+    res.json({ version: appVersion, name: 'uni-extract' });
+});
+
 // --- ENTERPRISE RELEASE & UPDATE CHECKING SYSTEM ---
 const cachedReleaseData = {
     stable: null,
@@ -1300,7 +1305,7 @@ const handleDeleteTokens = (req, res) => {
     }
 };
 
-app.get(['/api/auth-tokens', '/api/cookies'], handleGetTokens);
+app.get(['/api/auth-tokens', '/api/cookies', '/api/cookies/status'], handleGetTokens);
 app.post(['/api/auth-tokens', '/api/cookies'], handlePostTokens);
 app.delete(['/api/auth-tokens', '/api/cookies'], handleDeleteTokens);
 
