@@ -88,9 +88,19 @@ export async function testServerConnection(targetUrl) {
     }
   } catch (err) {
     const latency = Math.round(performance.now() - start);
+    let errorMessage = err.name === 'AbortError' ? 'Connection timed out (9s)' : (err.message || 'Server unreachable');
+
+    // Detect browser Mixed Content blocking (HTTPS origin fetching HTTP target)
+    const isHttpsOrigin = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    if (isHttpsOrigin && testUrl.startsWith('http://')) {
+      errorMessage = 'Blocked by browser (Mixed Content: HTTPS cannot call unencrypted HTTP)';
+    } else if (isHttpsOrigin && (testUrl.includes('localhost') || testUrl.includes('127.0.0.1')) && err.message?.toLowerCase().includes('failed to fetch')) {
+      errorMessage = 'Blocked by browser (Untrusted SSL cert or server offline)';
+    }
+
     return {
       success: false,
-      error: err.name === 'AbortError' ? 'Connection timed out (9s)' : (err.message || 'Server unreachable'),
+      error: errorMessage,
       latency,
       url: testUrl
     };

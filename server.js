@@ -79,6 +79,22 @@ const CACHE_DIR = process.env.CACHE_DIR || defaultCache;
 // --- INITIALIZATION ---
 let ytDlpPath = null;
 
+// Enhanced CORS with Private Network Access (PNA) preflight support
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Access-Control-Request-Private-Network');
+
+    // Support Chromium Private Network Access (PNA) preflight checks
+    if (req.headers['access-control-request-private-network'] === 'true') {
+        res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    }
+
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+    }
+    next();
+});
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -2687,15 +2703,49 @@ const warmUpYtDlp = () => {
         console.log(`[SECURITY] Cookie password protection: \x1b[1;32mENABLED\x1b[0m`);
     }
 
-    app.listen(PORT, HOST, () => {
-        console.log("\n" + "=".repeat(50));
-        console.log(`[SERVER] Uni Extract Server running on port ${PORT}`);
-        console.log(`[ACCESS] Bound to: http://${HOST}:${PORT}`);
-        console.log(`[TEMP]   Temp Folder: ${TEMP_DIR}`);
-        console.log(`[CACHE]  Cache Folder: ${CACHE_DIR}`);
-        console.log("=".repeat(50) + "\n");
+    // Support optional HTTPS if configured or certificates present
+    const httpsEnabled = process.env.HTTPS === 'true';
+    const sslCertPath = process.env.SSL_CERT || path.join(__dirname, 'certs', 'server.crt');
+    const sslKeyPath = process.env.SSL_KEY || path.join(__dirname, 'certs', 'server.key');
+    let sslOptions = null;
 
-        // Non-blocking: prime the yt-dlp disk cache while server is already accepting requests
-        warmUpYtDlp();
-    });
+    if (httpsEnabled || (fs.existsSync(sslCertPath) && fs.existsSync(sslKeyPath))) {
+        try {
+            if (fs.existsSync(sslCertPath) && fs.existsSync(sslKeyPath)) {
+                sslOptions = {
+                    cert: fs.readFileSync(sslCertPath),
+                    key: fs.readFileSync(sslKeyPath)
+                };
+                console.log(`[SECURITY] HTTPS SSL Certificates loaded from: ${sslCertPath}`);
+            } else {
+                console.warn(`[SECURITY] HTTPS=true requested but certificate files not found at ${sslCertPath}`);
+            }
+        } catch (err) {
+            console.warn(`[SECURITY] Failed to load SSL certificates, falling back to HTTP: ${err.message}`);
+            sslOptions = null;
+        }
+    }
+
+    if (sslOptions) {
+        const https = require('https');
+        https.createServer(sslOptions, app).listen(PORT, HOST, () => {
+            console.log("\n" + "=".repeat(50));
+            console.log(`[SERVER] Uni Extract HTTPS Server running on port ${PORT}`);
+            console.log(`[ACCESS] Bound to: https://${HOST}:${PORT}`);
+            console.log(`[TEMP]   Temp Folder: ${TEMP_DIR}`);
+            console.log(`[CACHE]  Cache Folder: ${CACHE_DIR}`);
+            console.log("=".repeat(50) + "\n");
+            warmUpYtDlp();
+        });
+    } else {
+        app.listen(PORT, HOST, () => {
+            console.log("\n" + "=".repeat(50));
+            console.log(`[SERVER] Uni Extract Server running on port ${PORT}`);
+            console.log(`[ACCESS] Bound to: http://${HOST}:${PORT}`);
+            console.log(`[TEMP]   Temp Folder: ${TEMP_DIR}`);
+            console.log(`[CACHE]  Cache Folder: ${CACHE_DIR}`);
+            console.log("=".repeat(50) + "\n");
+            warmUpYtDlp();
+        });
+    }
 })();

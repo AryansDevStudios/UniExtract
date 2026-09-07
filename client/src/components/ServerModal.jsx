@@ -12,6 +12,10 @@ import {
   Laptop,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
+  Lock,
+  ExternalLink,
+  ShieldAlert,
   Sparkles,
   Zap,
   ArrowRight
@@ -25,6 +29,11 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
   const [inputUrl, setInputUrl] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+
+  const isHttpsOrigin = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const cleanInput = inputUrl.trim().toLowerCase();
+  const isHttpTarget = cleanInput.startsWith('http://');
+  const isLocalhostTarget = cleanInput.includes('localhost') || cleanInput.includes('127.0.0.1') || cleanInput.includes('0.0.0.0');
 
   const envInfo = getEnvironmentInfo(selectedMode === 'custom' ? (inputUrl || currentCustomUrl) : '');
 
@@ -77,7 +86,11 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
     setCustomServerUrl(trimmed);
     const active = getCustomServerUrl();
     setCurrentCustomUrl(active);
-    onToast?.(`Custom server endpoint set to: ${active}`, 'success');
+    if (isHttpsOrigin && isHttpTarget) {
+      onToast?.(`Custom server saved. Warning: Browsers block unencrypted HTTP calls from HTTPS sites.`, 'warning');
+    } else {
+      onToast?.(`Custom server endpoint set to: ${active}`, 'success');
+    }
     onClose();
   };
 
@@ -298,43 +311,155 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
                     type="text"
                     value={inputUrl}
                     onChange={(e) => setInputUrl(e.target.value)}
-                    placeholder="https://my-backend-server.com or http://192.168.1.50:3000"
+                    placeholder={isHttpsOrigin ? "https://my-backend-server.com or https://vps.mydomain.com:3000" : "http://localhost:3000 or https://my-backend-server.com"}
                     className="w-full text-xs font-mono px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                   />
                 </div>
 
+                {/* WARNING: MIXED CONTENT RESTRICTION (HTTPS ORIGIN CALLING HTTP) */}
+                {isHttpsOrigin && isHttpTarget && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs space-y-2.5"
+                  >
+                    <div className="flex items-start gap-2.5 text-amber-900 dark:text-amber-200">
+                      <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <div className="font-bold flex items-center gap-2">
+                          <span>Browser Mixed Content Restriction</span>
+                          <span className="px-2 py-0.5 text-[9px] font-bold uppercase rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                            HTTP Blocked
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                          Because this web application is running over secure <strong className="text-slate-800 dark:text-slate-200">HTTPS</strong>, your web browser strictly forbids active network requests to unencrypted <code className="text-amber-600 dark:text-amber-400">http://</code> endpoints (like local devices or unencrypted remote servers).
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pl-7 space-y-1.5 text-[11px]">
+                      <div className="font-semibold text-slate-700 dark:text-slate-300">Recommended solutions:</div>
+                      <ul className="space-y-1.5 text-slate-600 dark:text-slate-400">
+                        <li className="flex items-start gap-1.5">
+                          <Laptop size={13} className="text-indigo-500 shrink-0 mt-0.5" />
+                          <span><strong className="text-slate-800 dark:text-slate-200">UniExtract Desktop App:</strong> Download the native desktop app for Windows/macOS/Linux to bypass all browser sandbox limits.</span>
+                        </li>
+                        <li className="flex items-start gap-1.5">
+                          <Zap size={13} className="text-purple-500 shrink-0 mt-0.5" />
+                          <span><strong className="text-slate-800 dark:text-slate-200">Free HTTPS Tunnel:</strong> Run <code className="text-indigo-600 dark:text-indigo-400 bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">npx localtunnel --port 3000</code> or Cloudflare Tunnel to get an instant trusted <code className="text-indigo-600 dark:text-indigo-400">https://</code> address.</span>
+                        </li>
+                        <li className="flex items-start gap-1.5">
+                          <Lock size={13} className="text-emerald-500 shrink-0 mt-0.5" />
+                          <span><strong className="text-slate-800 dark:text-slate-200">Enable HTTPS on Server:</strong> Configure SSL certificates on your backend or reverse proxy.</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* NOTICE: LOCALHOST OR PRIVATE IP ON HTTPS ORIGIN */}
+                {isHttpsOrigin && !isHttpTarget && isLocalhostTarget && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-3.5 rounded-2xl bg-sky-500/10 border border-sky-500/30 text-xs space-y-1.5"
+                  >
+                    <div className="flex items-start gap-2.5 text-sky-950 dark:text-sky-200">
+                      <Lock size={16} className="text-sky-500 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <div className="font-bold flex items-center gap-1.5">
+                          <span>Localhost on HTTPS Web</span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                          Public Certificate Authorities cannot issue signed SSL certificates for <code className="text-sky-600 dark:text-sky-400">localhost</code>. Unless your local machine has a locally trusted root certificate installed (e.g. via <code>mkcert</code>), browser security checks will reject the connection. For local extraction, using the native <strong>Desktop App</strong> or an <strong>HTTPS Tunnel</strong> is recommended.
+                        </p>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
                 {/* PRESETS */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] text-slate-400">Quick Presets:</span>
-                  <button
-                    type="button"
-                    onClick={() => handlePreset('http://localhost:3000')}
-                    className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors"
-                  >
-                    Localhost (3000)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePreset(DEFAULT_RENDER_SERVER)}
-                    className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors"
-                  >
-                    Cloud Render
-                  </button>
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Quick Presets:</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handlePreset('http://localhost:3000')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors flex items-center gap-1.5 ${
+                        inputUrl === 'http://localhost:3000'
+                          ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border-indigo-300 dark:border-indigo-700'
+                          : 'bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <Laptop size={13} />
+                      <span>Localhost (3000)</span>
+                      {isHttpsOrigin && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                          HTTP
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handlePreset(DEFAULT_RENDER_SERVER)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors flex items-center gap-1.5 ${
+                        inputUrl === DEFAULT_RENDER_SERVER
+                          ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border-indigo-300 dark:border-indigo-700'
+                          : 'bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      <Globe size={13} />
+                      <span>Cloud Render</span>
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-400">
+                        HTTPS
+                      </span>
+                    </button>
+                  </div>
+                  {isHttpsOrigin && (
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 italic">
+                      Note: On HTTPS web pages, connecting to Localhost (HTTP) directly will trigger browser mixed content blocks. Use the Desktop App or an HTTPS tunnel.
+                    </p>
+                  )}
                 </div>
 
-                {/* VPS / SELF-HOSTING CARD */}
-                <div className="p-3.5 rounded-2xl bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-500/20 text-xs space-y-2">
+                {/* VPS / SELF-HOSTING & HTTPS CARD */}
+                <div className="p-3.5 rounded-2xl bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-500/20 text-xs space-y-2.5">
                   <div className="flex items-center gap-1.5 font-bold text-indigo-950 dark:text-indigo-200">
                     <Terminal size={14} className="text-indigo-500" />
-                    How to spin up your own remote backend:
+                    How to self-host with HTTPS or Secure Tunnel:
                   </div>
-                  <div className="p-2.5 rounded-xl bg-slate-900 text-slate-200 font-mono text-[10px] space-y-1">
-                    <div className="text-emerald-400">git clone https://github.com/AryansDevStudios/UniExtract.git</div>
-                    <div>npm install && npm start</div>
+                  
+                  <div className="space-y-2">
+                    <div>
+                      <div className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Option 1: Quick HTTPS Tunnel for Local Backend (Recommended for Web)
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900 text-slate-200 font-mono text-[10px] space-y-0.5">
+                        <div className="text-slate-400"># Start local backend server</div>
+                        <div className="text-emerald-400">npm start</div>
+                        <div className="text-slate-400 pt-1"># In a new terminal, create an instant secure HTTPS tunnel</div>
+                        <div className="text-sky-300">npx localtunnel --port 3000</div>
+                        <div className="text-slate-400"># or: cloudflared tunnel --url http://localhost:3000</div>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                        Copy the generated <code>https://....loca.lt</code> or Cloudflare tunnel URL into the input field above.
+                      </p>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Option 2: Native HTTPS with SSL Certificates (VPS or Home Lab)
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900 text-slate-200 font-mono text-[10px] space-y-0.5">
+                        <div className="text-slate-400"># Pass certificates via environment variables</div>
+                        <div className="text-emerald-400">HTTPS=true SSL_CERT=/path/to/server.crt SSL_KEY=/path/to/server.key npm start</div>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                        Or place certificates in <code>certs/server.crt</code> and <code>certs/server.key</code> next to <code>server.js</code>.
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Set <code>HOST=0.0.0.0</code> in <code>.env</code> on your remote machine, then enter its public IP/domain above.
-                  </p>
                 </div>
               </motion.div>
             )}
