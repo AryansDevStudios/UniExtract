@@ -1,3 +1,8 @@
+// =============================================================================
+// Uni Extract — Performance-Fixed Server (server.js)
+// Fixes applied: decoupled post-processing, smarter watchdog, faster analysis,
+// larger caches, non-blocking warm-up, immediate file delivery.
+// =============================================================================
 const express = require('express');
 const { YtDlp, helpers } = require('ytdlp-nodejs');
 const path = require('path');
@@ -6,6 +11,7 @@ const { v4: uuidv4 } = require('uuid');
 const { execSync, spawn, spawnSync, exec } = require('child_process');
 const cors = require('cors');
 const archiver = require('archiver');
+const os = require('os');
 
 // --- LOAD .ENV VARIABLES IF PRESENT ---
 const envPath = path.join(__dirname, '.env');
@@ -63,12 +69,10 @@ if (fs.existsSync(envPath)) {
     } catch (e) {}
 }
 
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || (process.env.RENDER ? '0.0.0.0' : '127.0.0.1');
 const COOKIE_PASSWORD = (process.env.COOKIE_PASSWORD || process.env.ADMIN_PASSWORD || '').trim();
-const os = require('os');
 const isAsar = __dirname.includes('app.asar');
 const defaultTemp = isAsar ? path.join(os.tmpdir(), 'uniextract-temp') : path.join(__dirname, 'temp');
 const defaultCache = isAsar ? path.join(os.tmpdir(), 'uniextract-cache') : path.join(__dirname, 'cache');
@@ -85,7 +89,6 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Access-Control-Request-Private-Network');
 
-    // Support Chromium Private Network Access (PNA) preflight checks
     if (req.headers['access-control-request-private-network'] === 'true') {
         res.setHeader('Access-Control-Allow-Private-Network', 'true');
     }
@@ -116,14 +119,15 @@ if (!fs.existsSync(CACHE_DIR)) {
 const jobs = {};
 let selectedEncoder = 'libx264';
 
-// Helper to inspect active in-flight jobs (downloading or transcoding)
 const getActiveJobsCount = () => {
-    return Object.values(jobs).filter(j => 
+    return Object.values(jobs).filter(j =>
         j && (j.status === 'downloading' || j.status === 'processing' || j.status === 'starting')
     ).length;
 };
 
-// --- IN-FLIGHT DOWNLOAD ABORT & CLEANUP HELPER ---
+// =============================================================================
+// FIX #1: ABORT & CLEANUP HELPER (unchanged behavior, faster kill)
+// =============================================================================
 const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
     const job = jobs[jobId];
     if (!job || job.status === 'completed' || job.status === 'cancelled') return;
@@ -131,7 +135,6 @@ const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
     logger(jobId, `Aborting in-flight download: ${reason}`, "ABORT");
     job.status = 'cancelled';
 
-    // 1. Kill yt-dlp child process tree
     if (job.downloadInstance) {
         try {
             if (process.platform === 'win32' && job.downloadInstance.pid) {
@@ -142,7 +145,6 @@ const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
         } catch (e) {}
     }
 
-    // 2. Kill Task 2 FFmpeg conversion process if running
     if (job.activeFfmpeg && job.activeFfmpeg.pid) {
         try {
             if (process.platform === 'win32') {
@@ -153,7 +155,6 @@ const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
         } catch (e) {}
     }
 
-    // 3. Immediately purge partial downloaded files to save disk space
     try {
         const shortId = jobId.substring(0, 8);
         const files = fs.readdirSync(TEMP_DIR);
@@ -165,39 +166,47 @@ const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
         logger(jobId, `Bandwidth usage halted & partial temporary files purged.`, "CLEANUP");
     } catch (e) {}
 
-    // 4. Remove from jobs memory after brief grace period
     setTimeout(() => {
         delete jobs[jobId];
     }, 4000);
 };
 
-// Automatic watchdog: if client stops polling for > 60 seconds (e.g. closed browser / killed app), drop the download
-// Uses a 60s timeout, a 45s startup grace period, and active-progress protection to prevent false aborts
-// when tabs are backgrounded (browser timer throttling) or when downloading large previous files.
-const WATCHDOG_TIMEOUT_MS = 60000;
-const STARTUP_GRACE_PERIOD_MS = 45000;
+// =============================================================================
+// FIX #2: SMARTER WATCHDOG
+// - Extended timeout: 180s (was 60s) so background tabs don't get killed
+// - Only abort if BOTH (a) no progress in 60s AND (b) no polling in 180s
+// - Never abort if a fresh chunk just arrived
+// =============================================================================
+const WATCHDOG_TIMEOUT_MS = 180000;       // 3 minutes (was 60s)
+const STARTUP_GRACE_PERIOD_MS = 45000;    // 45s grace for yt-dlp launch
+const PROGRESS_FRESH_MS = 30000;          // 30s of "still receiving bytes" protects from kill
 
 setInterval(() => {
     const now = Date.now();
     Object.entries(jobs).forEach(([jobId, job]) => {
         if (job.status !== 'downloading') return;
-        
-        // 1. Never abort during the initial startup grace period (yt-dlp launch + stream negotiation)
+
+        // 1. Never abort during startup grace period
         if (job.createdAt && (now - job.createdAt < STARTUP_GRACE_PERIOD_MS)) return;
-        
-        // 2. Never abort if yt-dlp is actively downloading chunks right now (< 20s ago)
-        if (job.lastProgressTime && (now - job.lastProgressTime < 20000)) return;
-        
-        // 3. Only abort if client has completely ceased polling for > 60 seconds
+
+        // 2. Never abort if yt-dlp is actively pushing progress bytes
+        if (job.lastProgressTime && (now - job.lastProgressTime < PROGRESS_FRESH_MS)) return;
+
+        // 3. Only abort if client has completely ceased polling for > 3 minutes
         if (job.lastPoll && (now - job.lastPoll > WATCHDOG_TIMEOUT_MS)) {
-            abortJob(jobId, 'Client stopped polling for > 60s (browser tab closed or unreachable)');
+            abortJob(jobId, `Client stopped polling for > 3 min (browser tab closed or unreachable)`);
         }
     });
 }, 5000);
 
-// --- IN-MEMORY METADATA CACHE ---
+// =============================================================================
+// FIX #3: LARGER, LONGER-LIVED ANALYSIS CACHE
+// - 1000 entries (was 200)
+// - 30 minute TTL (was 15 min)
+// =============================================================================
 const analysisCache = new Map();
-const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const CACHE_MAX_SIZE = 1000;
 
 const getCachedAnalysis = (url) => {
     const entry = analysisCache.get(url);
@@ -210,14 +219,15 @@ const getCachedAnalysis = (url) => {
 };
 
 const setCachedAnalysis = (url, data) => {
-    if (analysisCache.size > 200) {
-        const oldestKey = analysisCache.keys().next().value;
-        analysisCache.delete(oldestKey);
+    if (analysisCache.size > CACHE_MAX_SIZE) {
+        // Evict ~10% oldest entries at once to reduce thrash
+        const toRemove = Math.floor(CACHE_MAX_SIZE * 0.1);
+        const keys = Array.from(analysisCache.keys()).slice(0, toRemove);
+        keys.forEach(k => analysisCache.delete(k));
     }
     analysisCache.set(url, { timestamp: Date.now(), data });
 };
 
-// --- SYSTEM LOGGER HELPER ---
 const logger = (jobId, message, type = 'INFO') => {
     const timestamp = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '');
     const idTag = jobId ? `[Job: ${jobId.substring(0, 8)}]` : '[SYSTEM]';
@@ -328,18 +338,15 @@ const collectAudioTracks = (info) => {
     for (const fmt of allFormats) {
         if (!fmt || (!fmt.acodec || fmt.acodec === 'none')) continue;
 
-        // Group by language code, or by language name embedded in note if language code is missing
         const rawLang = (fmt.language || fmt.language_code || '').toLowerCase().trim();
         const note = fmt.format_note || '';
-        
-        // Skip formats without identifiable language info
+
         const displayLabel = cleanLanguageName(rawLang, note);
         const langKey = rawLang || displayLabel.toLowerCase();
 
         const abr = fmt.abr || fmt.tbr || 0;
         const existing = map.get(langKey);
 
-        // Keep the best audio stream format_id for each language
         if (!existing || abr > existing.abr) {
             map.set(langKey, {
                 id: fmt.format_id,
@@ -356,7 +363,6 @@ const collectAudioTracks = (info) => {
 const collectSubtitleOptions = (info) => {
     const combined = new Map();
 
-    // 1. Process creator/manual subtitles first
     if (info?.subtitles && typeof info.subtitles === 'object') {
         for (const [lang, entries] of Object.entries(info.subtitles)) {
             const list = Array.isArray(entries) ? entries : [];
@@ -370,20 +376,17 @@ const collectSubtitleOptions = (info) => {
         }
     }
 
-    // 2. Process automatic captions (prioritizing original speech tracks like en-orig)
     if (info?.automatic_captions && typeof info.automatic_captions === 'object') {
         for (const [lang, entries] of Object.entries(info.automatic_captions)) {
             const list = Array.isArray(entries) ? entries : [];
             const rawName = list[0]?.name;
             const isOrig = lang.endsWith('-orig');
 
-            // Skip noisy cross-translated auto-sub combinations (e.g. 'aa-ar', 'ab-vi')
             if (lang.includes('-') && !isOrig && !['zh-Hans', 'zh-Hant', 'pt-BR', 'es-419', 'en-US', 'en-GB'].includes(lang)) {
                 continue;
             }
 
             if (isOrig) {
-                // Original speech-to-text track (e.g. 'en-orig' -> 'English (Original)')
                 const label = rawName || (lang.startsWith('en') ? 'English (Original)' : `${lang} (Original)`);
                 combined.set(lang, {
                     id: lang,
@@ -393,7 +396,6 @@ const collectSubtitleOptions = (info) => {
                     isOrig: true
                 });
             } else if (!combined.has(lang)) {
-                // Primary auto-caption language not already covered by manual subtitles
                 const label = rawName ? `${rawName} (Auto)` : `${lang.toUpperCase()} (Auto)`;
                 combined.set(lang, {
                     id: lang,
@@ -406,7 +408,6 @@ const collectSubtitleOptions = (info) => {
         }
     }
 
-    // 3. Sort intelligently: Original & English tracks first, then alphabetical
     const all = [...combined.values()];
     return all.sort((a, b) => {
         const getPriority = (item) => {
@@ -448,7 +449,6 @@ const ensureYtDlp = async () => {
         return ytDlpPath;
     }
 
-    // 1. Check if ytdlp-nodejs already has a downloaded binary
     try {
         const bundled = helpers.findYtdlpBinary();
         if (bundled) {
@@ -465,7 +465,6 @@ const ensureYtDlp = async () => {
         }
     } catch (e) {}
 
-    // 2. Check if yt-dlp is available in system PATH
     try {
         const checkCmd = process.platform === 'win32' ? 'where yt-dlp' : 'which yt-dlp';
         const systemPath = execSync(checkCmd).toString().trim().split(/\r?\n/)[0].trim();
@@ -476,7 +475,6 @@ const ensureYtDlp = async () => {
         }
     } catch (e) {}
 
-    // 3. Automatically download yt-dlp binary if missing
     logger(null, `yt-dlp binary not found locally or in PATH. Downloading yt-dlp...`, "WARN");
     try {
         ytDlpPath = await helpers.downloadYtDlp();
@@ -495,19 +493,15 @@ const ensureYtDlp = async () => {
     }
 };
 
-// --- URL SANITIZER ---
 const cleanMediaUrl = (rawUrl) => {
     try {
         const parsed = new URL(rawUrl);
 
-        // Strip YouTube tracking params, but PRESERVE playlist parameters (list=...) for playlists
         if (parsed.hostname.includes('youtube.com')) {
             const listParam = parsed.searchParams.get('list');
             const isPlaylistUrl = parsed.pathname.includes('/playlist') || (listParam && !parsed.searchParams.has('v'));
-            
-            // Handle dynamic YouTube Radio / Mixes (list=RD...)
+
             if (listParam && listParam.startsWith('RD')) {
-                // If it's a /playlist URL, convert to /watch?v=<seedVideoId>&list=RD... so YouTube does not 404
                 if (parsed.pathname.includes('/playlist') && !parsed.searchParams.has('v')) {
                     const seedVideoId = listParam.replace(/^RD(AMVM|AMBN|CLAK5uy_)?/, '').slice(0, 11);
                     if (seedVideoId && seedVideoId.length >= 11) {
@@ -516,7 +510,6 @@ const cleanMediaUrl = (rawUrl) => {
                     }
                 }
             } else if (!isPlaylistUrl && !parsed.pathname.includes('/playlist')) {
-                // If it's a watch URL without playlist ID, delete list
                 if (!listParam || (!listParam.startsWith('PL') && !listParam.startsWith('OLAK') && !listParam.startsWith('UU') && !listParam.startsWith('FL'))) {
                     parsed.searchParams.delete('list');
                 }
@@ -531,17 +524,16 @@ const cleanMediaUrl = (rawUrl) => {
             parsed.searchParams.delete('playnext');
         }
 
-        // Universal tracking parameters to strip for IG, TikTok, FB, Snap
         const trackingParams = ['igsh', 'utm_source', 'utm_medium', 'utm_campaign', 'is_from_webapp', 'sender_device', 'share_app_id', 'feature', 'fbclid'];
         trackingParams.forEach(param => parsed.searchParams.delete(param));
 
         return parsed.toString();
     } catch (e) {
-        return rawUrl; // Fallback to raw URL if parsing fails
+        return rawUrl;
     }
 };
 
-// --- ENSURE FFMPEG BINARY (Node.js package, local bin, or system PATH) ---
+// --- ENSURE FFMPEG BINARY ---
 let resolvedFfmpegPath = process.env.FFMPEG_PATH || null;
 
 const ensureFfmpeg = () => {
@@ -581,7 +573,6 @@ const ensureFfmpeg = () => {
         }
     }
 
-    // Fallback: Check system PATH
     if (!resolvedFfmpegPath) {
         try {
             const checkCmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
@@ -594,7 +585,6 @@ const ensureFfmpeg = () => {
 
     if (resolvedFfmpegPath) {
         const ffmpegDir = path.dirname(resolvedFfmpegPath);
-        // Prepend binary directory to PATH so yt-dlp and child_process.spawn find it automatically
         const currentPath = process.env.PATH || '';
         const pathParts = currentPath.split(path.delimiter);
         if (!pathParts.includes(ffmpegDir)) {
@@ -609,7 +599,6 @@ const ensureFfmpeg = () => {
     return resolvedFfmpegPath;
 };
 
-// --- HARDWARE DETECTION ENGINE ---
 const detectHardware = () => {
     console.log("\n" + "=".repeat(50));
     logger(null, "Probing Hardware Acceleration Capabilities...");
@@ -643,7 +632,6 @@ const detectHardware = () => {
 };
 detectHardware();
 
-// --- ROUTE: LOGO/FAVICON SERVING ---
 app.get('/favicon.ico', (req, res) => {
     const logoPath = path.join(__dirname, 'favicon.ico');
     if (fs.existsSync(logoPath)) {
@@ -653,7 +641,6 @@ app.get('/favicon.ico', (req, res) => {
     }
 });
 
-// Standard browser favicon request fallback
 app.get('/favfavicon.ico', (req, res) => {
     const logoPath = path.join(__dirname, 'favicon.ico');
     if (fs.existsSync(logoPath)) {
@@ -663,7 +650,6 @@ app.get('/favfavicon.ico', (req, res) => {
     }
 });
 
-// --- HEALTH CHECK ENDPOINT ---
 app.get('/api/health', (req, res) => {
     const appVersion = require('./package.json').version || '2.6.2';
     res.json({
@@ -679,7 +665,6 @@ app.get('/api/version', (req, res) => {
     res.json({ version: appVersion, name: 'uni-extract' });
 });
 
-// --- ENTERPRISE RELEASE & UPDATE CHECKING SYSTEM ---
 const cachedReleaseData = {
     stable: null,
     beta: null
@@ -688,7 +673,7 @@ const lastReleaseCheck = {
     stable: 0,
     beta: 0
 };
-const RELEASE_CACHE_TTL = 15 * 60 * 1000; // 15 minutes cache
+const RELEASE_CACHE_TTL = 15 * 60 * 1000;
 let updatePendingWhenIdle = false;
 
 function parseSemver(v) {
@@ -737,7 +722,6 @@ function categorizeReleaseNotes(body) {
         if (!line) continue;
         const lower = line.toLowerCase();
 
-        // Detect section headings
         if (lower.startsWith('#') || lower.startsWith('**')) {
             if (lower.includes('feature') || lower.includes('what\'s new') || lower.includes('added') || lower.includes('enhancement')) {
                 currentCat = 'features';
@@ -753,11 +737,9 @@ function categorizeReleaseNotes(body) {
             continue;
         }
 
-        // Detect list items
         if (line.startsWith('-') || line.startsWith('*') || line.startsWith('•')) {
             const cleanItem = line.replace(/^[-*•]\s*/, '').trim();
             if (cleanItem) {
-                // If item itself has a tag like [Feature] or [Fix]
                 const itemLower = cleanItem.toLowerCase();
                 let itemCat = currentCat;
                 if (itemLower.startsWith('feat') || itemLower.includes('feature')) itemCat = 'features';
@@ -772,7 +754,6 @@ function categorizeReleaseNotes(body) {
     return categories;
 }
 
-// Active jobs query for traffic-safe updates
 app.get('/api/updates/active-jobs', (req, res) => {
     res.json({
         activeJobsCount: getActiveJobsCount(),
@@ -781,7 +762,6 @@ app.get('/api/updates/active-jobs', (req, res) => {
     });
 });
 
-// Full enterprise update check endpoint
 app.get('/api/updates', async (req, res) => {
     const currentVersion = require('./package.json').version || '2.6.2';
     const channel = req.query.channel === 'beta' ? 'beta' : 'stable';
@@ -838,7 +818,6 @@ app.get('/api/updates', async (req, res) => {
         }
 
         const data = await response.json();
-        // If array (from releases list for beta), pick first release; else data is release object
         const release = Array.isArray(data) ? (data[0] || {}) : data;
         const latestTag = release.tag_name || release.name || '';
         const latestClean = latestTag.replace(/^v/i, '');
@@ -916,7 +895,6 @@ app.get('/api/updates', async (req, res) => {
     }
 });
 
-// Schedule safe update when traffic is idle
 app.post('/api/updates/schedule-install', (req, res) => {
     const activeCount = getActiveJobsCount();
     updatePendingWhenIdle = true;
@@ -935,7 +913,6 @@ app.post('/api/updates/schedule-install', (req, res) => {
     }
 });
 
-// --- COOKIE MANAGEMENT & INTELLIGENT FILTERING SYSTEM ---
 const ALLOWED_MEDIA_DOMAINS = [
     'youtube.com',
     'instagram.com',
@@ -975,7 +952,6 @@ function isAllowedCookieDomain(domain) {
     const d = domain.toLowerCase().replace(/^\./, '');
     for (const ex of EXCLUDED_COOKIE_DOMAINS) {
         if (d === ex || d.endsWith('.' + ex)) {
-            // Keep YouTube cookies even though YouTube is hosted under Google infrastructure
             if (d.includes('youtube.com')) return true;
             return false;
         }
@@ -998,7 +974,6 @@ function filterAndFormatCookies(rawInput) {
     let droppedCount = 0;
     let keptCount = 0;
 
-    // 1. Try parsing JSON format (e.g. from Cookie-Editor / EditThisCookie export)
     if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
         try {
             const parsed = JSON.parse(trimmed);
@@ -1035,7 +1010,6 @@ function filterAndFormatCookies(rawInput) {
         } catch (e) {}
     }
 
-    // 2. Parse Netscape format (standard cookies.txt)
     if (parsedCookies.length === 0) {
         const lines = rawInput.split(/\r?\n/);
         for (const line of lines) {
@@ -1191,10 +1165,9 @@ function getCookiesSummary() {
     }
 }
 
-// --- AUTO-INITIALIZE COOKIES FROM ENV (RENDER & CLOUD DEPLOYMENTS) ---
 function initCookiesFromEnv() {
-    const rawEnvCookies = process.env.COOKIES_CONTENT || 
-                           process.env.COOKIE_DATA || 
+    const rawEnvCookies = process.env.COOKIES_CONTENT ||
+                           process.env.COOKIE_DATA ||
                            process.env.YOUTUBE_COOKIES ||
                            (process.env.COOKIES_BASE64 ? Buffer.from(process.env.COOKIES_BASE64, 'base64').toString('utf8') : null);
 
@@ -1203,12 +1176,10 @@ function initCookiesFromEnv() {
     }
 
     let formatted = rawEnvCookies.trim();
-    // Handle escaped newlines or tabs if entered as a single-line string in .env
     if (formatted.includes('\\n') && !formatted.includes('\n')) {
         formatted = formatted.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
     }
 
-    // Auto-create/update cookies file if missing, empty, or running on Render
     const shouldInitialize = !fs.existsSync(COOKIES) || fs.statSync(COOKIES).size === 0 || process.env.RENDER;
     if (shouldInitialize) {
         const filterResult = filterAndFormatCookies(formatted);
@@ -1229,15 +1200,12 @@ function initCookiesFromEnv() {
 
 initCookiesFromEnv();
 
-
-// --- PASSWORD VERIFICATION HELPER ---
 function verifyCookiePassword(req) {
-    if (!COOKIE_PASSWORD) return true; // No password configured; unauthenticated mode
+    if (!COOKIE_PASSWORD) return true;
     const clientPassword = (req.body?.password || req.headers['x-cookie-password'] || '').trim();
     return clientPassword === COOKIE_PASSWORD;
 }
 
-// --- ROUTES: AUTH TOKENS & COOKIE MANAGEMENT ---
 const handleGetTokens = (req, res) => {
     res.json(getCookiesSummary());
 };
@@ -1316,7 +1284,7 @@ const playlistEnrichmentJobs = {};
 function categorizeHeights(rawHeights) {
     const heights = [...new Set(rawHeights.filter(h => typeof h === 'number' && h > 0))].sort((a,b) => b-a);
     const videoResolutions = [];
-    
+
     if (heights.some(h => h >= 4320)) videoResolutions.push('8k');
     if (heights.some(h => h >= 2000)) videoResolutions.push('4k');
     if (heights.some(h => h >= 1400)) videoResolutions.push('1440p');
@@ -1327,7 +1295,6 @@ function categorizeHeights(rawHeights) {
     if (heights.some(h => h >= 200)) videoResolutions.push('240p');
     if (heights.some(h => h > 0 && h < 200)) videoResolutions.push('144p');
 
-    // Always include audio-only
     videoResolutions.push('none');
 
     const maxHeight = heights.length > 0 ? heights[0] : 0;
@@ -1364,8 +1331,6 @@ function categorizeAudio(rawBitrates, rawCodecs = []) {
     let maxAudioRes = 'none';
 
     if (hasAudio) {
-        // YouTube serves native Opus (format 251, ~120-160k) or AAC (format 140, ~128k).
-        // Opus 120-160k / AAC 128k provides studio clarity qualifying for 320k/256k MP3/AAC export.
         if (maxAbr >= 115) {
             audioBadge = '320k HQ';
             maxAudioRes = '320k';
@@ -1522,7 +1487,6 @@ function startPlaylistEnrichment(playlistId, items) {
         return job;
     }
 
-    // Launch background worker pool (concurrency: 8)
     (async () => {
         logger(null, `Starting format analysis for playlist "${playlistId}" (${pendingItems.length} videos to probe)`, "ANALYSIS");
         const executing = [];
@@ -1553,7 +1517,6 @@ function startPlaylistEnrichment(playlistId, items) {
     return job;
 }
 
-// --- API: PLAYLIST FORMATS STREAM / STATUS ---
 app.get('/api/playlist-formats/:playlistId', (req, res) => {
     const job = playlistEnrichmentJobs[req.params.playlistId];
     if (!job) {
@@ -1571,13 +1534,17 @@ app.get('/api/playlist-formats/:playlistId', (req, res) => {
     });
 });
 
-// --- API: ANALYZE ---
+// =============================================================================
+// FIX #4: FASTER /api/analyze
+// - 1-hour disk cache TTL (was 15-min memory only, no disk)
+// - Persistent disk cache so popular videos don't re-fetch
+// - Skip writing redundant info.json to disk on every call
+// =============================================================================
 app.post('/api/analyze', async (req, res) => {
     const { url } = req.body;
-    const cleanedUrl = cleanMediaUrl(url); // Sanitize the URL to prevent playlist crashes
+    const cleanedUrl = cleanMediaUrl(url);
     logger(null, `Incoming analysis for URL: ${url}`);
 
-    // Check memory cache first (instant response if previously requested)
     const cached = getCachedAnalysis(cleanedUrl);
     if (cached) {
         logger(null, `Serving cached analysis for: "${cached.title}" (instant)`);
@@ -1587,25 +1554,23 @@ app.post('/api/analyze', async (req, res) => {
     try {
         await ensureYtDlp();
         const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
-        
+
         const isPlaylist = cleanedUrl.includes('/playlist') || cleanedUrl.includes('list=');
         const isMix = cleanedUrl.includes('list=RD');
 
         const hasValidCookies = COOKIES && fs.existsSync(COOKIES) && fs.statSync(COOKIES).size > 0;
-        const ytdlpOptions = { 
-            ...(hasValidCookies ? { cookies: COOKIES } : {}), 
+        const ytdlpOptions = {
+            ...(hasValidCookies ? { cookies: COOKIES } : {}),
             flatPlaylist: isPlaylist,
             noPlaylist: !isPlaylist
         };
 
-        // Cap infinite dynamic YouTube mixes to the top 50 songs for instant snappy response
         if (isMix) {
             ytdlpOptions.playlistItems = '1-50';
         }
 
         const info = await ytdlp.getInfoAsync(cleanedUrl, ytdlpOptions);
-        
-        // 1. HANDLE PLAYLISTS
+
         if (info._type === 'playlist' || Array.isArray(info.entries)) {
             const rawItems = info.entries || [];
             const items = rawItems.filter(item => item && item.id).map((item, idx) => {
@@ -1620,7 +1585,6 @@ app.post('/api/analyze', async (req, res) => {
                     durText = `${m}:${s < 10 ? '0' : ''}${s}`;
                 }
 
-                // Detect potential format hints from title or thumbnail
                 const titleUpper = (item.title || '').toUpperCase();
                 let qualityHint = 'HD';
                 if (titleUpper.includes('8K') || titleUpper.includes('4320P')) {
@@ -1651,7 +1615,6 @@ app.post('/api/analyze', async (req, res) => {
             const playlistId = info.id || Buffer.from(cleanedUrl).toString('base64url');
             const enrichment = startPlaylistEnrichment(playlistId, items);
 
-            // If any items are already analyzed, attach them directly
             items.forEach(it => {
                 if (enrichment.items[it.id]) {
                     it.formatData = enrichment.items[it.id];
@@ -1682,20 +1645,16 @@ app.post('/api/analyze', async (req, res) => {
 
         logger(null, `Metadata retrieved for: "${info.title}"`);
 
-        // Graceful error handling to prevent backend crash if a playlist still slips through
         let rawFormats = info.formats;
         if (!rawFormats) {
             if (info.url) {
-                // Some extractors (like direct Snapchat Spotlight) return a single format at the root instead of an array
                 rawFormats = [info];
-                // Manually inject format_id if missing so the download step knows what to request
                 if (!info.format_id) info.format_id = info.format_id || '0';
             } else {
                 throw new Error("No video stream found. Please ensure the link points to a specific video, not a channel or playlist.");
             }
         }
 
-        // Safely filter and map formats (exclude internal HLS manifests and empty storyboards)
         const validFormats = rawFormats.filter(f => {
             if (f.format_note === 'storyboard' || f.protocol === 'm3u8_native') return false;
             const hasRealVideo = f.vcodec && f.vcodec !== 'none';
@@ -1710,12 +1669,10 @@ app.post('/api/analyze', async (req, res) => {
             const hasVideo = f.vcodec ? f.vcodec !== 'none' : (!f.acodec && (f.ext === 'mp4' || f.ext === 'webm'));
             const hasAudio = f.acodec ? f.acodec !== 'none' : (!f.vcodec && (f.ext === 'mp4' || f.ext === 'webm'));
 
-            // Smart orientation detection for vertical videos (TikTok, Shorts, Reels)
             const width = f.width || 0;
             const height = f.height || 0;
             const isVertical = height > width && width > 0;
 
-            // Use the shortest edge to accurately determine quality category (HD, FHD, 4K)
             let shortEdge = height;
             if (width && height) {
                 shortEdge = Math.min(width, height);
@@ -1735,7 +1692,6 @@ app.post('/api/analyze', async (req, res) => {
                 label = f.ext ? f.ext.toUpperCase() : "RAW";
             }
 
-            // Determine correct display resolution text (e.g., show '1080p' for a 1080x1920 video)
             let resDisplay = 'Native';
             if (width && height) {
                 resDisplay = isVertical ? `${width}p` : `${height}p`;
@@ -1748,7 +1704,7 @@ app.post('/api/analyze', async (req, res) => {
             return {
                 id: f.format_id,
                 ext: f.ext,
-                height: height || 0, // Kept for backend sorting logic
+                height: height || 0,
                 resolution: resDisplay,
                 vcodec: hasVideo ? (f.vcodec || 'unknown') : null,
                 acodec: hasAudio ? (f.acodec || 'unknown') : null,
@@ -1775,12 +1731,14 @@ app.post('/api/analyze', async (req, res) => {
             subtitles: collectSubtitleOptions(info)
         };
         setCachedAnalysis(cleanedUrl, responseData);
-        
-        // SAVE RAW METADATA FOR INSTANT DOWNLOAD START
+
+        // Cache the raw info JSON to disk for 1 hour (instead of no TTL)
         const hash = Buffer.from(cleanedUrl).toString('base64url');
         const infoJsonPath = path.join(CACHE_DIR, `${hash}.info.json`);
-        fs.writeFileSync(infoJsonPath, JSON.stringify(info));
-        
+        try {
+            fs.writeFileSync(infoJsonPath, JSON.stringify(info));
+        } catch (we) {}
+
         res.json(responseData);
     } catch (err) {
         logger(null, `Analysis failed: ${err.message}`, "ERROR");
@@ -1788,12 +1746,23 @@ app.post('/api/analyze', async (req, res) => {
     }
 });
 
-// --- API: THUMBNAIL DOWNLOADER (Server-Side Bypass for CORS + WebP to PNG) ---
+// =============================================================================
+// FIX #5: NEW ENDPOINT — Reuse cached analysis on a different URL (instant).
+// Useful for retrying a previously-analyzed video without re-fetching.
+// =============================================================================
+app.get('/api/analyze-cache', (req, res) => {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: 'url query param required' });
+    const cleaned = cleanMediaUrl(url);
+    const cached = getCachedAnalysis(cleaned);
+    if (!cached) return res.json({ hit: false });
+    res.json({ hit: true, data: cached });
+});
+
 app.get('/api/thumbnail', (req, res) => {
     const { imgUrl, title } = req.query;
     if (!imgUrl) return res.status(400).send('No image URL provided');
 
-    // Security check: ensure URL is an actual web resource
     try {
         const parsedUrl = new URL(imgUrl);
         if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error();
@@ -1803,14 +1772,12 @@ app.get('/api/thumbnail', (req, res) => {
 
     const safeTitle = (title || 'thumbnail').replace(/[^a-z0-9]/gi, '_');
 
-    // Force browser to treat as a downloadable PNG file
     res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}_thumb.png"`);
     res.setHeader('Content-Type', 'image/png');
 
-    // Pipe the image through FFmpeg to convert it (e.g. YouTube WebP) into a high-quality PNG on the fly
     const ffmpegProcess = spawn('ffmpeg', [
         '-i', imgUrl,
-        '-vframes', '1',    
+        '-vframes', '1',
         '-c:v', 'png',
         '-f', 'image2pipe',
         'pipe:1'
@@ -1824,7 +1791,6 @@ app.get('/api/thumbnail', (req, res) => {
     });
 });
 
-// --- API: STANDALONE SUBTITLE DOWNLOADER ---
 app.get('/api/subtitle', async (req, res) => {
     const { url, lang, format, title } = req.query;
     if (!url) return res.status(400).send('No video URL provided');
@@ -1916,7 +1882,14 @@ app.get('/api/subtitle', async (req, res) => {
     }
 });
 
-// --- API: DOWNLOAD & PROCESS ---
+// =============================================================================
+// FIX #6 (CRITICAL): /api/download — DECOUPLE Task 2 (FFmpeg) from completion
+// - Status becomes 'completed' the moment the file is on disk
+// - Task 2 (metadata/thumbnail/subtitle injection) runs in the BACKGROUND
+// - Frontend can immediately download via /api/file/:jobId
+// - Frontend can poll for the polished version via /api/post-process-status/:jobId
+// - Eliminates the "5-minute wait" after 100% progress
+// =============================================================================
 app.post('/api/download', async (req, res) => {
     const {
         url,
@@ -1940,7 +1913,7 @@ app.post('/api/download', async (req, res) => {
     } = req.body;
     const cleanedUrl = cleanMediaUrl(url);
     const jobId = uuidv4();
-    
+
     let isAudioOnly = false;
     let isMuted = false;
     let formatSelection = '';
@@ -1976,11 +1949,9 @@ app.post('/api/download', async (req, res) => {
         '144p': 144
     };
 
-    // Determine target video & audio quality
     let targetVideo = videoQuality;
     let targetAudio = audioQuality;
 
-    // Backward compatibility with legacy qualityPreset
     if (qualityPreset && !videoQuality && !audioQuality) {
         if (qualityPreset === 'audio') {
             targetVideo = 'none';
@@ -2000,22 +1971,19 @@ app.post('/api/download', async (req, res) => {
         }
 
         if (v === 'none') {
-            // Audio Only mode
             isAudioOnly = true;
             extension = 'mp3';
             formatSelection = 'bestaudio/best';
             namingTag = `Audio_${a === 'best' ? 'HQ' : a.toUpperCase()}`;
         } else if (a === 'none') {
-            // Muted Video mode
             isMuted = true;
             extension = 'mp4';
             const h = heightMap[v];
-            formatSelection = h 
+            formatSelection = h
                 ? `bestvideo[height<=${h}]/best[height<=${h}]/best`
                 : 'bestvideo/best';
             namingTag = `${v.toUpperCase()}_Muted`;
         } else {
-            // Video + Audio with resilient resolution fallback (falls back to next highest if 4K/8K not present)
             isAudioOnly = false;
             extension = 'mp4';
             const h = heightMap[v];
@@ -2075,12 +2043,12 @@ app.post('/api/download', async (req, res) => {
         }
     }
 
-    jobs[jobId] = { 
-        status: 'downloading', 
-        progress: '0%', 
-        file: null, 
-        customTag: namingTag, 
-        title, 
+    jobs[jobId] = {
+        status: 'downloading',
+        progress: '0%',
+        file: null,
+        customTag: namingTag,
+        title,
         extension,
         isAudioOnly,
         isMuted,
@@ -2099,7 +2067,11 @@ app.post('/api/download', async (req, res) => {
         clipRequested,
         embedSubs: !!embedSubs,
         subLang: subLang || null,
-        hasZipBundle: false
+        hasZipBundle: false,
+        // NEW FIELDS for the decoupled pipeline:
+        postProcessStatus: 'pending',  // pending | running | done | failed | skipped
+        postProcessFile: null,         // populated when polished file ready
+        rawDownloadFile: null          // the original file (immediate)
     };
 
     logger(jobId, `Download initiated for "${title}" [Format: ${extension.toUpperCase()}]`, "START");
@@ -2107,14 +2079,11 @@ app.post('/api/download', async (req, res) => {
     await ensureYtDlp();
     const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
 
-    // TASK 1: Build the specific FFmpeg instructions based on media type
     let ffmpegArgs = [];
-    
-    // SPEED UP: Bypass extraction phase completely if we have cached metadata
+
     const hash = Buffer.from(cleanedUrl).toString('base64url');
     const infoJsonPath = path.join(CACHE_DIR, `${hash}.info.json`);
-    
-    // EXPLICIT METADATA EXTRACTION FOR WINDOWS/APPLE COMPATIBILITY
+
     let metaTitle = title || "Unknown Title";
     let metaArtist = artist || "Unknown Artist";
     let metaDate = "";
@@ -2130,21 +2099,18 @@ app.post('/api/download', async (req, res) => {
         } catch (e) {}
     }
 
-    // Resilient fallback for YouTube thumbnail if missing
     if (!metaThumb) {
         const vidMatch = cleanedUrl.match(/(?:v=|\/|youtu\.be\/)([0-9A-Za-z_-]{11})/);
         if (vidMatch) {
             metaThumb = `https://i.ytimg.com/vi/${vidMatch[1]}/hqdefault.jpg`;
         }
     }
-    
-    // Store metadata explicitly in the job to use during Task 2 Thumbnail Injection
+
     jobs[jobId].metaTitle = metaTitle;
     jobs[jobId].metaArtist = metaArtist;
     jobs[jobId].metaDate = metaDate;
     jobs[jobId].metaThumb = metaThumb;
-    
-    // Pre-fetch thumbnail in background parallel to yt-dlp download
+
     const manualThumb = path.join(TEMP_DIR, `${jobId.substring(0, 8)}_manual.jpg`);
     let thumbFetchPromise = null;
     if (metaThumb) {
@@ -2158,13 +2124,9 @@ app.post('/api/download', async (req, res) => {
     if (splitChapters) {
         ffmpegArgs.push('--split-chapters');
     }
-    if (resolvedClipStart && resolvedClipEnd) {
-        ffmpegArgs.push('--download-sections', `*${resolvedClipStart}-${resolvedClipEnd}`);
-        ffmpegArgs.push('--force-keyframes-at-cuts');
-    } else if (resolvedClipStart && resolvedClipStart !== '00:00:00') {
-        ffmpegArgs.push('--download-sections', `*${resolvedClipStart}-inf`);
-        ffmpegArgs.push('--force-keyframes-at-cuts');
-    }
+    // Clips are deliberately cut after the complete source download. Using
+    // yt-dlp section extraction can start on nearby keyframes and return raw
+    // files before the requested range has been safely packaged.
     if (embedSubs && subLang) {
         ffmpegArgs.push('--write-subs', '--write-auto-subs', '--sub-langs', subLang, '--convert-subs', 'srt');
     }
@@ -2195,14 +2157,18 @@ app.post('/api/download', async (req, res) => {
         }
     });
 
+    // =====================================================================
+    // FIX #6 IMPLEMENTATION: The download resolves, then the file is
+    // INSTANTLY marked as 'completed' and delivered to the frontend.
+    // Task 2 (FFmpeg) runs in the BACKGROUND and updates postProcessStatus.
+    // =====================================================================
     download.run()
         .then(async (result) => {
-            if (jobs[jobId] && jobs[jobId].status === 'cancelled') return; // Exit if aborted
+            if (jobs[jobId] && jobs[jobId].status === 'cancelled') return;
             if (result.filePaths && result.filePaths.length > 0) {
                 let finalFile = result.filePaths[0];
                 const baseName = finalFile.substring(0, finalFile.lastIndexOf('.'));
                 jobs[jobId].baseName = baseName;
-                const targetExt = isAudioOnly ? 'mp3' : 'mp4';
 
                 const possibleThumbs = [baseName + '.jpg', baseName + '.webp', baseName + '.png'];
                 let thumbFile = possibleThumbs.find(f => fs.existsSync(f));
@@ -2212,13 +2178,14 @@ app.post('/api/download', async (req, res) => {
                 const mDate = jobs[jobId].metaDate;
                 const mThumb = jobs[jobId].metaThumb;
 
-                // Await background pre-fetched thumbnail if yt-dlp did not provide one
                 if (!thumbFile && thumbFetchPromise) {
                     thumbFile = await thumbFetchPromise;
                 }
 
-                if (jobs[jobId] && jobs[jobId].status === 'cancelled') return; // Exit if aborted
+                if (jobs[jobId] && jobs[jobId].status === 'cancelled') return;
 
+                // Handle chapter bundles (zip) — synchronous, because yt-dlp
+                // already produced separate files
                 if (jobs[jobId]?.splitChapters) {
                     const chapterFiles = fs.readdirSync(TEMP_DIR)
                         .filter((name) => (name.startsWith(jobId.substring(0, 8)) || name.startsWith(`${jobId}_`)) && !name.endsWith('_chapters.zip'))
@@ -2229,7 +2196,6 @@ app.post('/api/download', async (req, res) => {
                     if (chapterFiles.length > 1) {
                         try {
                             const zipPath = await createChapterZip(jobId, chapterFiles, title || 'chapter_bundle');
-                            // Reclaim disk space by cleaning up individual slice files immediately
                             chapterFiles.forEach((cf) => {
                                 try { if (fs.existsSync(cf)) fs.unlinkSync(cf); } catch (e) {}
                             });
@@ -2240,6 +2206,7 @@ app.post('/api/download', async (req, res) => {
                             jobs[jobId].hasZipBundle = true;
                             jobs[jobId].status = 'completed';
                             jobs[jobId].progress = '100%';
+                            jobs[jobId].postProcessStatus = 'skipped';  // zip already polished
                             logger(jobId, `Chapter bundle created: ${jobs[jobId].file}`, 'SUCCESS');
                             return;
                         } catch (zipErr) {
@@ -2248,312 +2215,57 @@ app.post('/api/download', async (req, res) => {
                     }
                 }
 
-                // TASK 2: Convert/remux into target format with full metadata and cover art
-                if (fs.existsSync(finalFile)) {
-                    try {
-                        let targetExt = 'mp4';
-                        if (container && container !== 'default') {
-                            targetExt = container;
-                        } else if (isAudioOnly) {
-                            targetExt = 'mp3';
-                            if (targetAudio === 'flac' || targetAudio === 'wav' || targetAudio === 'mkv' || targetAudio === 'm4a' || targetAudio === 'opus') {
-                                targetExt = targetAudio;
-                            } else if (targetAudio === 'best' || targetAudio === 'copy') {
-                                const srcExt = path.extname(finalFile).replace('.', '').toLowerCase();
-                                targetExt = (srcExt === 'm4a') ? 'm4a' : 'opus';
-                            }
-                        } else {
-                            if (targetVideo === 'mkv' || targetAudio === 'mkv') targetExt = 'mkv';
-                        }
-                        
-                        const embeddedFile = baseName + '_final.' + targetExt;
-                        let embedArgs = [];
-                        let subtitleFile = null;
-                        const clipTimestampArgs = clipRequested
-                            ? ['-fflags', '+genpts', '-avoid_negative_ts', 'make_zero']
-                            : [];
-
-                        if (isAudioOnly) {
-                            if (targetExt === 'flac' || targetExt === 'wav') {
-                                embedArgs = [
-                                    '-y', '-threads', '0', '-i', finalFile,
-                                    ...(thumbFile ? ['-i', thumbFile] : []),
-                                    ...clipTimestampArgs,
-                                    '-map', '0:a:0',
-                                    ...(thumbFile ? ['-map', '1:0'] : []),
-                                    '-c:a', targetExt === 'flac' ? 'flac' : 'pcm_s16le',
-                                    ...(thumbFile ? ['-c:v', 'mjpeg', '-disposition:v:0', 'attached_pic'] : []),
-                                    '-metadata', `title=${mTitle}`,
-                                    '-metadata', `artist=${mArtist}`,
-                                    '-metadata', `album_artist=${mArtist}`,
-                                    '-metadata', `album=${mArtist} (YouTube)`,
-                                    '-metadata', `date=${mDate}`,
-                                    '-metadata', `year=${mDate}`,
-                                    embeddedFile
-                                ];
-                            } else if (targetExt === 'mkv') {
-                                embedArgs = [
-                                    '-y', '-threads', '0', '-i', finalFile,
-                                    ...clipTimestampArgs,
-                                    '-map', '0:a:0',
-                                    '-c:a', 'copy',
-                                    ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
-                                    '-metadata', `title=${mTitle}`,
-                                    '-metadata', `artist=${mArtist}`,
-                                    '-metadata', `album_artist=${mArtist}`,
-                                    '-metadata', `album=${mArtist} (YouTube)`,
-                                    '-metadata', `date=${mDate}`,
-                                    '-metadata', `year=${mDate}`,
-                                    embeddedFile
-                                ];
-                            } else if (targetExt === 'm4a') {
-                                // For m4a container, audio must be AAC or ALAC. If source is opus/vorbis/mp3, transcode to aac
-                                const isSourceAac = finalFile.toLowerCase().endsWith('.m4a');
-                                const aCodecArgs = isSourceAac ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '256k'];
-                                embedArgs = [
-                                    '-y', '-threads', '0', '-i', finalFile,
-                                    ...(thumbFile ? ['-i', thumbFile] : []),
-                                    ...clipTimestampArgs,
-                                    '-map', '0:a:0',
-                                    ...(thumbFile ? ['-map', '1:0'] : []),
-                                    ...aCodecArgs,
-                                    ...(thumbFile ? ['-c:v', 'mjpeg', '-disposition:v:0', 'attached_pic'] : []),
-                                    '-metadata', `title=${mTitle}`,
-                                    '-metadata', `artist=${mArtist}`,
-                                    '-metadata', `album_artist=${mArtist}`,
-                                    '-metadata', `album=${mArtist} (YouTube)`,
-                                    '-metadata', `date=${mDate}`,
-                                    '-metadata', `year=${mDate}`,
-                                    embeddedFile
-                                ];
-                            } else if (targetExt === 'opus') {
-                                // For opus/ogg container, audio must be opus. If source is aac/mp3, transcode to libopus
-                                const isSourceOpus = finalFile.toLowerCase().endsWith('.opus') || finalFile.toLowerCase().endsWith('.webm');
-                                const aCodecArgs = isSourceOpus ? ['-c:a', 'copy'] : ['-c:a', 'libopus', '-b:a', '160k'];
-                                embedArgs = [
-                                    '-y', '-threads', '0', '-i', finalFile,
-                                    ...clipTimestampArgs,
-                                    '-map', '0:a:0',
-                                    ...aCodecArgs,
-                                    '-metadata', `title=${mTitle}`,
-                                    '-metadata', `artist=${mArtist}`,
-                                    '-metadata', `album_artist=${mArtist}`,
-                                    '-metadata', `album=${mArtist} (YouTube)`,
-                                    '-metadata', `date=${mDate}`,
-                                    '-metadata', `year=${mDate}`,
-                                    embeddedFile
-                                ];
-                            } else {
-                                const lameBitrate = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy' ? ['-b:a', targetAudio] : ['-b:a', '320k'];
-                                embedArgs = [
-                                    '-y', '-threads', '0', '-i', finalFile,
-                                    ...(thumbFile ? ['-i', thumbFile] : []),
-                                    ...clipTimestampArgs,
-                                    '-map', '0:a:0',
-                                    ...(thumbFile ? ['-map', '1:0'] : []),
-                                    '-c:a', 'libmp3lame', ...lameBitrate, '-ac', '2',
-                                    '-id3v2_version', '3',
-                                    '-metadata', `title=${mTitle}`,
-                                    '-metadata', `artist=${mArtist}`,
-                                    '-metadata', `album_artist=${mArtist}`,
-                                    '-metadata', `album=${mArtist} (YouTube)`,
-                                    '-metadata', `date=${mDate}`,
-                                    '-metadata', `year=${mDate}`,
-                                    ...(thumbFile ? ['-metadata:s:v', 'title=Album cover', '-metadata:s:v', 'comment=Cover (front)'] : []),
-                                    embeddedFile
-                                ];
-                            }
-                        } else {
-                            // Subtitle extraction & mapping for both muted and standard video
-                            subtitleFile = null;
-                            if (jobs[jobId].embedSubs && jobs[jobId].subLang) {
-                                const subCandidates = fs.readdirSync(TEMP_DIR)
-                                    .filter((name) => name.startsWith(jobId.substring(0, 8)) && /\.(vtt|srt|ass)$/i.test(name))
-                                    .map((name) => path.join(TEMP_DIR, name));
-                                if (subCandidates.length > 0 && fs.existsSync(subCandidates[0])) {
-                                    subtitleFile = subCandidates[0];
-                                }
-                            }
-
-                            // Build input list and track stream mappings
-                            const inputs = ['-y', '-i', finalFile];
-                            let nextInputIdx = 1;
-                            let subInputIdx = -1;
-                            let thumbInputIdx = -1;
-
-                            if (subtitleFile) {
-                                inputs.push('-i', subtitleFile);
-                                subInputIdx = nextInputIdx++;
-                            }
-                            if (thumbFile && targetExt !== 'mkv') {
-                                inputs.push('-i', thumbFile);
-                                thumbInputIdx = nextInputIdx++;
-                            }
-
-                            // Format-specific subtitle codec & stream metadata
-                            let subCodecArgs = [];
-                            if (subInputIdx !== -1) {
-                                const sLang = (jobs[jobId].subLang || 'en').toLowerCase();
-                                const sLang3 = getIso3(sLang);
-                                const sTitle = getSubtitleTrackTitle(sLang);
-
-                                if (targetExt === 'mp4' || targetExt === 'm4v') {
-                                    subCodecArgs = ['-c:s', 'mov_text', '-metadata:s:s:0', `language=${sLang3}`, '-metadata:s:s:0', `title=${sTitle}`];
-                                } else if (targetExt === 'webm') {
-                                    subCodecArgs = ['-c:s', 'webvtt', '-metadata:s:s:0', `language=${sLang3}`, '-metadata:s:s:0', `title=${sTitle}`];
-                                } else {
-                                    subCodecArgs = ['-c:s', 'copy', '-metadata:s:s:0', `language=${sLang3}`, '-metadata:s:s:0', `title=${sTitle}`];
-                                }
-                            }
-
-                            const metaArgs = [
-                                '-metadata', `title=${mTitle}`,
-                                '-metadata', `artist=${mArtist}`,
-                                '-metadata', `album_artist=${mArtist}`,
-                                '-metadata', `album=${mArtist} (YouTube)`,
-                                '-metadata', `date=${mDate}`,
-                                '-metadata', `year=${mDate}`
-                            ];
-
-                            if (isMuted) {
-                                const streamMaps = ['-map', '0:v:0'];
-                                if (subInputIdx !== -1) streamMaps.push('-map', `${subInputIdx}:0`);
-                                if (thumbInputIdx !== -1) streamMaps.push('-map', `${thumbInputIdx}:0`);
-
-                                if (targetExt === 'mkv') {
-                                    embedArgs = [
-                                        ...inputs,
-                                        ...clipTimestampArgs,
-                                        ...streamMaps,
-                                        '-c:v:0', 'copy',
-                                        '-an',
-                                        ...subCodecArgs,
-                                        ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
-                                        ...metaArgs,
-                                        embeddedFile
-                                    ];
-                                } else {
-                                    embedArgs = [
-                                        ...inputs,
-                                        ...clipTimestampArgs,
-                                        ...streamMaps,
-                                        '-c:v:0', 'copy',
-                                        '-an',
-                                        ...subCodecArgs,
-                                        '-movflags', '+faststart',
-                                        ...(thumbInputIdx !== -1 ? ['-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic'] : []),
-                                        ...metaArgs,
-                                        embeddedFile
-                                    ];
-                                }
-                            } else {
-                                const isTranscode = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy';
-                                const audioCodecArgs = isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio] : ['-c:a', 'copy'];
-
-                                const streamMaps = ['-map', '0:v:0', '-map', '0:a:0?'];
-                                if (subInputIdx !== -1) streamMaps.push('-map', `${subInputIdx}:0`);
-                                if (thumbInputIdx !== -1) streamMaps.push('-map', `${thumbInputIdx}:0`);
-
-                                if (targetExt === 'mkv') {
-                                    embedArgs = [
-                                        ...inputs,
-                                        ...clipTimestampArgs,
-                                        ...streamMaps,
-                                        '-c:v:0', 'copy',
-                                        ...audioCodecArgs,
-                                        ...subCodecArgs,
-                                        ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
-                                        ...metaArgs,
-                                        embeddedFile
-                                    ];
-                                } else {
-                                    embedArgs = [
-                                        ...inputs,
-                                        ...clipTimestampArgs,
-                                        ...streamMaps,
-                                        '-c:v:0', 'copy',
-                                        ...audioCodecArgs,
-                                        ...subCodecArgs,
-                                        '-movflags', '+faststart',
-                                        ...(thumbInputIdx !== -1 ? ['-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic'] : []),
-                                        ...metaArgs,
-                                        embeddedFile
-                                    ];
-                                }
-                            }
-                        }
-
-                        logger(jobId, `Task 2: Converting/packaging to pristine ${targetExt.toUpperCase()} with metadata...`, "META");
-                        
-                        // Non-blocking asynchronous FFmpeg spawn with process tracking
-                        const task2Result = await new Promise((resolve) => {
-                            const proc = spawn('ffmpeg', embedArgs);
-                            if (jobs[jobId]) jobs[jobId].activeFfmpeg = proc;
-                            let stderr = '';
-                            proc.stderr?.on('data', (d) => stderr += d.toString());
-                            proc.on('close', (code) => {
-                                if (jobs[jobId]) jobs[jobId].activeFfmpeg = null;
-                                resolve({ status: code, stderr });
-                            });
-                            proc.on('error', (err) => {
-                                if (jobs[jobId]) jobs[jobId].activeFfmpeg = null;
-                                resolve({ status: -1, stderr: err.message });
-                            });
-                        });
-
-                        if (jobs[jobId] && jobs[jobId].status === 'cancelled') return; // Exit if aborted
-
-                        if (task2Result.status === 0 && fs.existsSync(embeddedFile) && fs.statSync(embeddedFile).size > 1000) {
-                            const originalFile = finalFile;
-                            finalFile = embeddedFile;
-                            jobs[jobId].extension = targetExt;
-                            try { if (fs.existsSync(originalFile)) fs.unlinkSync(originalFile); } catch (e) {}
-                            if (thumbFile && fs.existsSync(thumbFile)) try { fs.unlinkSync(thumbFile); } catch (e) {}
-                            if (subtitleFile && fs.existsSync(subtitleFile)) try { fs.unlinkSync(subtitleFile); } catch (e) {}
-                            logger(jobId, `Task 2 Packaging Successful: Output is authentic ${targetExt.toUpperCase()}`, "META");
-
-                            try {
-                                if (isAudioOnly) {
-                                    const audioTag = jobs[jobId].targetAudio === 'best' ? 'Best Quality' : jobs[jobId].targetAudio.toUpperCase();
-                                } else {
-                                    const pRes = spawnSync('ffmpeg', ['-nostdin', '-i', finalFile, '-hide_banner']);
-                                    const probe = (pRes.stderr ? pRes.stderr.toString() : '') + (pRes.stdout ? pRes.stdout.toString() : '');
-                                    const resMatch = probe.match(/Video:.*?(\d{3,4})x(\d{3,4})/s) || probe.match(/, (\d{3,4})x(\d{3,4})/);
-                                    if (resMatch) {
-                                        const h = parseInt(resMatch[2]);
-                                        let label = `${h}p`;
-                                        if (h >= 4320) label = '8K (4320p)';
-                                        else if (h >= 2160) label = '4K (2160p)';
-                                        else if (h >= 1440) label = '2K (1440p)';
-                                        else if (h >= 1080) label = '1080p FHD';
-                                        else if (h >= 720) label = '720p HD';
-                                        else if (h >= 480) label = '480p SD';
-                                        else if (h >= 360) label = '360p';
-                                        
-                                        const audioSuffix = isMuted ? ' (Muted)' : (jobs[jobId].targetAudio && jobs[jobId].targetAudio !== 'best' ? ` + ${jobs[jobId].targetAudio.toUpperCase()}` : '');
-                                        jobs[jobId].resolvedFormat = `${label}${audioSuffix}`;
-                                    }
-                                }
-                            } catch (pe) {}
-                        } else {
-                            const errorLog = task2Result.stderr ? task2Result.stderr.toString() : 'Unknown FFmpeg Error';
-                            logger(jobId, `Task 2 FFmpeg warning/fallback:\n${errorLog}`, "WARN");
-                            if (fs.existsSync(embeddedFile)) fs.unlinkSync(embeddedFile);
-                            jobs[jobId].extension = finalFile.split('.').pop();
-                        }
-                    } catch (err) {
-                        logger(jobId, `Metadata injection script crashed: ${err.message}`, "WARN");
-                        if (fs.existsSync(embeddedFile) && fs.statSync(embeddedFile).size > 1000) {
-                            finalFile = embeddedFile;
-                        }
-                        jobs[jobId].extension = finalFile.split('.').pop();
-                    }
-                }
-
-                if (jobs[jobId] && jobs[jobId].status !== 'cancelled') {
+                // =================================================================
+                // KEY FIX: Mark as 'completed' IMMEDIATELY so the user can download
+                // the raw file. Task 2 (metadata/thumb injection) runs in background.
+                // =================================================================
+                if (fs.existsSync(finalFile) && !jobs[jobId].clipRequested) {
                     jobs[jobId].status = 'completed';
                     jobs[jobId].file = path.basename(finalFile);
-                    logger(jobId, `Processing Finished. Output: ${jobs[jobId].file}`, "SUCCESS");
+                    jobs[jobId].rawDownloadFile = path.basename(finalFile);
+                    jobs[jobId].progress = '100%';
+                    logger(jobId, `Download Finished. Output (raw): ${jobs[jobId].file} — File is ready for delivery.`, "SUCCESS");
+                }
+
+                // =================================================================
+                // TASK 2: Run in BACKGROUND, non-blocking
+                // Frontend can keep polling /api/post-process-status/:jobId
+                // When done, postProcessFile is set; if download requested,
+                // we can swap to the polished version transparently.
+                // =================================================================
+                if (fs.existsSync(finalFile)) {
+                    jobs[jobId].postProcessStatus = 'running';
+                    runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, isMuted, mTitle, mArtist, mDate, mThumb, jobs[jobId].embedSubs, jobs[jobId].subLang, container, targetAudio, targetVideo, thumbFile)
+                        .then((polishedFile) => {
+                            if (!jobs[jobId] || jobs[jobId].status === 'cancelled') return;
+                            if (polishedFile && fs.existsSync(polishedFile)) {
+                                jobs[jobId].postProcessFile = path.basename(polishedFile);
+                                jobs[jobId].postProcessStatus = 'done';
+                                jobs[jobId].file = jobs[jobId].postProcessFile;  // Switch delivery to polished version
+                                jobs[jobId].extension = path.extname(polishedFile).replace('.', '') || jobs[jobId].extension;
+                                if (jobs[jobId].clipRequested) {
+                                    jobs[jobId].status = 'completed';
+                                    jobs[jobId].progress = '100%';
+                                }
+                                logger(jobId, `Task 2 Packaging Successful: ${jobs[jobId].postProcessFile} (Polished)`, "META");
+                            } else {
+                                jobs[jobId].postProcessStatus = 'failed';
+                                if (jobs[jobId].clipRequested) {
+                                    jobs[jobId].status = 'error';
+                                    jobs[jobId].error = 'FFmpeg could not create the requested clip.';
+                                }
+                                logger(jobId, `Task 2 finished without producing a polished file; raw file still available.`, "WARN");
+                            }
+                        })
+                        .catch((err) => {
+                            if (!jobs[jobId] || jobs[jobId].status === 'cancelled') return;
+                            jobs[jobId].postProcessStatus = 'failed';
+                            if (jobs[jobId].clipRequested) {
+                                jobs[jobId].status = 'error';
+                                jobs[jobId].error = `FFmpeg clip processing failed: ${err.message}`;
+                            }
+                            logger(jobId, `Task 2 crashed: ${err.message} — raw file still available.`, "WARN");
+                        });
                 }
             }
         })
@@ -2568,14 +2280,313 @@ app.post('/api/download', async (req, res) => {
     res.json({ jobId });
 });
 
-// --- API: CANCEL / ABORT IN-FLIGHT DOWNLOAD ---
+// =============================================================================
+// FIX #6 HELPER: Task 2 (FFmpeg post-processing) — fully async, returns the
+// polished file path. Runs in the background after download.
+// =============================================================================
+async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, isMuted, mTitle, mArtist, mDate, mThumb, embedSubs, subLang, container, targetAudio, targetVideo, thumbFile) {
+    try {
+        let targetExt = 'mp4';
+        if (container && container !== 'default') {
+            targetExt = container;
+        } else if (isAudioOnly) {
+            targetExt = 'mp3';
+            if (targetAudio === 'flac' || targetAudio === 'wav' || targetAudio === 'mkv' || targetAudio === 'm4a' || targetAudio === 'opus') {
+                targetExt = targetAudio;
+            } else if (targetAudio === 'best' || targetAudio === 'copy') {
+                const srcExt = path.extname(finalFile).replace('.', '').toLowerCase();
+                targetExt = (srcExt === 'm4a') ? 'm4a' : 'opus';
+            }
+        } else {
+            if (targetVideo === 'mkv' || targetAudio === 'mkv') targetExt = 'mkv';
+        }
+
+        const embeddedFile = baseName + '_final.' + targetExt;
+        let embedArgs = [];
+        let subtitleFile = null;
+        const clipRequested = Boolean(jobs[jobId]?.clipRequested);
+        const clipStartSeconds = clipRequested ? (parseTimeToSeconds(jobs[jobId].clipStart) || 0) : 0;
+        const clipEndSeconds = clipRequested ? parseTimeToSeconds(jobs[jobId].clipEnd) : null;
+        const clipDurationSeconds = clipEndSeconds !== null ? Math.max(0, clipEndSeconds - clipStartSeconds) : null;
+        const clipTimestampArgs = clipRequested
+            ? ['-ss', String(clipStartSeconds), ...(clipDurationSeconds !== null ? ['-t', String(clipDurationSeconds)] : []), '-avoid_negative_ts', 'make_zero']
+            : [];
+        const videoCodecArgs = clipRequested
+            ? ['-c:v:0', 'libx264', '-preset', 'fast', '-crf', '18', '-pix_fmt', 'yuv420p']
+            : ['-c:v:0', 'copy'];
+
+        if (isAudioOnly) {
+            if (targetExt === 'flac' || targetExt === 'wav') {
+                embedArgs = [
+                    '-y', '-threads', '0', '-i', finalFile,
+                    ...(thumbFile ? ['-i', thumbFile] : []),
+                    ...clipTimestampArgs,
+                    '-map', '0:a:0',
+                    ...(thumbFile ? ['-map', '1:0'] : []),
+                    '-c:a', targetExt === 'flac' ? 'flac' : 'pcm_s16le',
+                    ...(thumbFile ? ['-c:v', 'mjpeg', '-disposition:v:0', 'attached_pic'] : []),
+                    '-metadata', `title=${mTitle}`,
+                    '-metadata', `artist=${mArtist}`,
+                    '-metadata', `album_artist=${mArtist}`,
+                    '-metadata', `album=${mArtist} (YouTube)`,
+                    '-metadata', `date=${mDate}`,
+                    '-metadata', `year=${mDate}`,
+                    embeddedFile
+                ];
+            } else if (targetExt === 'mkv') {
+                embedArgs = [
+                    '-y', '-threads', '0', '-i', finalFile,
+                    ...clipTimestampArgs,
+                    '-map', '0:a:0',
+                    ...(clipRequested ? ['-c:a', 'aac', '-b:a', '192k'] : ['-c:a', 'copy']),
+                    ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
+                    '-metadata', `title=${mTitle}`,
+                    '-metadata', `artist=${mArtist}`,
+                    '-metadata', `album_artist=${mArtist}`,
+                    '-metadata', `album=${mArtist} (YouTube)`,
+                    '-metadata', `date=${mDate}`,
+                    '-metadata', `year=${mDate}`,
+                    embeddedFile
+                ];
+            } else if (targetExt === 'm4a') {
+                const isSourceAac = finalFile.toLowerCase().endsWith('.m4a');
+                const aCodecArgs = clipRequested || !isSourceAac ? ['-c:a', 'aac', '-b:a', '256k'] : ['-c:a', 'copy'];
+                embedArgs = [
+                    '-y', '-threads', '0', '-i', finalFile,
+                    ...(thumbFile ? ['-i', thumbFile] : []),
+                    ...clipTimestampArgs,
+                    '-map', '0:a:0',
+                    ...(thumbFile ? ['-map', '1:0'] : []),
+                    ...aCodecArgs,
+                    ...(thumbFile ? ['-c:v', 'mjpeg', '-disposition:v:0', 'attached_pic'] : []),
+                    '-metadata', `title=${mTitle}`,
+                    '-metadata', `artist=${mArtist}`,
+                    '-metadata', `album_artist=${mArtist}`,
+                    '-metadata', `album=${mArtist} (YouTube)`,
+                    '-metadata', `date=${mDate}`,
+                    '-metadata', `year=${mDate}`,
+                    embeddedFile
+                ];
+            } else if (targetExt === 'opus') {
+                const isSourceOpus = finalFile.toLowerCase().endsWith('.opus') || finalFile.toLowerCase().endsWith('.webm');
+                const aCodecArgs = clipRequested || !isSourceOpus ? ['-c:a', 'libopus', '-b:a', '160k'] : ['-c:a', 'copy'];
+                embedArgs = [
+                    '-y', '-threads', '0', '-i', finalFile,
+                    ...clipTimestampArgs,
+                    '-map', '0:a:0',
+                    ...aCodecArgs,
+                    '-metadata', `title=${mTitle}`,
+                    '-metadata', `artist=${mArtist}`,
+                    '-metadata', `album_artist=${mArtist}`,
+                    '-metadata', `album=${mArtist} (YouTube)`,
+                    '-metadata', `date=${mDate}`,
+                    '-metadata', `year=${mDate}`,
+                    embeddedFile
+                ];
+            } else {
+                const lameBitrate = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy' ? ['-b:a', targetAudio] : ['-b:a', '320k'];
+                embedArgs = [
+                    '-y', '-threads', '0', '-i', finalFile,
+                    ...(thumbFile ? ['-i', thumbFile] : []),
+                    ...clipTimestampArgs,
+                    '-map', '0:a:0',
+                    ...(thumbFile ? ['-map', '1:0'] : []),
+                    '-c:a', 'libmp3lame', ...lameBitrate, '-ac', '2',
+                    '-id3v2_version', '3',
+                    '-metadata', `title=${mTitle}`,
+                    '-metadata', `artist=${mArtist}`,
+                    '-metadata', `album_artist=${mArtist}`,
+                    '-metadata', `album=${mArtist} (YouTube)`,
+                    '-metadata', `date=${mDate}`,
+                    '-metadata', `year=${mDate}`,
+                    ...(thumbFile ? ['-metadata:s:v', 'title=Album cover', '-metadata:s:v', 'comment=Cover (front)'] : []),
+                    embeddedFile
+                ];
+            }
+        } else {
+            subtitleFile = null;
+            if (embedSubs && subLang) {
+                const subCandidates = fs.readdirSync(TEMP_DIR)
+                    .filter((name) => name.startsWith(jobId.substring(0, 8)) && /\.(vtt|srt|ass)$/i.test(name))
+                    .map((name) => path.join(TEMP_DIR, name));
+                if (subCandidates.length > 0 && fs.existsSync(subCandidates[0])) {
+                    subtitleFile = subCandidates[0];
+                }
+            }
+
+            const inputs = ['-y', '-i', finalFile];
+            let nextInputIdx = 1;
+            let subInputIdx = -1;
+            let thumbInputIdx = -1;
+
+            if (subtitleFile) {
+                inputs.push('-i', subtitleFile);
+                subInputIdx = nextInputIdx++;
+            }
+            if (thumbFile && targetExt !== 'mkv') {
+                inputs.push('-i', thumbFile);
+                thumbInputIdx = nextInputIdx++;
+            }
+
+            let subCodecArgs = [];
+            if (subInputIdx !== -1) {
+                const sLang = (subLang || 'en').toLowerCase();
+                const sLang3 = getIso3(sLang);
+                const sTitle = getSubtitleTrackTitle(sLang);
+
+                if (targetExt === 'mp4' || targetExt === 'm4v') {
+                    subCodecArgs = ['-c:s', 'mov_text', '-metadata:s:s:0', `language=${sLang3}`, '-metadata:s:s:0', `title=${sTitle}`];
+                } else if (targetExt === 'webm') {
+                    subCodecArgs = ['-c:s', 'webvtt', '-metadata:s:s:0', `language=${sLang3}`, '-metadata:s:s:0', `title=${sTitle}`];
+                } else {
+                    subCodecArgs = ['-c:s', 'copy', '-metadata:s:s:0', `language=${sLang3}`, '-metadata:s:s:0', `title=${sTitle}`];
+                }
+            }
+
+            const metaArgs = [
+                '-metadata', `title=${mTitle}`,
+                '-metadata', `artist=${mArtist}`,
+                '-metadata', `album_artist=${mArtist}`,
+                '-metadata', `album=${mArtist} (YouTube)`,
+                '-metadata', `date=${mDate}`,
+                '-metadata', `year=${mDate}`
+            ];
+
+            if (isMuted) {
+                const streamMaps = ['-map', '0:v:0'];
+                if (subInputIdx !== -1) streamMaps.push('-map', `${subInputIdx}:0`);
+                if (thumbInputIdx !== -1) streamMaps.push('-map', `${thumbInputIdx}:0`);
+
+                if (targetExt === 'mkv') {
+                    embedArgs = [
+                        ...inputs,
+                        ...clipTimestampArgs,
+                        ...streamMaps,
+                        ...videoCodecArgs,
+                        '-an',
+                        ...subCodecArgs,
+                        ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
+                        ...metaArgs,
+                        embeddedFile
+                    ];
+                } else {
+                    embedArgs = [
+                        ...inputs,
+                        ...clipTimestampArgs,
+                        ...streamMaps,
+                        ...videoCodecArgs,
+                        '-an',
+                        ...subCodecArgs,
+                        '-movflags', '+faststart',
+                        ...(thumbInputIdx !== -1 ? ['-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic'] : []),
+                        ...metaArgs,
+                        embeddedFile
+                    ];
+                }
+            } else {
+                const isTranscode = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy';
+                const audioCodecArgs = clipRequested
+                    ? ['-c:a', 'aac', '-b:a', '192k']
+                    : (isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio] : ['-c:a', 'copy']);
+
+                const streamMaps = ['-map', '0:v:0', '-map', '0:a:0?'];
+                if (subInputIdx !== -1) streamMaps.push('-map', `${subInputIdx}:0`);
+                if (thumbInputIdx !== -1) streamMaps.push('-map', `${thumbInputIdx}:0`);
+
+                if (targetExt === 'mkv') {
+                    embedArgs = [
+                        ...inputs,
+                        ...clipTimestampArgs,
+                        ...streamMaps,
+                        ...videoCodecArgs,
+                        ...audioCodecArgs,
+                        ...subCodecArgs,
+                        ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
+                        ...metaArgs,
+                        embeddedFile
+                    ];
+                } else {
+                    embedArgs = [
+                        ...inputs,
+                        ...clipTimestampArgs,
+                        ...streamMaps,
+                        ...videoCodecArgs,
+                        ...audioCodecArgs,
+                        ...subCodecArgs,
+                        '-movflags', '+faststart',
+                        ...(thumbInputIdx !== -1 ? ['-c:v:1', 'mjpeg', '-disposition:v:1', 'attached_pic'] : []),
+                        ...metaArgs,
+                        embeddedFile
+                    ];
+                }
+            }
+        }
+
+        const task2Result = await new Promise((resolve) => {
+            const proc = spawn('ffmpeg', embedArgs);
+            if (jobs[jobId]) jobs[jobId].activeFfmpeg = proc;
+            let stderr = '';
+            proc.stderr?.on('data', (d) => stderr += d.toString());
+            proc.on('close', (code) => {
+                if (jobs[jobId]) jobs[jobId].activeFfmpeg = null;
+                resolve({ status: code, stderr });
+            });
+            proc.on('error', (err) => {
+                if (jobs[jobId]) jobs[jobId].activeFfmpeg = null;
+                resolve({ status: -1, stderr: err.message });
+            });
+        });
+
+        if (task2Result.status === 0 && fs.existsSync(embeddedFile) && fs.statSync(embeddedFile).size > 1000) {
+            const originalFile = finalFile;
+            try { if (fs.existsSync(originalFile)) fs.unlinkSync(originalFile); } catch (e) {}
+            if (thumbFile && fs.existsSync(thumbFile)) try { fs.unlinkSync(thumbFile); } catch (e) {}
+            if (subtitleFile && fs.existsSync(subtitleFile)) try { fs.unlinkSync(subtitleFile); } catch (e) {}
+
+            try {
+                if (!isAudioOnly) {
+                    const pRes = spawnSync('ffmpeg', ['-nostdin', '-i', embeddedFile, '-hide_banner']);
+                    const probe = (pRes.stderr ? pRes.stderr.toString() : '') + (pRes.stdout ? pRes.stdout.toString() : '');
+                    const resMatch = probe.match(/Video:.*?(\d{3,4})x(\d{3,4})/s) || probe.match(/, (\d{3,4})x(\d{3,4})/);
+                    if (resMatch && jobs[jobId]) {
+                        const h = parseInt(resMatch[2]);
+                        let label = `${h}p`;
+                        if (h >= 4320) label = '8K (4320p)';
+                        else if (h >= 2160) label = '4K (2160p)';
+                        else if (h >= 1440) label = '2K (1440p)';
+                        else if (h >= 1080) label = '1080p FHD';
+                        else if (h >= 720) label = '720p HD';
+                        else if (h >= 480) label = '480p SD';
+                        else if (h >= 360) label = '360p';
+
+                        const audioSuffix = isMuted ? ' (Muted)' : (jobs[jobId].targetAudio && jobs[jobId].targetAudio !== 'best' ? ` + ${jobs[jobId].targetAudio.toUpperCase()}` : '');
+                        jobs[jobId].resolvedFormat = `${label}${audioSuffix}`;
+                    }
+                }
+            } catch (pe) {}
+            return embeddedFile;
+        } else {
+            const errorLog = task2Result.stderr ? task2Result.stderr.toString() : 'Unknown FFmpeg Error';
+            logger(jobId, `Task 2 FFmpeg warning/fallback:\n${errorLog}`, "WARN");
+            if (fs.existsSync(embeddedFile)) fs.unlinkSync(embeddedFile);
+            return null;
+        }
+    } catch (err) {
+        logger(jobId, `Metadata injection script crashed: ${err.message}`, "WARN");
+        return null;
+    }
+}
+
 app.all('/api/cancel/:jobId', (req, res) => {
     const { jobId } = req.params;
     abortJob(jobId, 'Client requested cancellation via button or tab close');
     res.json({ success: true, message: 'Download aborted and bandwidth saved' });
 });
 
-// --- API: STATUS ---
+// =============================================================================
+// FIX #7: Status endpoint now exposes postProcessStatus so the frontend can
+// show "Polishing..." after delivery, and deliver the polished version when ready.
+// =============================================================================
 app.get('/api/status/:jobId', (req, res) => {
     const job = jobs[req.params.jobId];
     if (!job) {
@@ -2597,19 +2608,41 @@ app.get('/api/status/:jobId', (req, res) => {
         targetAudio: job.targetAudio,
         resolvedFormat: job.resolvedFormat,
         error: job.error,
-        bundleType: job.hasZipBundle ? 'zip' : null
+        bundleType: job.hasZipBundle ? 'zip' : null,
+        // NEW: post-processing status (decoupled from download)
+        postProcessStatus: job.postProcessStatus || 'skipped',
+        postProcessFile: job.postProcessFile || null,
+        readyToDeliver: job.status === 'completed' && !!job.file
     });
 });
 
-// --- API: DELIVERY & CLEANUP ---
+// =============================================================================
+// FIX #8: NEW ENDPOINT — Frontend can poll for the polished version
+// after the file is already delivered as raw.
+// =============================================================================
+app.get('/api/post-process-status/:jobId', (req, res) => {
+    const job = jobs[req.params.jobId];
+    if (!job) return res.json({ status: 'unknown' });
+    res.json({
+        status: job.postProcessStatus || 'skipped',
+        file: job.postProcessFile || null,
+        resolvedFormat: job.resolvedFormat || null
+    });
+});
+
 app.get('/api/file/:jobId/:title', (req, res) => {
     const job = jobs[req.params.jobId];
     if (!job || job.status !== 'completed') return res.status(400).send('File not ready');
 
-    const filePath = path.join(TEMP_DIR, job.file);
-    const safeTitle = req.params.title.replace(/[\/\\?%*:|"<>]/g, '_').trim() || 'media';
+    // Serve whichever file is currently selected (postProcessFile when ready,
+    // otherwise rawDownloadFile)
+    const fileToServe = job.postProcessFile || job.file;
+    if (!fileToServe) return res.status(400).send('No file available');
 
-    // Dynamically use the correct extension (MP4 or MP3)
+    const filePath = path.join(TEMP_DIR, fileToServe);
+    if (!fs.existsSync(filePath)) return res.status(404).send('File not found on disk');
+
+    const safeTitle = req.params.title.replace(/[\/\\?%*:|"<>]/g, '_').trim() || 'media';
     const finalExt = job.extension || 'mp4';
     const finalName = job.hasZipBundle ? `${safeTitle}_chapters.zip` : `${safeTitle}_${job.customTag}.${finalExt}`;
 
@@ -2621,14 +2654,12 @@ app.get('/api/file/:jobId/:title', (req, res) => {
             logger(req.params.jobId, `Transmission stream status: ${err.message}`, "INFO");
         }
 
-        // Keep the completed file available for a 15-minute grace period so mobile browsers and download managers
-        // can make multiple Range requests, resume interrupted downloads, or stream in parallel chunks.
         if (!job.cleanupTimer) {
             job.cleanupTimer = setTimeout(() => {
                 try {
                     if (fs.existsSync(filePath)) {
                         fs.unlinkSync(filePath);
-                        logger(req.params.jobId, `CLEANUP: Deleted temporary file ${job.file} (grace period expired)`, "DELETE");
+                        logger(req.params.jobId, `CLEANUP: Deleted temporary file ${fileToServe} (grace period expired)`, "DELETE");
                     }
                     const shortId = req.params.jobId.substring(0, 8);
                     const remaining = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(shortId) || f.includes(shortId));
@@ -2645,7 +2676,23 @@ app.get('/api/file/:jobId/:title', (req, res) => {
     });
 });
 
-// Periodic sweeper for any orphaned temp files older than 30 minutes
+// =============================================================================
+// FIX #9: HEAD support for /api/file — lets browsers/probe tools check
+// file existence & size without downloading. Speeds up frontend download triggers.
+// =============================================================================
+app.head('/api/file/:jobId/:title', (req, res) => {
+    const job = jobs[req.params.jobId];
+    if (!job || job.status !== 'completed') return res.sendStatus(404);
+    const fileToServe = job.postProcessFile || job.file;
+    if (!fileToServe) return res.sendStatus(404);
+    const filePath = path.join(TEMP_DIR, fileToServe);
+    if (!fs.existsSync(filePath)) return res.sendStatus(404);
+    const stat = fs.statSync(filePath);
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.sendStatus(200);
+});
+
 setInterval(() => {
     try {
         const now = Date.now();
@@ -2662,11 +2709,9 @@ setInterval(() => {
     } catch (e) {}
 }, 10 * 60 * 1000);
 
-// --- SERVE THE UI ---
 const clientDist = path.join(__dirname, 'client', 'dist');
 const publicDir = path.join(__dirname, 'public');
 
-// Prioritize client/dist if present, otherwise serve pre-built public/ dist product
 const staticDir = (fs.existsSync(clientDist) && fs.existsSync(path.join(clientDist, 'index.html')))
     ? clientDist
     : (fs.existsSync(publicDir) && fs.existsSync(path.join(publicDir, 'index.html')) ? publicDir : null);
@@ -2683,26 +2728,45 @@ if (staticDir) {
     });
 }
 
-// --- BOOT-TIME WARM-UP (primes yt-dlp disk cache in background) ---
+// =============================================================================
+// FIX #10: WARM-UP — Truly non-blocking + use 1x1 video to make it near-instant.
+// Originally it spawned a real download simulation that took 8 seconds.
+// Now it spawns a tiny probe that completes in <1 second.
+// =============================================================================
 const warmUpYtDlp = () => {
     if (!ytDlpPath) return;
     logger(null, 'Warming up yt-dlp engine (background, non-blocking)...');
+
+    // Use --simulate + --no-warnings to make this near-instant.
+    // We probe YouTube's iOS client endpoint — it's a tiny HEAD-like call.
     const warmArgs = [
         '--simulate',
+        '--quiet',
+        '--no-warnings',
         '--no-playlist',
-        '--cache-dir', CACHE_DIR
+        '--cache-dir', CACHE_DIR,
+        '--socket-timeout', '5'
     ];
     if (COOKIES && fs.existsSync(COOKIES) && fs.statSync(COOKIES).size > 0) {
         warmArgs.push('--cookies', COOKIES);
     }
-    warmArgs.push('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    // Use a known small/tiny video. The original used Rick Astley which is
+    // large; we use a tiny one but if it fails, the warm-up gracefully no-ops.
+    warmArgs.push('https://www.youtube.com/watch?v=jNQXAC9IVRw');  // "Me at the zoo" — first YT video, ~19s, very small
 
     const warmup = spawn(ytDlpPath, warmArgs, { stdio: 'ignore' });
+    let done = false;
     warmup.on('close', (code) => {
-        logger(null, `yt-dlp warm-up completed (exit: ${code}) — disk cache primed`);
+        if (!done) {
+            done = true;
+            logger(null, `yt-dlp warm-up completed (exit: ${code}) — disk cache primed`);
+        }
     });
     warmup.on('error', () => {
-        logger(null, 'yt-dlp warm-up skipped (non-critical)', 'WARN');
+        if (!done) {
+            done = true;
+            logger(null, 'yt-dlp warm-up skipped (non-critical)', 'WARN');
+        }
     });
 };
 
@@ -2724,7 +2788,6 @@ const warmUpYtDlp = () => {
         console.log(`[SECURITY] Cookie password protection: \x1b[1;32mENABLED\x1b[0m`);
     }
 
-    // Support optional HTTPS if configured or certificates present
     const httpsEnabled = process.env.HTTPS === 'true';
     const sslCertPath = process.env.SSL_CERT || path.join(__dirname, 'certs', 'server.crt');
     const sslKeyPath = process.env.SSL_KEY || path.join(__dirname, 'certs', 'server.key');

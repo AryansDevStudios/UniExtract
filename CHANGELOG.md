@@ -6,6 +6,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.0] - 2026-09-08
+
+### 🚀 Stable Release Highlights
+- Promoted the unified web, PWA, Electron, and self-hosted experience to a stable production release.
+- Added a structured download and release center with clear selection steps for release channel, platform, architecture, and package type.
+- Added stable and pre-release package browsing with grouped artifacts, archive visibility, release metadata, and direct GitHub release links.
+- Added deployment guidance for full-repository installs, frontend-only hosting, backend-only servers, Docker, Render, VPS, and direct `server.js` retrieval.
+
+### ✂️ Accurate Full-File Trimming
+- Reworked clipping so yt-dlp downloads the complete selected media before FFmpeg processing.
+- Removed section/keyframe-based download clipping that could return nearby frames or incomplete source segments.
+- Added server-side timestamp trimming after download with synchronized audio/video output.
+- Clipped video is re-encoded with deterministic H.264 settings and clipped audio is re-encoded when necessary for reliable synchronization.
+- Clipped jobs are not marked ready until the final FFmpeg output exists; failed clip processing now reports an explicit error instead of delivering the raw full file.
+
+### 📱 Responsive Frontend Improvements
+- Made mobile cards and primary media surfaces use the available viewport more effectively with reduced outer spacing.
+- Converted Server Architecture and Cookies/Auth workflows into compact full-screen mobile sheets.
+- Improved mobile header/logo allocation and modal action alignment.
+- Rebuilt the clip scrubber with independent pointer and keyboard-accessible handles.
+
+### 🖥️ Platform and Desktop Experience
+- Preserved Electron external-link routing through the default operating-system browser.
+- Kept local, cloud, PWA, Electron, Netlify, Render, and custom backend routing in the same frontend release path.
+- Synchronized the production `public/` bundle with the stable application version.
+
+### 📦 Release Contents
+- Windows installer and portable packages for x64 and ARM64.
+- Linux AppImage and deb packages.
+- macOS dmg and zip packages.
+- Release metadata and archive artifacts for managed and enterprise deployment pipelines.
+
+---
+
 ## [2.6.7] - 2026-09-07 (DEV / Pre-release)
 
 ### 🌐 Desktop Browser & External Link Integration
