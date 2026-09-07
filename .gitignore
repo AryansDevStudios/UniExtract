@@ -10,6 +10,9 @@ yarn.lock
 .env
 .env.local
 .env.*.local
+.env-cookies
+.env*
+!.env.example
 
 # IDE
 .vscode/
@@ -30,6 +33,8 @@ build/
 # Logs
 logs/
 *.log
+err.log
+out.log
 
 # Temporary files
 tmp/
@@ -40,3 +45,6 @@ cache/
 
 # Cookies (sensitive session data - keep on local disk/PWA, inject via .env on cloud)
 cookies.txt
+*.cookies
+*.cookies.txt
+.env-cookies

@@ -5,6 +5,7 @@
   "main": "electron/main.js",
   "scripts": {
     "postinstall": "node scripts/install-ytdlp.js",
+    "cookies:env": "node scripts/convert-cookies-to-env.js",
     "start": "node server.js",
     "dev": "nodemon server.js",
     "server": "node server.js",
