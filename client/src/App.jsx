@@ -61,7 +61,8 @@ function App() {
 
   const fetchUpdateInfo = async (force = false) => {
     try {
-      const res = await apiFetch(`/api/updates${force ? '?force=true' : ''}`);
+      const channel = localStorage.getItem('umx_update_channel') || 'stable';
+      const res = await apiFetch(`/api/updates?channel=${channel}${force ? '&force=true' : ''}`);
       if (res.ok) {
         const data = await res.json();
         setUpdateInfo(data);
@@ -80,14 +81,27 @@ function App() {
       fetchCookieStatus();
       fetchUpdateInfo(true);
     };
-    window.addEventListener('umx-server-changed', handleServerChange);
+    const handleChannelChange = () => {
+      fetchUpdateInfo(true);
+    };
 
-    // Poll for updates every 30 minutes
-    const updateTimer = setInterval(() => fetchUpdateInfo(), 30 * 60 * 1000);
+    window.addEventListener('umx-server-changed', handleServerChange);
+    window.addEventListener('umx-channel-changed', handleChannelChange);
+
+    // Periodic enterprise update check based on configured cadence
+    const cadence = localStorage.getItem('umx_update_cadence') || 'startup_and_interval';
+    let pollInterval = 4 * 60 * 60 * 1000; // 4 hours default
+    if (cadence === 'daily') pollInterval = 24 * 60 * 60 * 1000;
+
+    let updateTimer = null;
+    if (cadence !== 'manual') {
+      updateTimer = setInterval(() => fetchUpdateInfo(), pollInterval);
+    }
 
     return () => {
       window.removeEventListener('umx-server-changed', handleServerChange);
-      clearInterval(updateTimer);
+      window.removeEventListener('umx-channel-changed', handleChannelChange);
+      if (updateTimer) clearInterval(updateTimer);
     };
   }, []);
 

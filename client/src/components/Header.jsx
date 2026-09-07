@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sun, Moon, Cookie, Server, Sparkles, Settings } from 'lucide-react';
 import { getEnvironmentInfo } from '../utils/environment';
 
@@ -19,6 +19,20 @@ export default function Header({
   const hasCustomServer = !!customServerUrl;
   const envInfo = getEnvironmentInfo(customServerUrl);
 
+  const [isSnoozed, setIsSnoozed] = useState(() => {
+    const snooze = localStorage.getItem('umx_update_snooze_until');
+    return Boolean(snooze && Date.now() < Number(snooze));
+  });
+
+  useEffect(() => {
+    const handleSnooze = (e) => {
+      const until = e.detail;
+      setIsSnoozed(Boolean(until && Date.now() < Number(until)));
+    };
+    window.addEventListener('umx-update-snoozed', handleSnooze);
+    return () => window.removeEventListener('umx-update-snoozed', handleSnooze);
+  }, []);
+
   return (
     <header className="w-full flex justify-between items-center py-6 px-4 md:px-8 max-w-5xl mx-auto">
       <div className="flex items-center gap-3 md:gap-4">
@@ -28,14 +42,19 @@ export default function Header({
         </h1>
       </div>
       <div className="flex items-center gap-2.5">
-        {updateInfo?.updateAvailable && (
+        {updateInfo?.updateAvailable && !isSnoozed && (
           <button
             onClick={onOpenUpdate}
-            title={`New version available: v${updateInfo.latestVersion} (Click for details)`}
+            title={`New version available: v${updateInfo.latestVersion}${updateInfo.channel === 'beta' ? ' (Beta Track)' : ''} (Click for details)`}
             className="relative flex items-center gap-1.5 px-3 py-2 rounded-full bg-indigo-500/10 dark:bg-indigo-500/20 border border-indigo-500/30 hover:border-indigo-500 hover:scale-105 transition-all text-indigo-600 dark:text-indigo-400 shadow-sm text-xs font-semibold group"
           >
             <Sparkles size={14} className="text-indigo-500 group-hover:rotate-12 transition-transform" />
             <span>v{updateInfo.latestVersion}</span>
+            {updateInfo.channel === 'beta' && (
+              <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold uppercase">
+                Beta
+              </span>
+            )}
             <span className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.9)]" />
           </button>
         )}

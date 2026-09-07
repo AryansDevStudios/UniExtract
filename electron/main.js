@@ -10,124 +10,142 @@ let serverProcess = null;
 let deferredUpdateInterval = null;
 
 // Updater State
+let updaterPolicy = {
+  channel: 'stable', // 'stable' | 'beta'
+  autoDownload: false, // background download without asking
+  checkCadence: 'startup_and_interval', // 'startup_and_interval', 'daily', 'manual'
+  customFeedUrl: ''
+};
+
 let updateState = {
   status: 'idle', // idle, checking, available, not-available, downloading, downloaded, waiting_for_idle, applying, error
   version: null,
   percent: 0,
   speed: 0,
   error: null,
-  activeJobs: 0
+  activeJobs: 0,
+  channel: 'stable',
+  policy: updaterPolicy,
+  releaseNotes: null,
+  lastCheck: null
 };
 
-function sendUpdateEvent(data) {
-  updateState = { ...updateState, ...data };
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('updater:event', updateState);
-  }
+let updaterCadenceTimer = null;
+
+function getUpdaterPolicyPath() {
+  return path.join(app.getPath('userData'), 'updater-policy.json');
 }
 
-function getCookiesPath() {
-  const rootDir = path.join(__dirname, '..');
-  const rootCookie = path.join(rootDir, 'cookies.txt');
-
-  // 1. Portable mode: Check PORTABLE_EXECUTABLE_DIR (directory where portable .exe is located)
-  if (process.env.PORTABLE_EXECUTABLE_DIR) {
-    const portableCookie = path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'cookies.txt');
-    try {
-      fs.accessSync(process.env.PORTABLE_EXECUTABLE_DIR, fs.constants.W_OK);
-      if (!fs.existsSync(portableCookie) && fs.existsSync(rootCookie)) {
-        try {
-          fs.copyFileSync(rootCookie, portableCookie);
-        } catch (e) {}
-      }
-      return portableCookie;
-    } catch (e) {
-      // Portable directory is read-only; fallback to userData
-    }
-  }
-
-  // 2. Persistent mode: Store in userData (%APPDATA%\Uni Extract\cookies.txt)
-  const userDataDir = app.getPath('userData');
-  if (!fs.existsSync(userDataDir)) {
-    try {
-      fs.mkdirSync(userDataDir, { recursive: true });
-    } catch (e) {}
-  }
-  const userCookie = path.join(userDataDir, 'cookies.txt');
-
-  // Migrate legacy cookie from Universal Media Extractor if present
-  const legacyUserDataDir = path.join(app.getPath('appData'), 'Universal Media Extractor');
-  const legacyCookie = path.join(legacyUserDataDir, 'cookies.txt');
-  if (!fs.existsSync(userCookie) && fs.existsSync(legacyCookie)) {
-    try {
-      fs.copyFileSync(legacyCookie, userCookie);
-    } catch (e) {}
-  }
-
-  if (!app.isPackaged && !fs.existsSync(userCookie) && fs.existsSync(rootCookie)) {
-    try {
-      fs.copyFileSync(rootCookie, userCookie);
-    } catch (e) {}
-  }
-  return userCookie;
-}
-
-function startServer() {
-  if (process.env.ELECTRON_START_URL) {
-    console.log('[ELECTRON] Development mode: using external dev server at', process.env.ELECTRON_START_URL);
-    return;
-  }
-
-  const isProd = app.isPackaged;
-  const cookiesPath = getCookiesPath();
-
-  process.env.NODE_ENV = 'production';
-  process.env.TEMP_DIR = path.join(app.getPath('temp'), 'uniextract-temp');
-  process.env.CACHE_DIR = path.join(app.getPath('userData'), 'cache');
-  process.env.COOKIES_PATH = cookiesPath;
-  process.env.IS_ELECTRON = 'true';
-  process.env.ELECTRON_IS_PACKAGED = isProd ? 'true' : 'false';
-  process.env.ELECTRON_PORTABLE = process.env.PORTABLE_EXECUTABLE_DIR ? 'true' : 'false';
-  process.env.ELECTRON_APP_VERSION = app.getVersion();
-
+function loadUpdaterPolicy() {
   try {
-    const rootDir = path.join(__dirname, '..');
-    const serverScript = path.join(rootDir, 'server.js');
-    console.log('[ELECTRON] Starting embedded backend server from:', serverScript);
-    require(serverScript);
-    console.log('[ELECTRON] Embedded backend server initialized.');
-  } catch (err) {
-    console.error('[ELECTRON] Failed to start embedded backend server:', err);
+    const policyFile = getUpdaterPolicyPath();
+    if (fs.existsSync(policyFile)) {
+      const data = JSON.parse(fs.readFileSync(policyFile, 'utf8'));
+      updaterPolicy = { ...updaterPolicy, ...data };
+    }
+  } catch (e) {
+    console.warn('[UPDATER] Failed to read updater policy, using defaults:', e.message);
+  }
+  updateState.channel = updaterPolicy.channel;
+  updateState.policy = updaterPolicy;
+  return updaterPolicy;
+}
+
+function saveUpdaterPolicy(newPolicy) {
+  try {
+    updaterPolicy = { ...updaterPolicy, ...newPolicy };
+    updateState.channel = updaterPolicy.channel;
+    updateState.policy = updaterPolicy;
+    const policyFile = getUpdaterPolicyPath();
+    fs.writeFileSync(policyFile, JSON.stringify(updaterPolicy, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[UPDATER] Failed to write updater policy:', e.message);
   }
 }
 
-// Query local server to inspect active in-flight downloads / transcoding
-function queryActiveJobs() {
-  return new Promise((resolve) => {
-    const req = http.get('http://127.0.0.1:3000/api/updates/active-jobs', { timeout: 1500 }, (res) => {
-      let data = '';
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          resolve(json.activeJobsCount || 0);
-        } catch (e) {
-          resolve(0);
-        }
+function applyUpdaterPolicy(policy) {
+  const isBeta = policy.channel === 'beta';
+  autoUpdater.channel = isBeta ? 'beta' : 'latest';
+  autoUpdater.allowPrerelease = isBeta;
+  autoUpdater.autoDownload = !!policy.autoDownload;
+
+  if (policy.customFeedUrl && policy.customFeedUrl.trim().startsWith('http')) {
+    try {
+      autoUpdater.setFeedURL({
+        provider: 'generic',
+        url: policy.customFeedUrl.trim()
       });
+      console.log('[UPDATER] Using custom enterprise feed URL:', policy.customFeedUrl.trim());
+    } catch (err) {
+      console.warn('[UPDATER] Invalid custom feed URL, falling back to official GitHub feed:', err.message);
+      autoUpdater.setFeedURL({
+        provider: 'github',
+        owner: 'AryansDevStudios',
+        repo: 'UniExtract'
+      });
+    }
+  } else {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: 'AryansDevStudios',
+      repo: 'UniExtract'
     });
-    req.on('error', () => resolve(0));
-    req.on('timeout', () => { req.destroy(); resolve(0); });
-  });
+  }
+
+  // Setup periodic cadence timer
+  if (updaterCadenceTimer) {
+    clearInterval(updaterCadenceTimer);
+    updaterCadenceTimer = null;
+  }
+
+  if (policy.checkCadence === 'startup_and_interval') {
+    // Check every 4 hours
+    updaterCadenceTimer = setInterval(() => {
+      if (app.isPackaged && !process.env.PORTABLE_EXECUTABLE_DIR) {
+        console.log('[UPDATER] Running scheduled update check (cadence: 4h)...');
+        autoUpdater.checkForUpdates().catch(() => {});
+      }
+    }, 4 * 60 * 60 * 1000);
+  } else if (policy.checkCadence === 'daily') {
+    // Check every 24 hours
+    updaterCadenceTimer = setInterval(() => {
+      if (app.isPackaged && !process.env.PORTABLE_EXECUTABLE_DIR) {
+        console.log('[UPDATER] Running scheduled update check (cadence: daily)...');
+        autoUpdater.checkForUpdates().catch(() => {});
+      }
+    }, 24 * 60 * 60 * 1000);
+  }
+}
+
+function clearUpdaterCache() {
+  try {
+    const pendingDir = path.join(app.getPath('userData'), 'pending-updates');
+    if (fs.existsSync(pendingDir)) {
+      fs.rmSync(pendingDir, { recursive: true, force: true });
+    }
+    const tempDir = app.getPath('temp');
+    try {
+      const tempFiles = fs.readdirSync(tempDir);
+      for (const f of tempFiles) {
+        if (f.startsWith('UniExtract-') && (f.endsWith('.exe') || f.endsWith('.blockmap') || f.endsWith('.yml'))) {
+          try { fs.unlinkSync(path.join(tempDir, f)); } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    sendUpdateEvent({ status: 'idle', percent: 0, speed: 0, error: null });
+    return { success: true, message: 'Update cache and pending installers wiped successfully' };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 }
 
 function setupAutoUpdater() {
-  // Disable auto download by default so active media downloads are not bandwidth-starved
-  autoUpdater.autoDownload = false;
+  const policy = loadUpdaterPolicy();
+  applyUpdaterPolicy(policy);
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('checking-for-update', () => {
-    sendUpdateEvent({ status: 'checking', error: null });
+    sendUpdateEvent({ status: 'checking', error: null, lastCheck: Date.now() });
   });
 
   autoUpdater.on('update-available', (info) => {
@@ -135,12 +153,13 @@ function setupAutoUpdater() {
       status: 'available',
       version: info.version,
       releaseNotes: info.releaseNotes,
+      channel: updaterPolicy.channel,
       error: null
     });
   });
 
   autoUpdater.on('update-not-available', () => {
-    sendUpdateEvent({ status: 'not-available', error: null });
+    sendUpdateEvent({ status: 'not-available', error: null, lastCheck: Date.now() });
   });
 
   autoUpdater.on('download-progress', (p) => {
@@ -170,7 +189,7 @@ function setupAutoUpdater() {
       return { status: 'dev_mode', message: 'Auto-update is only active in packaged desktop builds' };
     }
     try {
-      sendUpdateEvent({ status: 'checking' });
+      sendUpdateEvent({ status: 'checking', error: null });
       await autoUpdater.checkForUpdates();
       return updateState;
     } catch (e) {
@@ -194,7 +213,46 @@ function setupAutoUpdater() {
   });
 
   ipcMain.handle('updater:get-state', () => {
-    return updateState;
+    return { ...updateState, policy: updaterPolicy };
+  });
+
+  // Enterprise channel selector handler
+  ipcMain.handle('updater:set-channel', async (_event, channel) => {
+    const validChannel = channel === 'beta' ? 'beta' : 'stable';
+    saveUpdaterPolicy({ channel: validChannel });
+    applyUpdaterPolicy(updaterPolicy);
+    sendUpdateEvent({ channel: validChannel, policy: updaterPolicy });
+
+    if (app.isPackaged && !process.env.PORTABLE_EXECUTABLE_DIR) {
+      try {
+        sendUpdateEvent({ status: 'checking', error: null });
+        await autoUpdater.checkForUpdates();
+      } catch (e) {
+        sendUpdateEvent({ status: 'error', error: e.message });
+      }
+    }
+    return { success: true, channel: validChannel, policy: updaterPolicy };
+  });
+
+  // Enterprise policy update handler
+  ipcMain.handle('updater:set-policy', async (_event, newPolicy) => {
+    saveUpdaterPolicy(newPolicy);
+    applyUpdaterPolicy(updaterPolicy);
+    sendUpdateEvent({ policy: updaterPolicy });
+    return { success: true, policy: updaterPolicy };
+  });
+
+  // Enterprise custom mirror / feed handler
+  ipcMain.handle('updater:set-feed', async (_event, feedUrl) => {
+    saveUpdaterPolicy({ customFeedUrl: (feedUrl || '').trim() });
+    applyUpdaterPolicy(updaterPolicy);
+    sendUpdateEvent({ policy: updaterPolicy });
+    return { success: true, customFeedUrl: updaterPolicy.customFeedUrl };
+  });
+
+  // Enterprise cache cleaner / self-healing
+  ipcMain.handle('updater:clear-cache', async () => {
+    return clearUpdaterCache();
   });
 
   // Zero-disruption updater application under load
@@ -309,6 +367,9 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   if (deferredUpdateInterval) {
     clearInterval(deferredUpdateInterval);
+  }
+  if (updaterCadenceTimer) {
+    clearInterval(updaterCadenceTimer);
   }
   if (serverProcess) {
     serverProcess.kill('SIGTERM');

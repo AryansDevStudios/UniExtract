@@ -7,6 +7,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadUpdate: () => ipcRenderer.invoke('updater:download'),
   applyUpdate: (options = {}) => ipcRenderer.invoke('updater:apply', options),
   getUpdateState: () => ipcRenderer.invoke('updater:get-state'),
+  setChannel: (channel) => ipcRenderer.invoke('updater:set-channel', channel),
+  setPolicy: (policy) => ipcRenderer.invoke('updater:set-policy', policy),
+  setCustomFeed: (url) => ipcRenderer.invoke('updater:set-feed', url),
+  clearUpdateCache: () => ipcRenderer.invoke('updater:clear-cache'),
   onUpdateEvent: (callback) => {
     const subscription = (_event, data) => callback(data);
     ipcRenderer.on('updater:event', subscription);
