@@ -6,6 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.4] - 2026-09-07 (DEV / Pre-release)
+
+### 🚀 Highlights & Enterprise Features
+- **Enterprise Update System Architecture**:
+  - **Multi-Track Release Channels**: Native support for `Production (Stable)` and `Developer / Beta (Early Access)` release tracks.
+  - **Governance & Automation Policies**: Background automatic downloading, notification-only modes, and configurable check cadence (4 hours, daily, or manual).
+  - **Disruption-Free 24-Hour Snooze**: 1-click update postponement during active screen sharing or video transcoding, with persistent policy management in `%APPDATA%\Uni Extract\updater-policy.json`.
+  - **Cryptographic Verification**: Digital Authenticode validation card, SHA-512 checksum integrity checks, and self-healing update cache wiper.
+  - **Categorized Release Notes**: Automatically parses and groups release changelogs into Features, Fixes, Security, and Performance sections with semver bump badges.
+  - **Corporate Mirrors & Air-Gapped Networks**: Added custom update feed URL override support.
+
+### 🔒 Security, HTTPS & Network Hardening
+- **Native Optional HTTPS Support in Backend (`server.js`)**:
+  - Configurable HTTPS listener via `HTTPS=true` and `SSL_CERT` / `SSL_KEY` environment variables or `certs/` folder.
+  - Automatic graceful fallback to standard HTTP when SSL certificates are not provided.
+- **Chromium Private Network Access (PNA) Preflight Support**:
+  - Responds to `Access-Control-Request-Private-Network: true` preflight requests with `Access-Control-Allow-Private-Network: true`.
+- **Browser Mixed Content Warning & Guidance (`ServerModal.jsx`)**:
+  - Active detection of HTTPS page origin and unencrypted HTTP endpoints.
+  - Clear user guidance explaining browser security blocks on HTTPS sites with direct paths forward (Desktop App, HTTPS Tunnel via localtunnel/cloudflared, or SSL proxy).
+  - Presets badged with `HTTP` / `HTTPS` indicators.
+
+### 🛠️ API & Runtime Refinements
+- Added dedicated `GET /api/version` endpoint and `/api/cookies/status` alias.
+- Added dynamic `__APP_VERSION__` injection at Vite build time linking React components directly to `package.json`.
+- Removed search box status pill and modernized deployment labels to clean Cloud Web Platform branding.
+
+---
+
 ## [2.6.2] - 2026-09-07
 
 ### 🚀 Highlights & Critical Improvements
