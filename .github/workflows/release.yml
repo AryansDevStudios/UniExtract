@@ -115,7 +115,7 @@ jobs:
           name: Uni Extract ${{ steps.get_tag.outputs.tag }}
           draft: ${{ github.event.inputs.draft || false }}
           prerelease: ${{ github.event.inputs.prerelease || false }}
-          generate_release_notes: true
+          generate_release_notes: ${{ matrix.platform == 'Windows' }}
           files: ${{ matrix.artifacts }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
