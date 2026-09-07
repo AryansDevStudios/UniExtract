@@ -347,7 +347,7 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
                         </li>
                         <li className="flex items-start gap-1.5">
                           <Zap size={13} className="text-purple-500 shrink-0 mt-0.5" />
-                          <span><strong className="text-slate-800 dark:text-slate-200">Free HTTPS Tunnel:</strong> Run <code className="text-indigo-600 dark:text-indigo-400 bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">npx localtunnel --port 3000</code> or Cloudflare Tunnel to get an instant trusted <code className="text-indigo-600 dark:text-indigo-400">https://</code> address.</span>
+                          <span><strong className="text-slate-800 dark:text-slate-200">Free HTTPS Tunnel:</strong> Run Cloudflare Tunnel (<code className="text-indigo-600 dark:text-indigo-400 bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">cloudflared tunnel --url http://localhost:3000</code>) or Pinggy to get an instant trusted <code className="text-indigo-600 dark:text-indigo-400">https://</code> address without warning splash screens.</span>
                         </li>
                         <li className="flex items-start gap-1.5">
                           <Lock size={13} className="text-emerald-500 shrink-0 mt-0.5" />
@@ -433,17 +433,18 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
                   <div className="space-y-2">
                     <div>
                       <div className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                        Option 1: Quick HTTPS Tunnel for Local Backend (Recommended for Web)
+                        Option 1: Cloudflare Quick Tunnel (Fastest & No Interstitial Warning Pages)
                       </div>
                       <div className="p-2.5 rounded-xl bg-slate-900 text-slate-200 font-mono text-[10px] space-y-0.5">
                         <div className="text-slate-400"># Start local backend server</div>
                         <div className="text-emerald-400">npm start</div>
-                        <div className="text-slate-400 pt-1"># In a new terminal, create an instant secure HTTPS tunnel</div>
-                        <div className="text-sky-300">npx localtunnel --port 3000</div>
-                        <div className="text-slate-400"># or: cloudflared tunnel --url http://localhost:3000</div>
+                        <div className="text-slate-400 pt-1"># In a new terminal, launch Cloudflare tunnel (no account needed)</div>
+                        <div className="text-sky-300">cloudflared tunnel --url http://localhost:3000</div>
+                        <div className="text-slate-400 pt-1"># Or with built-in Windows OpenSSH (zero install):</div>
+                        <div className="text-sky-300">ssh -p 443 -R0:localhost:3000 a.pinggy.io</div>
                       </div>
                       <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                        Copy the generated <code>https://....loca.lt</code> or Cloudflare tunnel URL into the input field above.
+                        Copy the generated <code>https://....trycloudflare.com</code> or Pinggy URL into the input field above.
                       </p>
                     </div>
 
