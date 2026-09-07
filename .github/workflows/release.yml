@@ -35,6 +35,8 @@ jobs:
             build-cmd: npm run dist:win
             artifacts: |
               dist-electron/*.exe
+              dist-electron/latest*.yml
+              dist-electron/*.blockmap
               certs/AryansDevStudios.cer
               scripts/trust-publisher.bat
           - os: ubuntu-latest
@@ -43,12 +45,16 @@ jobs:
             artifacts: |
               dist-electron/*.AppImage
               dist-electron/*.deb
+              dist-electron/latest*.yml
+              dist-electron/*.blockmap
           - os: macos-latest
             platform: macOS
             build-cmd: npm run dist:mac
             artifacts: |
               dist-electron/*.dmg
               dist-electron/*.zip
+              dist-electron/latest*.yml
+              dist-electron/*.blockmap
 
     steps:
       - name: Checkout Repository
