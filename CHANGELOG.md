@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.6] - 2026-09-07 (DEV / Pre-release)
+
+### 🐛 Critical Desktop Reliability Fixes
+- **Embedded Server Initialization Fix**:
+  - Replaced external process spawning of `server.js` with direct in-process `require('../server.js')`.
+  - Completely resolved Windows `Error: spawn Uni Extract.exe ENOENT` caused by the OS kernel rejecting arguments pointing inside packaged `resources/app.asar` archives.
+  - Eliminated `ERR_CONNECTION_REFUSED` on startup by guaranteeing the Express backend binds seamlessly in the primary Electron process.
+
+---
+
 ## [2.6.5] - 2026-09-07 (DEV / Pre-release)
 
 ### 🐛 Critical Bug Fixes

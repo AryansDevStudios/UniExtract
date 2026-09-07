@@ -56,46 +56,29 @@ function getCookiesPath() {
 }
 
 function startServer() {
-  const rootDir = path.join(__dirname, '..');
-  const serverScript = path.join(rootDir, 'server.js');
-  const isProd = app.isPackaged;
-  const cookiesPath = getCookiesPath();
+  // If in dev mode with external server (e.g. electron:dev)
+  if (!app.isPackaged && process.env.ELECTRON_START_URL && process.env.ELECTRON_START_URL.includes(':5173')) {
+    console.log('[ELECTRON] Dev mode: external server in use, skipping embedded server.');
+    return;
+  }
 
-  const env = {
-    ...process.env,
-    NODE_ENV: 'production',
-    PORT: process.env.PORT || '3000',
-    TEMP_DIR: path.join(app.getPath('temp'), 'ume-temp'),
-    CACHE_DIR: path.join(app.getPath('userData'), 'cache'),
-    COOKIES_PATH: cookiesPath,
-    IS_ELECTRON: 'true',
-    ELECTRON_IS_PACKAGED: isProd ? 'true' : 'false',
-    ELECTRON_PORTABLE: process.env.PORTABLE_EXECUTABLE_DIR ? 'true' : 'false',
-    ELECTRON_APP_VERSION: app.getVersion()
-  };
+  const cookiesPath = getCookiesPath();
+  process.env.NODE_ENV = 'production';
+  process.env.PORT = process.env.PORT || '3000';
+  process.env.TEMP_DIR = path.join(app.getPath('temp'), 'ume-temp');
+  process.env.CACHE_DIR = path.join(app.getPath('userData'), 'cache');
+  process.env.COOKIES_PATH = cookiesPath;
+  process.env.IS_ELECTRON = 'true';
+  process.env.ELECTRON_IS_PACKAGED = app.isPackaged ? 'true' : 'false';
+  process.env.ELECTRON_PORTABLE = process.env.PORTABLE_EXECUTABLE_DIR ? 'true' : 'false';
+  process.env.ELECTRON_APP_VERSION = app.getVersion();
 
   try {
-    if (isProd) {
-      serverProcess = spawn(process.execPath, [serverScript], {
-        cwd: rootDir,
-        env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
-        stdio: 'ignore',
-        detached: false
-      });
-    } else {
-      serverProcess = spawn('node', [serverScript], {
-        cwd: rootDir,
-        env,
-        stdio: 'ignore',
-        detached: false
-      });
-    }
-
-    serverProcess.on('error', (err) => {
-      console.error('[ELECTRON] Failed to start bundled server:', err);
-    });
+    console.log('[ELECTRON] Initializing embedded server...');
+    require('../server.js');
+    console.log('[ELECTRON] Embedded server successfully started on port', process.env.PORT);
   } catch (err) {
-    console.error('[ELECTRON] Error spawning server process:', err);
+    console.error('[ELECTRON] Failed to start embedded server:', err);
   }
 }
 
