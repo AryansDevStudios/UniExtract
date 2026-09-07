@@ -57,8 +57,9 @@ export default function UpdateModal({
 
   if (!isOpen || !updateInfo) return null;
 
-  const currentVersion = updateInfo.currentVersion || '2.6.2';
-  const latestVersion = updateInfo.latestVersion || '2.6.2';
+  const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.6.2';
+  const currentVersion = updateInfo.currentVersion || appVersion;
+  const latestVersion = updateInfo.latestVersion || appVersion;
   const releaseName = updateInfo.releaseName || `v${latestVersion}`;
   const releaseNotes = updateInfo.releaseNotes || 'No release notes provided.';
   const releaseUrl = updateInfo.releaseUrl || 'https://github.com/AryansDevStudios/UniExtract/releases';

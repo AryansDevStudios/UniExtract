@@ -63,7 +63,8 @@ export default function SettingsModal({
 
   if (!isOpen) return null;
 
-  const currentVersion = updateInfo?.currentVersion || '2.6.2';
+  const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.6.2';
+  const currentVersion = updateInfo?.currentVersion || appVersion;
   const envInfo = getEnvironmentInfo(getCustomServerUrl());
 
   return (

@@ -256,7 +256,7 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
                 ) : testResult?.success ? (
                   <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Online • {testResult.latency}ms latency (v{testResult.data?.version || '2.6.2'})
+                    Online • {testResult.latency}ms latency (v{testResult.data?.version || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.6.2')})
                   </div>
                 ) : testResult ? (
                   <div className="flex items-center gap-1.5 text-red-500 font-medium">
