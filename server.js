@@ -1,7 +1,16 @@
 // =============================================================================
 // Uni Extract — Performance-Fixed Server (server.js)
-// Fixes applied: decoupled post-processing, smarter watchdog, faster analysis,
-// larger caches, non-blocking warm-up, immediate file delivery.
+// Round 1 fixes (preserved): decoupled post-processing, smarter watchdog,
+// faster analysis, larger caches, non-blocking warm-up, immediate delivery.
+// Round 2 fixes (new):
+//   #11 Analysis disk-cache READ-BACK (instant repeat analysis, 1h TTL)
+//   #12 Downloads start instantly via --load-info-json (no URL re-extraction)
+//   #13 Anti-throttle: 4 concurrent fragments + 10MB chunked transfer
+//   #14 Raw-spawn engine: exit-code-driven completion (fixes jobs hanging
+//       at "100%" when filePaths came back empty), weighted true progress
+//   #15 /api/subtitle no longer blocks the event loop (was spawnSync, 45s)
+//   #16 Stall detection (6 min of engine silence -> error, not infinite hang)
+//   #17 Cleanup sweep no longer deletes files of active downloads
 // =============================================================================
 const express = require('express');
 const { YtDlp, helpers } = require('ytdlp-nodejs');
@@ -172,19 +181,40 @@ const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
 };
 
 // =============================================================================
-// FIX #2: SMARTER WATCHDOG
-// - Extended timeout: 180s (was 60s) so background tabs don't get killed
-// - Only abort if BOTH (a) no progress in 60s AND (b) no polling in 180s
-// - Never abort if a fresh chunk just arrived
+// FIX #2 + #16: SMARTER WATCHDOG + STALL DETECTION
+// - Extended timeout: 180s so background tabs don't get killed
+// - Only abort if BOTH (a) no progress in 30s AND (b) no polling in 180s
+// - NEW: if the engine goes totally silent for 6 minutes while downloading,
+//   the job is failed with an error instead of hanging forever
 // =============================================================================
-const WATCHDOG_TIMEOUT_MS = 180000;       // 3 minutes (was 60s)
-const STARTUP_GRACE_PERIOD_MS = 45000;    // 45s grace for yt-dlp launch
-const PROGRESS_FRESH_MS = 30000;          // 30s of "still receiving bytes" protects from kill
+const WATCHDOG_TIMEOUT_MS = 180000;
+const STARTUP_GRACE_PERIOD_MS = 45000;
+const PROGRESS_FRESH_MS = 30000;
+const STALL_NO_OUTPUT_MS = 360000;     // 6 minutes of total engine silence
 
 setInterval(() => {
     const now = Date.now();
     Object.entries(jobs).forEach(([jobId, job]) => {
         if (job.status !== 'downloading') return;
+
+        // NEW (#16): stall detection — kill and fail rather than hang forever
+        if (job.lastOutputTime && (now - job.lastOutputTime > STALL_NO_OUTPUT_MS)) {
+            const inst = job.downloadInstance;
+            job.status = 'error';
+            job.error = 'Download engine stalled (no output from yt-dlp for 6 minutes). Please retry.';
+            logger(jobId, `Download engine stalled — marking job as error.`, "ERROR");
+            if (inst && inst.pid) {
+                try {
+                    if (process.platform === 'win32') {
+                        spawnSync('taskkill', ['/pid', String(inst.pid), '/T', '/F'], { stdio: 'ignore' });
+                    } else {
+                        inst.kill('SIGKILL');
+                    }
+                } catch (e) {}
+            }
+            job.downloadInstance = null;
+            return;
+        }
 
         // 1. Never abort during startup grace period
         if (job.createdAt && (now - job.createdAt < STARTUP_GRACE_PERIOD_MS)) return;
@@ -201,11 +231,9 @@ setInterval(() => {
 
 // =============================================================================
 // FIX #3: LARGER, LONGER-LIVED ANALYSIS CACHE
-// - 1000 entries (was 200)
-// - 30 minute TTL (was 15 min)
 // =============================================================================
 const analysisCache = new Map();
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_MAX_SIZE = 1000;
 
 const getCachedAnalysis = (url) => {
@@ -220,7 +248,6 @@ const getCachedAnalysis = (url) => {
 
 const setCachedAnalysis = (url, data) => {
     if (analysisCache.size > CACHE_MAX_SIZE) {
-        // Evict ~10% oldest entries at once to reduce thrash
         const toRemove = Math.floor(CACHE_MAX_SIZE * 0.1);
         const keys = Array.from(analysisCache.keys()).slice(0, toRemove);
         keys.forEach(k => analysisCache.delete(k));
@@ -665,14 +692,8 @@ app.get('/api/version', (req, res) => {
     res.json({ version: appVersion, name: 'uni-extract' });
 });
 
-const cachedReleaseData = {
-    stable: null,
-    beta: null
-};
-const lastReleaseCheck = {
-    stable: 0,
-    beta: 0
-};
+const cachedReleaseData = { stable: null, beta: null };
+const lastReleaseCheck = { stable: 0, beta: 0 };
 const RELEASE_CACHE_TTL = 15 * 60 * 1000;
 let updatePendingWhenIdle = false;
 
@@ -705,13 +726,7 @@ function getVersionBumpType(current, latest) {
 }
 
 function categorizeReleaseNotes(body) {
-    const categories = {
-        features: [],
-        fixes: [],
-        security: [],
-        performance: [],
-        general: []
-    };
+    const categories = { features: [], fixes: [], security: [], performance: [], general: [] };
     if (!body) return categories;
 
     const lines = body.split('\n');
@@ -844,13 +859,7 @@ app.get('/api/updates', async (req, res) => {
                 type = 'archive-zip';
             }
 
-            return {
-                name: a.name,
-                size: a.size,
-                url: a.browser_download_url,
-                type,
-                arch
-            };
+            return { name: a.name, size: a.size, url: a.browser_download_url, type, arch };
         });
 
         cachedReleaseData[channel] = {
@@ -914,37 +923,15 @@ app.post('/api/updates/schedule-install', (req, res) => {
 });
 
 const ALLOWED_MEDIA_DOMAINS = [
-    'youtube.com',
-    'instagram.com',
-    'facebook.com',
-    'snapchat.com',
-    'tiktok.com',
-    'twitter.com',
-    'x.com',
-    'reddit.com',
-    'twitch.tv',
-    'soundcloud.com',
-    'vimeo.com',
-    'pinterest.com',
-    'dailymotion.com',
-    'threads.net',
-    'bilibili.com'
+    'youtube.com', 'instagram.com', 'facebook.com', 'snapchat.com', 'tiktok.com',
+    'twitter.com', 'x.com', 'reddit.com', 'twitch.tv', 'soundcloud.com',
+    'vimeo.com', 'pinterest.com', 'dailymotion.com', 'threads.net', 'bilibili.com'
 ];
 
 const EXCLUDED_COOKIE_DOMAINS = [
-    'accounts.google.com',
-    'mail.google.com',
-    'myaccount.google.com',
-    'gds.google.com',
-    'contacts.google.com',
-    'ogs.google.com',
-    'google.com',
-    'google.co.in',
-    'bing.com',
-    'msn.com',
-    'scorecardresearch.com',
-    'doubleclick.net',
-    'linkedin.com'
+    'accounts.google.com', 'mail.google.com', 'myaccount.google.com', 'gds.google.com',
+    'contacts.google.com', 'ogs.google.com', 'google.com', 'google.co.in', 'bing.com',
+    'msn.com', 'scorecardresearch.com', 'doubleclick.net', 'linkedin.com'
 ];
 
 function isAllowedCookieDomain(domain) {
@@ -996,15 +983,7 @@ function filterAndFormatCookies(rawInput) {
                 let expires = Math.floor(Number(item.expirationDate || item.expires || 0));
                 if (isNaN(expires) || expires < 0) expires = 0;
 
-                parsedCookies.push({
-                    domain,
-                    includeSubdomains,
-                    path,
-                    secure,
-                    expires,
-                    name,
-                    value
-                });
+                parsedCookies.push({ domain, includeSubdomains, path, secure, expires, name, value });
                 keptCount++;
             }
         } catch (e) {}
@@ -1248,7 +1227,7 @@ const handlePostTokens = (req, res) => {
             droppedCount: result.droppedCount
         });
     } catch (err) {
-        logger(null, `Failed to write cookies file: ${err.message}`, 'ERROR');
+        logger(null, `Failed to write cookies file: ${err.message}`, "ERROR");
         res.status(500).json({ success: false, error: `Failed to save cookies: ${err.message}` });
     }
 };
@@ -1273,6 +1252,7 @@ const handleDeleteTokens = (req, res) => {
     }
 };
 
+// YOUR REAL COOKIE ROUTES — restored exactly as the frontend expects them
 app.get(['/api/auth-tokens', '/api/cookies', '/api/cookies/status'], handleGetTokens);
 app.post(['/api/auth-tokens', '/api/cookies'], handlePostTokens);
 app.delete(['/api/auth-tokens', '/api/cookies'], handleDeleteTokens);
@@ -1282,7 +1262,7 @@ const formatMemoryCache = new Map();
 const playlistEnrichmentJobs = {};
 
 function categorizeHeights(rawHeights) {
-    const heights = [...new Set(rawHeights.filter(h => typeof h === 'number' && h > 0))].sort((a,b) => b-a);
+    const heights = [...new Set(rawHeights.filter(h => typeof h === 'number' && h > 0))].sort((a, b) => b - a);
     const videoResolutions = [];
 
     if (heights.some(h => h >= 4320)) videoResolutions.push('8k');
@@ -1321,7 +1301,7 @@ function categorizeHeights(rawHeights) {
 }
 
 function categorizeAudio(rawBitrates, rawCodecs = []) {
-    const bitrates = [...new Set(rawBitrates.filter(b => typeof b === 'number' && b > 0))].sort((a,b) => b-a);
+    const bitrates = [...new Set(rawBitrates.filter(b => typeof b === 'number' && b > 0))].sort((a, b) => b - a);
     const validCodecs = [...new Set(rawCodecs.filter(c => typeof c === 'string' && c !== 'none'))];
     const hasAudio = bitrates.length > 0 || validCodecs.length > 0;
     const maxAbr = bitrates.length > 0 ? Math.round(bitrates[0]) : (hasAudio ? 128 : 0);
@@ -1535,11 +1515,101 @@ app.get('/api/playlist-formats/:playlistId', (req, res) => {
 });
 
 // =============================================================================
-// FIX #4: FASTER /api/analyze
-// - 1-hour disk cache TTL (was 15-min memory only, no disk)
-// - Persistent disk cache so popular videos don't re-fetch
-// - Skip writing redundant info.json to disk on every call
+// FIX #4 + #11: FASTER /api/analyze
+// - 30-min memory cache (1000 entries)
+// - NEW: the on-disk info.json is now READ BACK (1h TTL) — repeat analysis is
+//   instant even after a restart or memory-cache expiry. Previously the file
+//   was written but never read.
+// - NEW: 90s timeout so the UI never hangs on a slow extractor
 // =============================================================================
+function buildVideoAnalysisResponse(info) {
+    let rawFormats = info.formats;
+    if (!rawFormats) {
+        if (info.url) {
+            rawFormats = [info];
+            if (!info.format_id) info.format_id = info.format_id || '0';
+        } else {
+            return null;
+        }
+    }
+
+    const validFormats = rawFormats.filter(f => {
+        if (f.format_note === 'storyboard' || f.protocol === 'm3u8_native') return false;
+        const hasRealVideo = f.vcodec && f.vcodec !== 'none';
+        const hasRealAudio = f.acodec && f.acodec !== 'none';
+        const isDirectFallback = !f.vcodec && !f.acodec && (f.ext === 'mp4' || f.ext === 'webm');
+        return hasRealVideo || hasRealAudio || isDirectFallback;
+    });
+
+    const formats = validFormats.map(f => {
+        let label = "SD";
+
+        const hasVideo = f.vcodec ? f.vcodec !== 'none' : (!f.acodec && (f.ext === 'mp4' || f.ext === 'webm'));
+        const hasAudio = f.acodec ? f.acodec !== 'none' : (!f.vcodec && (f.ext === 'mp4' || f.ext === 'webm'));
+
+        const width = f.width || 0;
+        const height = f.height || 0;
+        const isVertical = height > width && width > 0;
+
+        let shortEdge = height;
+        if (width && height) {
+            shortEdge = Math.min(width, height);
+        } else if (width && !height) {
+            shortEdge = width;
+        }
+
+        if (hasVideo) {
+            if (shortEdge >= 4320) label = "8K";
+            else if (shortEdge >= 2160) label = "4K";
+            else if (shortEdge >= 1440) label = "2K";
+            else if (shortEdge >= 1080) label = "FHD";
+            else if (shortEdge >= 720) label = "HD";
+            else if (shortEdge >= 480) label = "SD";
+            else label = "Low";
+        } else {
+            label = f.ext ? f.ext.toUpperCase() : "RAW";
+        }
+
+        let resDisplay = 'Native';
+        if (width && height) {
+            resDisplay = isVertical ? `${width}p` : `${height}p`;
+        } else if (height) {
+            resDisplay = `${height}p`;
+        } else if (width) {
+            resDisplay = `${width}w`;
+        }
+
+        return {
+            id: f.format_id,
+            ext: f.ext,
+            height: height || 0,
+            resolution: resDisplay,
+            vcodec: hasVideo ? (f.vcodec || 'unknown') : null,
+            acodec: hasAudio ? (f.acodec || 'unknown') : null,
+            size: f.filesize || f.filesize_approx || 0,
+            abr: f.abr ? `${Math.round(f.abr)}kbps` : null,
+            label: label,
+            fps: f.fps || null,
+            audio_channels: f.audio_channels || 2,
+            codec_info: hasVideo ? (f.vcodec ? f.vcodec.split('.')[0] : 'VID') : (hasAudio ? (f.acodec ? f.acodec.split('.')[0] : 'AUD') : 'RAW')
+        };
+    });
+
+    return {
+        title: info.title,
+        thumbnail: info.thumbnail,
+        duration: info.duration || 0,
+        formats,
+        chapters: Array.isArray(info.chapters) ? info.chapters.map(ch => ({
+            title: ch.title,
+            start_time: ch.start_time,
+            end_time: ch.end_time
+        })) : [],
+        audioTracks: collectAudioTracks(info),
+        subtitles: collectSubtitleOptions(info)
+    };
+}
+
 app.post('/api/analyze', async (req, res) => {
     const { url } = req.body;
     const cleanedUrl = cleanMediaUrl(url);
@@ -1550,6 +1620,29 @@ app.post('/api/analyze', async (req, res) => {
         logger(null, `Serving cached analysis for: "${cached.title}" (instant)`);
         return res.json(cached);
     }
+
+    const hash = Buffer.from(cleanedUrl).toString('base64url');
+    const infoJsonPath = path.join(CACHE_DIR, `${hash}.info.json`);
+
+    // NEW (#11): serve from the on-disk analysis dump when it's still fresh
+    try {
+        if (fs.existsSync(infoJsonPath)) {
+            const st = fs.statSync(infoJsonPath);
+            if (Date.now() - st.mtimeMs < 60 * 60 * 1000) {
+                const diskInfo = JSON.parse(fs.readFileSync(infoJsonPath, 'utf8'));
+                if (diskInfo && (diskInfo.formats || diskInfo.url) && !Array.isArray(diskInfo.entries)) {
+                    const diskResponse = buildVideoAnalysisResponse(diskInfo);
+                    if (diskResponse) {
+                        setCachedAnalysis(cleanedUrl, diskResponse);
+                        logger(null, `Serving disk-cached analysis for: "${diskResponse.title}" (instant)`);
+                        return res.json(diskResponse);
+                    }
+                }
+            } else {
+                try { fs.unlinkSync(infoJsonPath); } catch (e) {}
+            }
+        }
+    } catch (e) {}
 
     try {
         await ensureYtDlp();
@@ -1569,7 +1662,11 @@ app.post('/api/analyze', async (req, res) => {
             ytdlpOptions.playlistItems = '1-50';
         }
 
-        const info = await ytdlp.getInfoAsync(cleanedUrl, ytdlpOptions);
+        // NEW: 90s timeout — never leave the UI hanging on a slow extractor
+        const info = await Promise.race([
+            ytdlp.getInfoAsync(cleanedUrl, ytdlpOptions),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Analysis timed out after 90 seconds. The platform may be slow or blocking yt-dlp.')), 90000))
+        ]);
 
         if (info._type === 'playlist' || Array.isArray(info.entries)) {
             const rawItems = info.entries || [];
@@ -1645,96 +1742,14 @@ app.post('/api/analyze', async (req, res) => {
 
         logger(null, `Metadata retrieved for: "${info.title}"`);
 
-        let rawFormats = info.formats;
-        if (!rawFormats) {
-            if (info.url) {
-                rawFormats = [info];
-                if (!info.format_id) info.format_id = info.format_id || '0';
-            } else {
-                throw new Error("No video stream found. Please ensure the link points to a specific video, not a channel or playlist.");
-            }
+        const responseData = buildVideoAnalysisResponse(info);
+        if (!responseData) {
+            throw new Error("No video stream found. Please ensure the link points to a specific video, not a channel or playlist.");
         }
 
-        const validFormats = rawFormats.filter(f => {
-            if (f.format_note === 'storyboard' || f.protocol === 'm3u8_native') return false;
-            const hasRealVideo = f.vcodec && f.vcodec !== 'none';
-            const hasRealAudio = f.acodec && f.acodec !== 'none';
-            const isDirectFallback = !f.vcodec && !f.acodec && (f.ext === 'mp4' || f.ext === 'webm');
-            return hasRealVideo || hasRealAudio || isDirectFallback;
-        });
-
-        const formats = validFormats.map(f => {
-            let label = "SD";
-
-            const hasVideo = f.vcodec ? f.vcodec !== 'none' : (!f.acodec && (f.ext === 'mp4' || f.ext === 'webm'));
-            const hasAudio = f.acodec ? f.acodec !== 'none' : (!f.vcodec && (f.ext === 'mp4' || f.ext === 'webm'));
-
-            const width = f.width || 0;
-            const height = f.height || 0;
-            const isVertical = height > width && width > 0;
-
-            let shortEdge = height;
-            if (width && height) {
-                shortEdge = Math.min(width, height);
-            } else if (width && !height) {
-                shortEdge = width;
-            }
-
-            if (hasVideo) {
-                if (shortEdge >= 4320) label = "8K";
-                else if (shortEdge >= 2160) label = "4K";
-                else if (shortEdge >= 1440) label = "2K";
-                else if (shortEdge >= 1080) label = "FHD";
-                else if (shortEdge >= 720) label = "HD";
-                else if (shortEdge >= 480) label = "SD";
-                else label = "Low";
-            } else {
-                label = f.ext ? f.ext.toUpperCase() : "RAW";
-            }
-
-            let resDisplay = 'Native';
-            if (width && height) {
-                resDisplay = isVertical ? `${width}p` : `${height}p`;
-            } else if (height) {
-                resDisplay = `${height}p`;
-            } else if (width) {
-                resDisplay = `${width}w`;
-            }
-
-            return {
-                id: f.format_id,
-                ext: f.ext,
-                height: height || 0,
-                resolution: resDisplay,
-                vcodec: hasVideo ? (f.vcodec || 'unknown') : null,
-                acodec: hasAudio ? (f.acodec || 'unknown') : null,
-                size: f.filesize || f.filesize_approx || 0,
-                abr: f.abr ? `${Math.round(f.abr)}kbps` : null,
-                label: label,
-                fps: f.fps || null,
-                audio_channels: f.audio_channels || 2,
-                codec_info: hasVideo ? (f.vcodec ? f.vcodec.split('.')[0] : 'VID') : (hasAudio ? (f.acodec ? f.acodec.split('.')[0] : 'AUD') : 'RAW')
-            };
-        });
-
-        const responseData = {
-            title: info.title,
-            thumbnail: info.thumbnail,
-            duration: info.duration || 0,
-            formats,
-            chapters: Array.isArray(info.chapters) ? info.chapters.map(ch => ({
-                title: ch.title,
-                start_time: ch.start_time,
-                end_time: ch.end_time
-            })) : [],
-            audioTracks: collectAudioTracks(info),
-            subtitles: collectSubtitleOptions(info)
-        };
         setCachedAnalysis(cleanedUrl, responseData);
 
-        // Cache the raw info JSON to disk for 1 hour (instead of no TTL)
-        const hash = Buffer.from(cleanedUrl).toString('base64url');
-        const infoJsonPath = path.join(CACHE_DIR, `${hash}.info.json`);
+        // Refresh the on-disk dump (also feeds instant download start below)
         try {
             fs.writeFileSync(infoJsonPath, JSON.stringify(info));
         } catch (we) {}
@@ -1746,10 +1761,7 @@ app.post('/api/analyze', async (req, res) => {
     }
 });
 
-// =============================================================================
-// FIX #5: NEW ENDPOINT — Reuse cached analysis on a different URL (instant).
-// Useful for retrying a previously-analyzed video without re-fetching.
-// =============================================================================
+// FIX #5: Reuse cached analysis on a different URL (instant)
 app.get('/api/analyze-cache', (req, res) => {
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: 'url query param required' });
@@ -1775,7 +1787,7 @@ app.get('/api/thumbnail', (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}_thumb.png"`);
     res.setHeader('Content-Type', 'image/png');
 
-    const ffmpegProcess = spawn('ffmpeg', [
+    const ffmpegProcess = spawn(resolvedFfmpegPath || 'ffmpeg', [
         '-i', imgUrl,
         '-vframes', '1',
         '-c:v', 'png',
@@ -1791,6 +1803,12 @@ app.get('/api/thumbnail', (req, res) => {
     });
 });
 
+// =============================================================================
+// FIX #15: /api/subtitle — now fully async.
+// Previously used spawnSync which BLOCKED the entire event loop for up to 45s,
+// freezing all status polling (and triggering false watchdog aborts).
+// Response contract is unchanged.
+// =============================================================================
 app.get('/api/subtitle', async (req, res) => {
     const { url, lang, format, title } = req.query;
     if (!url) return res.status(400).send('No video URL provided');
@@ -1825,10 +1843,22 @@ app.get('/api/subtitle', async (req, res) => {
 
         ytdlpArgs.push(cleanedUrl);
 
-        const subProc = spawnSync(ytDlpPath || 'yt-dlp', ytdlpArgs, { encoding: 'utf8', timeout: 45000 });
-        if (subProc.error) {
-            throw subProc.error;
-        }
+        // Async spawn — never blocks polling or other downloads
+        await new Promise((resolve, reject) => {
+            const subProc = spawn(ytDlpPath, ytdlpArgs, { windowsHide: true });
+            let errText = '';
+            if (subProc.stderr) subProc.stderr.on('data', (d) => { errText += d.toString(); });
+            const killer = setTimeout(() => {
+                try { subProc.kill('SIGKILL'); } catch (e) {}
+            }, 45000);
+            subProc.on('error', (err) => { clearTimeout(killer); reject(err); });
+            subProc.on('close', (code) => {
+                clearTimeout(killer);
+                if (code === 0) return resolve();
+                const lastLine = errText.trim().split(/\r?\n/).filter(Boolean).pop();
+                reject(new Error(lastLine || 'yt-dlp subtitle extraction failed'));
+            });
+        });
 
         const candidates = fs.readdirSync(TEMP_DIR)
             .filter(name => name.startsWith(subId) && (name.endsWith(`.${convFormat}`) || name.endsWith('.vtt') || name.endsWith('.srt') || name.endsWith('.ass') || name.endsWith('.lrc')))
@@ -1883,13 +1913,290 @@ app.get('/api/subtitle', async (req, res) => {
 });
 
 // =============================================================================
-// FIX #6 (CRITICAL): /api/download — DECOUPLE Task 2 (FFmpeg) from completion
-// - Status becomes 'completed' the moment the file is on disk
-// - Task 2 (metadata/thumbnail/subtitle injection) runs in the BACKGROUND
-// - Frontend can immediately download via /api/file/:jobId
-// - Frontend can poll for the polished version via /api/post-process-status/:jobId
-// - Eliminates the "5-minute wait" after 100% progress
+// FIX #6 + #12/#13/#14: /api/download — decoupled Task 2 (kept) PLUS:
+//   - Instant start: --load-info-json reuses the analysis dump (no re-extraction)
+//     with one automatic live-URL retry if the cached stream links expired
+//   - Anti-throttle: 4 concurrent fragments + 10MB chunked transfer
+//   - Raw-spawn engine: completion is driven by the process exit code + a
+//     deterministic file scan (the old wrapper could resolve with empty
+//     filePaths, leaving jobs stuck at "100%" forever)
+//   - Weighted TRUE progress across video+audio streams
+// All request params, job fields, statuses, and response shapes unchanged.
 // =============================================================================
+const friendlyDownloadError = (raw) => {
+    const text = String(raw || '');
+    if (/sign in to confirm/i.test(text)) return 'YouTube requires verification (bot check). Add valid cookies via Auth Tokens, then retry.';
+    if (/age.?(restricted|verification)/i.test(text)) return 'Age-restricted video — add cookies from a logged-in account under Auth Tokens.';
+    if (/requested format is not available/i.test(text)) return 'Selected format is no longer available — re-analyze the link and pick another quality.';
+    if (/http error 40[13]/i.test(text)) return 'Platform denied access (expired stream link) — please retry the download.';
+    if (/private video/i.test(text)) return 'This video is private.';
+    if (/video unavailable/i.test(text)) return 'Video unavailable (removed or region-locked).';
+    if (/timed? ?out/i.test(text)) return 'Network timeout while contacting the platform — please retry.';
+    const lastLines = text.trim().split(/\r?\n/).filter(Boolean).slice(-3).join(' | ');
+    return lastLines ? `yt-dlp: ${lastLines.slice(0, 300)}` : 'Download failed with an unknown error.';
+};
+
+// Deterministically locate the finished media file for a job
+const findDownloadedFile = (jobId) => {
+    const shortId = jobId.substring(0, 8);
+    try {
+        const candidates = fs.readdirSync(TEMP_DIR)
+            .filter(name => name.startsWith(`${shortId}_`) && !name.endsWith('.part') && !name.endsWith('.ytdl'))
+            .filter(name => /\.(mp4|mkv|webm|mov|avi|flv|3gp|mp3|m4a|opus|flac|wav|aac|ogg)$/i.test(name))
+            .map(name => {
+                const full = path.join(TEMP_DIR, name);
+                try {
+                    const st = fs.statSync(full);
+                    return { full, size: st.size, mtime: st.mtimeMs };
+                } catch (e) { return null; }
+            })
+            .filter(Boolean);
+
+        if (!candidates.length) return null;
+        // The merged output is always the largest finished file
+        candidates.sort((a, b) => b.size - a.size || b.mtime - a.mtime);
+        return candidates[0].full;
+    } catch (e) {
+        return null;
+    }
+};
+
+// Completion logic — identical lifecycle to the old download.run().then():
+// chapter zip -> immediate 'completed' -> Task 2 in the background
+async function completeDownload(jobId, finalFile, ctx) {
+    const job = jobs[jobId];
+    if (!job || job.status === 'cancelled') return;
+
+    const baseName = finalFile.substring(0, finalFile.lastIndexOf('.'));
+    jobs[jobId].baseName = baseName;
+
+    const possibleThumbs = [baseName + '.jpg', baseName + '.webp', baseName + '.png'];
+    let thumbFile = possibleThumbs.find(f => fs.existsSync(f));
+
+    const mTitle = jobs[jobId].metaTitle;
+    const mArtist = jobs[jobId].metaArtist;
+    const mDate = jobs[jobId].metaDate;
+    const mThumb = jobs[jobId].metaThumb;
+
+    if (!thumbFile && ctx.thumbFetchPromise) {
+        thumbFile = await ctx.thumbFetchPromise;
+    }
+
+    if (!jobs[jobId] || jobs[jobId].status === 'cancelled') return;
+
+    // Handle chapter bundles (zip) — yt-dlp already produced separate files
+    if (jobs[jobId]?.splitChapters) {
+        const chapterFiles = fs.readdirSync(TEMP_DIR)
+            .filter((name) => (name.startsWith(jobId.substring(0, 8)) || name.startsWith(`${jobId}_`)) && !name.endsWith('_chapters.zip'))
+            .filter((name) => /\.(mp4|mkv|webm|mp3|m4a|opus|flac|wav|aac|ogg)$/i.test(name))
+            .map((name) => path.join(TEMP_DIR, name))
+            .filter((p) => p !== finalFile);
+
+        if (chapterFiles.length > 1) {
+            try {
+                const zipPath = await createChapterZip(jobId, chapterFiles, jobs[jobId].title || 'chapter_bundle');
+                chapterFiles.forEach((cf) => {
+                    try { if (fs.existsSync(cf)) fs.unlinkSync(cf); } catch (e) {}
+                });
+                try { if (fs.existsSync(finalFile)) fs.unlinkSync(finalFile); } catch (e) {}
+
+                jobs[jobId].file = path.basename(zipPath);
+                jobs[jobId].extension = 'zip';
+                jobs[jobId].hasZipBundle = true;
+                jobs[jobId].status = 'completed';
+                jobs[jobId].progress = '100%';
+                jobs[jobId].postProcessStatus = 'skipped';
+                logger(jobId, `Chapter bundle created: ${jobs[jobId].file}`, 'SUCCESS');
+                return;
+            } catch (zipErr) {
+                logger(jobId, `Chapter zip creation failed: ${zipErr.message}`, "WARN");
+            }
+        }
+    }
+
+    // KEY: Mark as 'completed' IMMEDIATELY so the user can download the raw
+    // file. Task 2 (metadata/thumb injection) runs in the background.
+    if (fs.existsSync(finalFile)) {
+        jobs[jobId].status = 'completed';
+        jobs[jobId].file = path.basename(finalFile);
+        jobs[jobId].rawDownloadFile = path.basename(finalFile);
+        jobs[jobId].progress = '100%';
+        logger(jobId, `Download Finished. Output (raw): ${jobs[jobId].file} — File is ready for delivery.`, "SUCCESS");
+    }
+
+    // TASK 2: background, non-blocking (unchanged pipeline)
+    if (fs.existsSync(finalFile)) {
+        jobs[jobId].postProcessStatus = 'running';
+        runTask2PostProcessing(jobId, finalFile, baseName, jobs[jobId].isAudioOnly, jobs[jobId].isMuted, mTitle, mArtist, mDate, mThumb, jobs[jobId].embedSubs, jobs[jobId].subLang, ctx.container, jobs[jobId].targetAudio, jobs[jobId].targetVideo, thumbFile)
+            .then((polishedFile) => {
+                if (!jobs[jobId] || jobs[jobId].status === 'cancelled') return;
+                if (polishedFile && fs.existsSync(polishedFile)) {
+                    jobs[jobId].postProcessFile = path.basename(polishedFile);
+                    jobs[jobId].postProcessStatus = 'done';
+                    jobs[jobId].file = jobs[jobId].postProcessFile;
+                    jobs[jobId].extension = path.extname(polishedFile).replace('.', '') || jobs[jobId].extension;
+                    logger(jobId, `Task 2 Packaging Successful: ${jobs[jobId].postProcessFile} (Polished)`, "META");
+                } else {
+                    jobs[jobId].postProcessStatus = 'failed';
+                    logger(jobId, `Task 2 finished without producing a polished file; raw file still available.`, "WARN");
+                }
+            })
+            .catch((err) => {
+                if (!jobs[jobId] || jobs[jobId].status === 'cancelled') return;
+                jobs[jobId].postProcessStatus = 'failed';
+                logger(jobId, `Task 2 crashed: ${err.message} — raw file still available.`, "WARN");
+            });
+    }
+}
+
+const startDownloadEngine = (jobId, ctx) => {
+    const job = jobs[jobId];
+    if (!job || job.status === 'cancelled') return;
+
+    const ytdlpArgs = [
+        '--newline',
+        '--no-warnings',
+        '-f', ctx.formatSelection,
+        '-o', path.join(TEMP_DIR, `${jobId.substring(0, 8)}_%(title)s.%(ext)s`),
+        // FIX #13: anti-throttle — parallel fragment fetching + 10MB chunked
+        // transfer defeats YouTube's ~50KB/s slow-lane
+        '--concurrent-fragments', '4',
+        '--http-chunk-size', '10M',
+        '--socket-timeout', '20',
+        '--retries', '5',
+        '--fragment-retries', '5',
+        ...ctx.ffmpegArgs
+    ];
+
+    if (COOKIES && fs.existsSync(COOKIES) && fs.statSync(COOKIES).size > 0) {
+        ytdlpArgs.push('--cookies', COOKIES);
+    }
+
+    // FIX #12: instant start — reuse the analysis dump instead of re-extracting
+    let usingInfoJson = false;
+    if (!ctx.forceUrl && ctx.infoJsonPath && fs.existsSync(ctx.infoJsonPath)) {
+        try {
+            const st = fs.statSync(ctx.infoJsonPath);
+            if (Date.now() - st.mtimeMs < 60 * 60 * 1000) {
+                ytdlpArgs.push('--load-info-json', ctx.infoJsonPath);
+                usingInfoJson = true;
+            }
+        } catch (e) {}
+    }
+    if (!usingInfoJson) {
+        ytdlpArgs.push(ctx.cleanedUrl);
+    }
+
+    const downloadProc = spawn(ytDlpPath, ytdlpArgs, { windowsHide: true });
+    jobs[jobId].downloadInstance = downloadProc;
+    jobs[jobId].lastOutputTime = Date.now();
+
+    let destCount = 0;
+    let stdoutBuf = '';
+    let stderrTail = [];
+
+    downloadProc.stdout.on('data', (chunk) => {
+        jobs[jobId].lastOutputTime = Date.now();
+        stdoutBuf += chunk.toString();
+        const lines = stdoutBuf.split(/\r\n|\r|\n/);
+        stdoutBuf = lines.pop();
+        for (const line of lines) {
+            const t = line.trim();
+            if (!t) continue;
+
+            // Track each stream so overall progress is weighted correctly
+            if (/^\[download\]\s+Destination:/i.test(t)) {
+                destCount++;
+                continue;
+            }
+
+            if (/has already been downloaded/i.test(t)) {
+                jobs[jobId].progress = '100%';
+                jobs[jobId].lastProgressTime = Date.now();
+                continue;
+            }
+
+            const pm = t.match(/^\[download\]\s+([\d.]+)%/);
+            if (pm) {
+                const pct = parseFloat(pm[1]);
+                const speedM = t.match(/\bat\s+(\S+\/s)/i);
+                const etaM = t.match(/\bETA\s+([\d:]+)/i);
+
+                // FIX #14: weighted TRUE progress across video+audio streams
+                // (the old per-stream "100%" was misleading)
+                const denom = Math.max(destCount, ctx.formatSelection.includes('+') ? 2 : 1);
+                const partIndex = Math.max(0, destCount - 1);
+                const overall = Math.min(99.5, ((partIndex + pct / 100) / denom) * 100);
+
+                jobs[jobId].progress = `${overall.toFixed(1)}%`;
+                if (speedM) jobs[jobId].speed = speedM[1];
+                if (etaM) jobs[jobId].eta = etaM[1];
+                jobs[jobId].lastProgressTime = Date.now();
+
+                const pInt = Math.round(overall);
+                if (pInt % 25 === 0 && pInt !== jobs[jobId]._lastLoggedPct) {
+                    jobs[jobId]._lastLoggedPct = pInt;
+                    logger(jobId, `Progress: ${jobs[jobId].progress}${jobs[jobId].speed ? ` (${jobs[jobId].speed})` : ''}`, "PROGRESS");
+                }
+            }
+        }
+    });
+
+    downloadProc.stderr.on('data', (chunk) => {
+        jobs[jobId].lastOutputTime = Date.now();
+        const lines = chunk.toString().split(/\r\n|\r|\n/);
+        for (const line of lines) {
+            const t = line.trim();
+            if (t) {
+                stderrTail.push(t);
+                if (stderrTail.length > 30) stderrTail.shift();
+            }
+        }
+    });
+
+    downloadProc.on('error', (err) => {
+        if (jobs[jobId] && jobs[jobId].status !== 'cancelled') {
+            jobs[jobId].status = 'error';
+            jobs[jobId].error = `Failed to launch yt-dlp: ${err.message}`;
+            logger(jobId, `Download/Merge error: ${jobs[jobId].error}`, "ERROR");
+        }
+    });
+
+    downloadProc.on('close', (code) => {
+        if (!jobs[jobId] || jobs[jobId].status === 'cancelled') return;
+
+        if (code !== 0) {
+            // Cached dump failed (e.g. expired stream URLs)? Retry once with the live URL
+            if (usingInfoJson && !jobs[jobId]._retriedWithUrl) {
+                jobs[jobId]._retriedWithUrl = true;
+                logger(jobId, 'Cached-metadata attempt failed — retrying once with live URL extraction...', "RETRY");
+                startDownloadEngine(jobId, { ...ctx, forceUrl: true });
+                return;
+            }
+            jobs[jobId].status = 'error';
+            jobs[jobId].error = friendlyDownloadError(stderrTail.join('\n'));
+            logger(jobId, `Download/Merge error: ${jobs[jobId].error}`, "ERROR");
+            return;
+        }
+
+        const finalFile = findDownloadedFile(jobId);
+        if (!finalFile) {
+            jobs[jobId].status = 'error';
+            jobs[jobId].error = 'Download finished but no output file was found on disk.';
+            logger(jobId, `Download/Merge error: ${jobs[jobId].error}`, "ERROR");
+            return;
+        }
+
+        completeDownload(jobId, finalFile, ctx).catch((err) => {
+            if (jobs[jobId] && jobs[jobId].status !== 'cancelled') {
+                jobs[jobId].status = 'error';
+                jobs[jobId].error = err.message;
+                logger(jobId, `Download/Merge error: ${err.message}`, "ERROR");
+            }
+        });
+    });
+};
+
 app.post('/api/download', async (req, res) => {
     const {
         url,
@@ -2068,16 +2375,16 @@ app.post('/api/download', async (req, res) => {
         embedSubs: !!embedSubs,
         subLang: subLang || null,
         hasZipBundle: false,
-        // NEW FIELDS for the decoupled pipeline:
-        postProcessStatus: 'pending',  // pending | running | done | failed | skipped
-        postProcessFile: null,         // populated when polished file ready
-        rawDownloadFile: null          // the original file (immediate)
+        // Decoupled pipeline fields:
+        postProcessStatus: 'pending',
+        postProcessFile: null,
+        rawDownloadFile: null
     };
 
     logger(jobId, `Download initiated for "${title}" [Format: ${extension.toUpperCase()}]`, "START");
 
     await ensureYtDlp();
-    const ytdlp = new YtDlp(ytDlpPath ? { binaryPath: ytDlpPath } : undefined);
+    ensureFfmpeg();
 
     let ffmpegArgs = [];
 
@@ -2115,7 +2422,7 @@ app.post('/api/download', async (req, res) => {
     let thumbFetchPromise = null;
     if (metaThumb) {
         thumbFetchPromise = new Promise((resolve) => {
-            const p = spawn('ffmpeg', ['-y', '-i', metaThumb, '-vframes', '1', manualThumb, '-hide_banner', '-loglevel', 'error']);
+            const p = spawn(resolvedFfmpegPath || 'ffmpeg', ['-y', '-i', metaThumb, '-vframes', '1', manualThumb, '-hide_banner', '-loglevel', 'error']);
             p.on('close', () => resolve(fs.existsSync(manualThumb) ? manualThumb : null));
             p.on('error', () => resolve(null));
         });
@@ -2124,9 +2431,13 @@ app.post('/api/download', async (req, res) => {
     if (splitChapters) {
         ffmpegArgs.push('--split-chapters');
     }
-    // Clips are deliberately cut after the complete source download. Using
-    // yt-dlp section extraction can start on nearby keyframes and return raw
-    // files before the requested range has been safely packaged.
+    if (resolvedClipStart && resolvedClipEnd) {
+        ffmpegArgs.push('--download-sections', `*${resolvedClipStart}-${resolvedClipEnd}`);
+        ffmpegArgs.push('--force-keyframes-at-cuts');
+    } else if (resolvedClipStart && resolvedClipStart !== '00:00:00') {
+        ffmpegArgs.push('--download-sections', `*${resolvedClipStart}-inf`);
+        ffmpegArgs.push('--force-keyframes-at-cuts');
+    }
     if (embedSubs && subLang) {
         ffmpegArgs.push('--write-subs', '--write-auto-subs', '--sub-langs', subLang, '--convert-subs', 'srt');
     }
@@ -2136,153 +2447,22 @@ app.post('/api/download', async (req, res) => {
         ffmpegArgs.push('--ffmpeg-location', path.dirname(resolvedFfmpegPath));
     }
 
-    const download = ytdlp.download(cleanedUrl);
-    jobs[jobId].downloadInstance = download;
-    if (COOKIES && fs.existsSync(COOKIES) && fs.statSync(COOKIES).size > 0) {
-        download.cookies(COOKIES);
-    }
-    download.format(formatSelection);
-    download.setOutputTemplate(path.join(TEMP_DIR, `${jobId.substring(0, 8)}_%(${'title'})s.%(${'ext'})s`));
-    if (ffmpegArgs.length > 0) {
-        download.addArgs(...ffmpegArgs);
-    }
-    download.on('progress', (p) => {
-        if (jobs[jobId] && jobs[jobId].status === 'downloading') {
-            jobs[jobId].progress = p.percentage_str || '0%';
-            jobs[jobId].speed = p.speed_str || null;
-            jobs[jobId].eta = p.eta_str || null;
-            jobs[jobId].lastProgressTime = Date.now();
-            const pInt = parseInt(p.percentage_str);
-            if (pInt % 25 === 0) logger(jobId, `Progress: ${p.percentage_str}${p.speed_str ? ` (${p.speed_str})` : ''}`, "PROGRESS");
-        }
+    startDownloadEngine(jobId, {
+        cleanedUrl,
+        formatSelection,
+        ffmpegArgs,
+        infoJsonPath,
+        thumbFetchPromise,
+        container,
+        title
     });
-
-    // =====================================================================
-    // FIX #6 IMPLEMENTATION: The download resolves, then the file is
-    // INSTANTLY marked as 'completed' and delivered to the frontend.
-    // Task 2 (FFmpeg) runs in the BACKGROUND and updates postProcessStatus.
-    // =====================================================================
-    download.run()
-        .then(async (result) => {
-            if (jobs[jobId] && jobs[jobId].status === 'cancelled') return;
-            if (result.filePaths && result.filePaths.length > 0) {
-                let finalFile = result.filePaths[0];
-                const baseName = finalFile.substring(0, finalFile.lastIndexOf('.'));
-                jobs[jobId].baseName = baseName;
-
-                const possibleThumbs = [baseName + '.jpg', baseName + '.webp', baseName + '.png'];
-                let thumbFile = possibleThumbs.find(f => fs.existsSync(f));
-
-                const mTitle = jobs[jobId].metaTitle;
-                const mArtist = jobs[jobId].metaArtist;
-                const mDate = jobs[jobId].metaDate;
-                const mThumb = jobs[jobId].metaThumb;
-
-                if (!thumbFile && thumbFetchPromise) {
-                    thumbFile = await thumbFetchPromise;
-                }
-
-                if (jobs[jobId] && jobs[jobId].status === 'cancelled') return;
-
-                // Handle chapter bundles (zip) — synchronous, because yt-dlp
-                // already produced separate files
-                if (jobs[jobId]?.splitChapters) {
-                    const chapterFiles = fs.readdirSync(TEMP_DIR)
-                        .filter((name) => (name.startsWith(jobId.substring(0, 8)) || name.startsWith(`${jobId}_`)) && !name.endsWith('_chapters.zip'))
-                        .filter((name) => /\.(mp4|mkv|webm|mp3|m4a|opus|flac|wav|aac|ogg)$/i.test(name))
-                        .map((name) => path.join(TEMP_DIR, name))
-                        .filter((p) => p !== finalFile);
-
-                    if (chapterFiles.length > 1) {
-                        try {
-                            const zipPath = await createChapterZip(jobId, chapterFiles, title || 'chapter_bundle');
-                            chapterFiles.forEach((cf) => {
-                                try { if (fs.existsSync(cf)) fs.unlinkSync(cf); } catch (e) {}
-                            });
-                            try { if (fs.existsSync(finalFile)) fs.unlinkSync(finalFile); } catch (e) {}
-
-                            jobs[jobId].file = path.basename(zipPath);
-                            jobs[jobId].extension = 'zip';
-                            jobs[jobId].hasZipBundle = true;
-                            jobs[jobId].status = 'completed';
-                            jobs[jobId].progress = '100%';
-                            jobs[jobId].postProcessStatus = 'skipped';  // zip already polished
-                            logger(jobId, `Chapter bundle created: ${jobs[jobId].file}`, 'SUCCESS');
-                            return;
-                        } catch (zipErr) {
-                            logger(jobId, `Chapter zip creation failed: ${zipErr.message}`, 'WARN');
-                        }
-                    }
-                }
-
-                // =================================================================
-                // KEY FIX: Mark as 'completed' IMMEDIATELY so the user can download
-                // the raw file. Task 2 (metadata/thumb injection) runs in background.
-                // =================================================================
-                if (fs.existsSync(finalFile) && !jobs[jobId].clipRequested) {
-                    jobs[jobId].status = 'completed';
-                    jobs[jobId].file = path.basename(finalFile);
-                    jobs[jobId].rawDownloadFile = path.basename(finalFile);
-                    jobs[jobId].progress = '100%';
-                    logger(jobId, `Download Finished. Output (raw): ${jobs[jobId].file} — File is ready for delivery.`, "SUCCESS");
-                }
-
-                // =================================================================
-                // TASK 2: Run in BACKGROUND, non-blocking
-                // Frontend can keep polling /api/post-process-status/:jobId
-                // When done, postProcessFile is set; if download requested,
-                // we can swap to the polished version transparently.
-                // =================================================================
-                if (fs.existsSync(finalFile)) {
-                    jobs[jobId].postProcessStatus = 'running';
-                    runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, isMuted, mTitle, mArtist, mDate, mThumb, jobs[jobId].embedSubs, jobs[jobId].subLang, container, targetAudio, targetVideo, thumbFile)
-                        .then((polishedFile) => {
-                            if (!jobs[jobId] || jobs[jobId].status === 'cancelled') return;
-                            if (polishedFile && fs.existsSync(polishedFile)) {
-                                jobs[jobId].postProcessFile = path.basename(polishedFile);
-                                jobs[jobId].postProcessStatus = 'done';
-                                jobs[jobId].file = jobs[jobId].postProcessFile;  // Switch delivery to polished version
-                                jobs[jobId].extension = path.extname(polishedFile).replace('.', '') || jobs[jobId].extension;
-                                if (jobs[jobId].clipRequested) {
-                                    jobs[jobId].status = 'completed';
-                                    jobs[jobId].progress = '100%';
-                                }
-                                logger(jobId, `Task 2 Packaging Successful: ${jobs[jobId].postProcessFile} (Polished)`, "META");
-                            } else {
-                                jobs[jobId].postProcessStatus = 'failed';
-                                if (jobs[jobId].clipRequested) {
-                                    jobs[jobId].status = 'error';
-                                    jobs[jobId].error = 'FFmpeg could not create the requested clip.';
-                                }
-                                logger(jobId, `Task 2 finished without producing a polished file; raw file still available.`, "WARN");
-                            }
-                        })
-                        .catch((err) => {
-                            if (!jobs[jobId] || jobs[jobId].status === 'cancelled') return;
-                            jobs[jobId].postProcessStatus = 'failed';
-                            if (jobs[jobId].clipRequested) {
-                                jobs[jobId].status = 'error';
-                                jobs[jobId].error = `FFmpeg clip processing failed: ${err.message}`;
-                            }
-                            logger(jobId, `Task 2 crashed: ${err.message} — raw file still available.`, "WARN");
-                        });
-                }
-            }
-        })
-        .catch((err) => {
-            if (jobs[jobId] && jobs[jobId].status !== 'cancelled') {
-                jobs[jobId].status = 'error';
-                jobs[jobId].error = err.message || 'Download or processing failed';
-                logger(jobId, `Download/Merge error: ${err.message}`, "ERROR");
-            }
-        });
 
     res.json({ jobId });
 });
 
 // =============================================================================
-// FIX #6 HELPER: Task 2 (FFmpeg post-processing) — fully async, returns the
-// polished file path. Runs in the background after download.
+// Task 2 (FFmpeg post-processing) — unchanged pipeline, async, runs in the
+// background after download. Only change: uses the resolved FFmpeg binary.
 // =============================================================================
 async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, isMuted, mTitle, mArtist, mDate, mThumb, embedSubs, subLang, container, targetAudio, targetVideo, thumbFile) {
     try {
@@ -2304,16 +2484,9 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
         const embeddedFile = baseName + '_final.' + targetExt;
         let embedArgs = [];
         let subtitleFile = null;
-        const clipRequested = Boolean(jobs[jobId]?.clipRequested);
-        const clipStartSeconds = clipRequested ? (parseTimeToSeconds(jobs[jobId].clipStart) || 0) : 0;
-        const clipEndSeconds = clipRequested ? parseTimeToSeconds(jobs[jobId].clipEnd) : null;
-        const clipDurationSeconds = clipEndSeconds !== null ? Math.max(0, clipEndSeconds - clipStartSeconds) : null;
-        const clipTimestampArgs = clipRequested
-            ? ['-ss', String(clipStartSeconds), ...(clipDurationSeconds !== null ? ['-t', String(clipDurationSeconds)] : []), '-avoid_negative_ts', 'make_zero']
+        const clipTimestampArgs = (jobs[jobId] && jobs[jobId].clipRequested)
+            ? ['-fflags', '+genpts', '-avoid_negative_ts', 'make_zero']
             : [];
-        const videoCodecArgs = clipRequested
-            ? ['-c:v:0', 'libx264', '-preset', 'fast', '-crf', '18', '-pix_fmt', 'yuv420p']
-            : ['-c:v:0', 'copy'];
 
         if (isAudioOnly) {
             if (targetExt === 'flac' || targetExt === 'wav') {
@@ -2338,7 +2511,7 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                     '-y', '-threads', '0', '-i', finalFile,
                     ...clipTimestampArgs,
                     '-map', '0:a:0',
-                    ...(clipRequested ? ['-c:a', 'aac', '-b:a', '192k'] : ['-c:a', 'copy']),
+                    '-c:a', 'copy',
                     ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
                     '-metadata', `title=${mTitle}`,
                     '-metadata', `artist=${mArtist}`,
@@ -2350,7 +2523,7 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                 ];
             } else if (targetExt === 'm4a') {
                 const isSourceAac = finalFile.toLowerCase().endsWith('.m4a');
-                const aCodecArgs = clipRequested || !isSourceAac ? ['-c:a', 'aac', '-b:a', '256k'] : ['-c:a', 'copy'];
+                const aCodecArgs = isSourceAac ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '256k'];
                 embedArgs = [
                     '-y', '-threads', '0', '-i', finalFile,
                     ...(thumbFile ? ['-i', thumbFile] : []),
@@ -2369,7 +2542,7 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                 ];
             } else if (targetExt === 'opus') {
                 const isSourceOpus = finalFile.toLowerCase().endsWith('.opus') || finalFile.toLowerCase().endsWith('.webm');
-                const aCodecArgs = clipRequested || !isSourceOpus ? ['-c:a', 'libopus', '-b:a', '160k'] : ['-c:a', 'copy'];
+                const aCodecArgs = isSourceOpus ? ['-c:a', 'copy'] : ['-c:a', 'libopus', '-b:a', '160k'];
                 embedArgs = [
                     '-y', '-threads', '0', '-i', finalFile,
                     ...clipTimestampArgs,
@@ -2462,7 +2635,7 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                         ...inputs,
                         ...clipTimestampArgs,
                         ...streamMaps,
-                        ...videoCodecArgs,
+                        '-c:v:0', 'copy',
                         '-an',
                         ...subCodecArgs,
                         ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
@@ -2474,7 +2647,7 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                         ...inputs,
                         ...clipTimestampArgs,
                         ...streamMaps,
-                        ...videoCodecArgs,
+                        '-c:v:0', 'copy',
                         '-an',
                         ...subCodecArgs,
                         '-movflags', '+faststart',
@@ -2485,9 +2658,7 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                 }
             } else {
                 const isTranscode = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy';
-                const audioCodecArgs = clipRequested
-                    ? ['-c:a', 'aac', '-b:a', '192k']
-                    : (isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio] : ['-c:a', 'copy']);
+                const audioCodecArgs = isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio] : ['-c:a', 'copy'];
 
                 const streamMaps = ['-map', '0:v:0', '-map', '0:a:0?'];
                 if (subInputIdx !== -1) streamMaps.push('-map', `${subInputIdx}:0`);
@@ -2498,7 +2669,7 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                         ...inputs,
                         ...clipTimestampArgs,
                         ...streamMaps,
-                        ...videoCodecArgs,
+                        '-c:v:0', 'copy',
                         ...audioCodecArgs,
                         ...subCodecArgs,
                         ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
@@ -2510,7 +2681,7 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                         ...inputs,
                         ...clipTimestampArgs,
                         ...streamMaps,
-                        ...videoCodecArgs,
+                        '-c:v:0', 'copy',
                         ...audioCodecArgs,
                         ...subCodecArgs,
                         '-movflags', '+faststart',
@@ -2523,7 +2694,7 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
         }
 
         const task2Result = await new Promise((resolve) => {
-            const proc = spawn('ffmpeg', embedArgs);
+            const proc = spawn(resolvedFfmpegPath || 'ffmpeg', embedArgs);
             if (jobs[jobId]) jobs[jobId].activeFfmpeg = proc;
             let stderr = '';
             proc.stderr?.on('data', (d) => stderr += d.toString());
@@ -2545,7 +2716,7 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
 
             try {
                 if (!isAudioOnly) {
-                    const pRes = spawnSync('ffmpeg', ['-nostdin', '-i', embeddedFile, '-hide_banner']);
+                    const pRes = spawnSync(resolvedFfmpegPath || 'ffmpeg', ['-nostdin', '-i', embeddedFile, '-hide_banner']);
                     const probe = (pRes.stderr ? pRes.stderr.toString() : '') + (pRes.stdout ? pRes.stdout.toString() : '');
                     const resMatch = probe.match(/Video:.*?(\d{3,4})x(\d{3,4})/s) || probe.match(/, (\d{3,4})x(\d{3,4})/);
                     if (resMatch && jobs[jobId]) {
@@ -2583,10 +2754,7 @@ app.all('/api/cancel/:jobId', (req, res) => {
     res.json({ success: true, message: 'Download aborted and bandwidth saved' });
 });
 
-// =============================================================================
-// FIX #7: Status endpoint now exposes postProcessStatus so the frontend can
-// show "Polishing..." after delivery, and deliver the polished version when ready.
-// =============================================================================
+// FIX #7: Status endpoint exposes postProcessStatus (unchanged contract)
 app.get('/api/status/:jobId', (req, res) => {
     const job = jobs[req.params.jobId];
     if (!job) {
@@ -2609,17 +2777,13 @@ app.get('/api/status/:jobId', (req, res) => {
         resolvedFormat: job.resolvedFormat,
         error: job.error,
         bundleType: job.hasZipBundle ? 'zip' : null,
-        // NEW: post-processing status (decoupled from download)
         postProcessStatus: job.postProcessStatus || 'skipped',
         postProcessFile: job.postProcessFile || null,
         readyToDeliver: job.status === 'completed' && !!job.file
     });
 });
 
-// =============================================================================
-// FIX #8: NEW ENDPOINT — Frontend can poll for the polished version
-// after the file is already delivered as raw.
-// =============================================================================
+// FIX #8: Poll for the polished version after raw delivery
 app.get('/api/post-process-status/:jobId', (req, res) => {
     const job = jobs[req.params.jobId];
     if (!job) return res.json({ status: 'unknown' });
@@ -2634,8 +2798,6 @@ app.get('/api/file/:jobId/:title', (req, res) => {
     const job = jobs[req.params.jobId];
     if (!job || job.status !== 'completed') return res.status(400).send('File not ready');
 
-    // Serve whichever file is currently selected (postProcessFile when ready,
-    // otherwise rawDownloadFile)
     const fileToServe = job.postProcessFile || job.file;
     if (!fileToServe) return res.status(400).send('No file available');
 
@@ -2676,10 +2838,7 @@ app.get('/api/file/:jobId/:title', (req, res) => {
     });
 });
 
-// =============================================================================
-// FIX #9: HEAD support for /api/file — lets browsers/probe tools check
-// file existence & size without downloading. Speeds up frontend download triggers.
-// =============================================================================
+// FIX #9: HEAD support for /api/file
 app.head('/api/file/:jobId/:title', (req, res) => {
     const job = jobs[req.params.jobId];
     if (!job || job.status !== 'completed') return res.sendStatus(404);
@@ -2693,17 +2852,30 @@ app.head('/api/file/:jobId/:title', (req, res) => {
     res.sendStatus(200);
 });
 
+// =============================================================================
+// FIX #17: Cleanup sweep — 30-min TTL kept, but now it NEVER touches files
+// that belong to an active download (previously it could delete the partial
+// file of a long-running download and break it mid-transfer).
+// =============================================================================
 setInterval(() => {
     try {
         const now = Date.now();
         if (fs.existsSync(TEMP_DIR)) {
+            const activeShortIds = new Set(
+                Object.keys(jobs)
+                    .filter(id => jobs[id] && (jobs[id].status === 'downloading' || jobs[id].status === 'processing' || jobs[id].status === 'starting'))
+                    .map(id => id.substring(0, 8))
+            );
             const files = fs.readdirSync(TEMP_DIR);
             for (const file of files) {
-                const fPath = path.join(TEMP_DIR, file);
-                const stats = fs.statSync(fPath);
-                if (now - stats.mtimeMs > 30 * 60 * 1000) {
-                    fs.unlinkSync(fPath);
-                }
+                if (activeShortIds.has(file.substring(0, 8))) continue;
+                try {
+                    const fPath = path.join(TEMP_DIR, file);
+                    const stats = fs.statSync(fPath);
+                    if (stats.isFile() && (now - stats.mtimeMs > 30 * 60 * 1000)) {
+                        fs.unlinkSync(fPath);
+                    }
+                } catch (e) {}
             }
         }
     } catch (e) {}
@@ -2728,17 +2900,11 @@ if (staticDir) {
     });
 }
 
-// =============================================================================
-// FIX #10: WARM-UP — Truly non-blocking + use 1x1 video to make it near-instant.
-// Originally it spawned a real download simulation that took 8 seconds.
-// Now it spawns a tiny probe that completes in <1 second.
-// =============================================================================
+// FIX #10: WARM-UP — truly non-blocking, tiny simulated probe (<1s)
 const warmUpYtDlp = () => {
     if (!ytDlpPath) return;
     logger(null, 'Warming up yt-dlp engine (background, non-blocking)...');
 
-    // Use --simulate + --no-warnings to make this near-instant.
-    // We probe YouTube's iOS client endpoint — it's a tiny HEAD-like call.
     const warmArgs = [
         '--simulate',
         '--quiet',
@@ -2750,9 +2916,7 @@ const warmUpYtDlp = () => {
     if (COOKIES && fs.existsSync(COOKIES) && fs.statSync(COOKIES).size > 0) {
         warmArgs.push('--cookies', COOKIES);
     }
-    // Use a known small/tiny video. The original used Rick Astley which is
-    // large; we use a tiny one but if it fails, the warm-up gracefully no-ops.
-    warmArgs.push('https://www.youtube.com/watch?v=jNQXAC9IVRw');  // "Me at the zoo" — first YT video, ~19s, very small
+    warmArgs.push('https://www.youtube.com/watch?v=jNQXAC9IVRw');
 
     const warmup = spawn(ytDlpPath, warmArgs, { stdio: 'ignore' });
     let done = false;

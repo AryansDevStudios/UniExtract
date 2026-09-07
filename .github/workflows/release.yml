@@ -32,7 +32,7 @@ jobs:
         include:
           - os: windows-latest
             platform: Windows
-            build-cmd: npm run dist:win
+            build-cmd: npm run dist:win:release
             artifacts: |
               dist-electron/*.exe
               dist-electron/latest*.yml
@@ -41,7 +41,7 @@ jobs:
               scripts/trust-publisher.bat
           - os: ubuntu-latest
             platform: Linux
-            build-cmd: npm run dist:linux
+            build-cmd: npm run dist:linux:release
             artifacts: |
               dist-electron/*.AppImage
               dist-electron/*.deb
@@ -49,7 +49,7 @@ jobs:
               dist-electron/*.blockmap
           - os: macos-latest
             platform: macOS
-            build-cmd: npm run dist:mac
+            build-cmd: npm run dist:mac:release
             artifacts: |
               dist-electron/*.dmg
               dist-electron/*.zip
