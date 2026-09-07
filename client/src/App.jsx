@@ -9,6 +9,7 @@ import ServerModal from './components/ServerModal';
 import UpdateModal from './components/UpdateModal';
 import SettingsModal from './components/SettingsModal';
 import { apiUrl, apiFetch, getCustomServerUrl, shouldShowServerSelector } from './utils/api';
+import { getEnvironmentInfo } from './utils/environment';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function App() {
@@ -46,6 +47,8 @@ function App() {
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+
+  const envInfo = getEnvironmentInfo(customServerUrl);
 
   const fetchCookieStatus = async () => {
     try {
@@ -394,9 +397,24 @@ function App() {
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="w-full"
+          className="w-full space-y-3"
         >
           <SearchBox onAnalyze={handleAnalyze} isLoading={isAnalyzing} />
+
+          {/* ACTIVE SERVER ENVIRONMENT STATUS PILL */}
+          <div className="flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => setServerModalOpen(true)}
+              className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-medium bg-white/60 dark:bg-slate-900/60 backdrop-blur-md border border-slate-200 dark:border-slate-800/80 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-500/40 transition-all shadow-sm group"
+              title="Click to view or configure Server Architecture"
+            >
+              <span className={`w-2 h-2 rounded-full ${customServerUrl ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.9)]' : 'bg-emerald-500 animate-pulse'}`} />
+              <span className="font-semibold text-slate-800 dark:text-slate-200">{envInfo.name}:</span>
+              <span className="truncate max-w-[260px] sm:max-w-md">{envInfo.serverTitle}</span>
+              <span className="text-[10px] text-indigo-500 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all">⚙️</span>
+            </button>
+          </div>
         </motion.div>
 
         <AnimatePresence mode="wait">

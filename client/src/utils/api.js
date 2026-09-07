@@ -1,3 +1,5 @@
+import { getDefaultBackendUrl } from './environment';
+
 const STORAGE_KEY = 'umx_custom_server';
 
 /**
@@ -7,6 +9,15 @@ export function getCustomServerUrl() {
   const custom = localStorage.getItem(STORAGE_KEY);
   if (!custom) return '';
   return custom.trim().replace(/\/+$/, '');
+}
+
+/**
+ * Returns the active backend base URL (custom server if configured, otherwise environment default).
+ */
+export function getActiveBackendBase() {
+  const custom = getCustomServerUrl();
+  if (custom) return custom;
+  return getDefaultBackendUrl();
 }
 
 /**
@@ -28,10 +39,10 @@ export function setCustomServerUrl(url) {
 }
 
 /**
- * Resolves an API path against the active server (custom endpoint if set, otherwise relative path).
+ * Resolves an API path against the active server (custom endpoint if set, otherwise environment default).
  */
 export function apiUrl(path) {
-  const base = getCustomServerUrl();
+  const base = getActiveBackendBase();
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   return base ? `${base}${normalizedPath}` : normalizedPath;
 }
@@ -48,11 +59,15 @@ export async function apiFetch(path, options = {}) {
  * Tests connection to a given endpoint (or current active endpoint if omitted).
  */
 export async function testServerConnection(targetUrl) {
-  const clean = (targetUrl !== undefined ? targetUrl : getCustomServerUrl()).trim().replace(/\/+$/, '');
   let testUrl = '';
-  if (clean) {
+  if (targetUrl !== undefined && targetUrl !== '') {
+    const clean = targetUrl.trim().replace(/\/+$/, '');
     const formatted = (clean.startsWith('http://') || clean.startsWith('https://')) ? clean : `https://${clean}`;
     testUrl = `${formatted}/api/health`;
+  } else if (targetUrl === '') {
+    // Explicitly testing default server
+    const defaultBase = getDefaultBackendUrl();
+    testUrl = defaultBase ? `${defaultBase}/api/health` : '/api/health';
   } else {
     testUrl = apiUrl('/api/health');
   }

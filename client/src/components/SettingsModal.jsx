@@ -23,6 +23,8 @@ import {
   Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getEnvironmentInfo } from '../utils/environment';
+import { getCustomServerUrl } from '../utils/api';
 
 export default function SettingsModal({
   isOpen,
@@ -61,7 +63,8 @@ export default function SettingsModal({
 
   if (!isOpen) return null;
 
-  const currentVersion = updateInfo?.currentVersion || '2.6.1';
+  const currentVersion = updateInfo?.currentVersion || '2.6.2';
+  const envInfo = getEnvironmentInfo(getCustomServerUrl());
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-md">
@@ -275,10 +278,14 @@ export default function SettingsModal({
                   <button
                     type="button"
                     onClick={() => { onClose(); onOpenServer(); }}
-                    className="flex items-center justify-center gap-2 p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-all shadow-sm"
+                    className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-all shadow-sm group"
+                    title={envInfo.headerTooltip}
                   >
-                    <Server size={14} className="text-indigo-500" />
-                    Server Endpoint
+                    <Server size={14} className="text-indigo-500 shrink-0" />
+                    <span>Server</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-medium">
+                      {envInfo.badgeText}
+                    </span>
                   </button>
                   <button
                     type="button"

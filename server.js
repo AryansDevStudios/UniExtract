@@ -649,7 +649,7 @@ app.get('/favfavicon.ico', (req, res) => {
 
 // --- HEALTH CHECK ENDPOINT ---
 app.get('/api/health', (req, res) => {
-    const appVersion = require('./package.json').version || '2.6.1';
+    const appVersion = require('./package.json').version || '2.6.2';
     res.json({
         status: 'ok',
         version: appVersion,
@@ -694,7 +694,7 @@ app.get('/api/updates/active-jobs', (req, res) => {
 
 // Full update check endpoint
 app.get('/api/updates', async (req, res) => {
-    const currentVersion = require('./package.json').version || '2.6.1';
+    const currentVersion = require('./package.json').version || '2.6.2';
     const force = req.query.force === 'true';
     const now = Date.now();
 

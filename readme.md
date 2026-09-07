@@ -236,10 +236,10 @@ npm run dist:mac         # Builds macOS .dmg and .zip packages
 npm run dist:all         # Builds all targets
 ```
 The compiled executables will be generated in `dist-electron/`:
-- **x64 (Intel / AMD)**: `UniExtract-2.6.1-x64-Setup.exe` & `UniExtract-Portable-2.6.1-x64.exe`
-- **ARM64 (Snapdragon / Copilot+)**: `UniExtract-2.6.1-arm64-Setup.exe` & `UniExtract-Portable-2.6.1-arm64.exe`
-- **Linux**: `UniExtract-2.6.1-x86_64.AppImage` & `UniExtract-2.6.1-amd64.deb`
-- **macOS**: `UniExtract-2.6.1-x64.dmg` & `UniExtract-2.6.1-arm64.dmg`
+- **x64 (Intel / AMD)**: `UniExtract-2.6.2-x64-Setup.exe` & `UniExtract-Portable-2.6.2-x64.exe`
+- **ARM64 (Snapdragon / Copilot+)**: `UniExtract-2.6.2-arm64-Setup.exe` & `UniExtract-Portable-2.6.2-arm64.exe`
+- **Linux**: `UniExtract-2.6.2-x86_64.AppImage` & `UniExtract-2.6.2-amd64.deb`
+- **macOS**: `UniExtract-2.6.2-x64.dmg` & `UniExtract-2.6.2-arm64.dmg`
 
 In portable mode, placing a `cookies.txt` next to the executable keeps your authentication persistent across runs.
 
@@ -251,7 +251,7 @@ Uni Extract exposes a full set of JSON endpoints for media extraction, streaming
 
 ### 1. `GET /api/health`
 Health check and server uptime indicator.
-- **Response**: `{ "status": "ok", "version": "2.6.1", "uptime": 120, "timestamp": 1725619200000 }`
+- **Response**: `{ "status": "ok", "version": "2.6.2", "uptime": 120, "timestamp": 1725619200000 }`
 
 ---
 
@@ -381,8 +381,8 @@ Uni Extract includes a production-grade automated CI/CD suite powered by **GitHu
 ### 🚀 Publishing a Multi-Platform Release
 When you are ready to publish a new release:
 ```bash
-git tag v2.6.1
-git push origin v2.6.1
+git tag v2.6.2
+git push origin v2.6.2
 ```
 GitHub Actions will spin up Windows, Ubuntu, and macOS runners in parallel, package all native desktop binaries, compute SHA-256 checksums, and attach all installer files to the release automatically.
 

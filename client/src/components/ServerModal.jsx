@@ -17,6 +17,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { getCustomServerUrl, setCustomServerUrl, testServerConnection } from '../utils/api';
+import { getEnvironmentInfo, DEFAULT_RENDER_SERVER } from '../utils/environment';
 
 export default function ServerModal({ isOpen, onClose, onToast }) {
   const [selectedMode, setSelectedMode] = useState('default'); // 'default' | 'custom'
@@ -24,6 +25,8 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
   const [inputUrl, setInputUrl] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+
+  const envInfo = getEnvironmentInfo(selectedMode === 'custom' ? (inputUrl || currentCustomUrl) : '');
 
   useEffect(() => {
     if (isOpen) {
@@ -128,6 +131,23 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
         {/* MODAL BODY */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           
+          {/* ACTIVE ENVIRONMENT ARCHITECTURE BANNER */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-sky-500/10 to-purple-500/10 border border-indigo-500/20 text-xs space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
+                <Globe size={14} className="text-indigo-500 shrink-0" />
+                <span>Active Deployment:</span>
+                <span className="text-indigo-600 dark:text-indigo-400">{envInfo.name}</span>
+              </div>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0 ${envInfo.badgeColor}`}>
+                {envInfo.badgeText}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+              {envInfo.serverMessage}
+            </p>
+          </div>
+
           {/* TWO ARCHITECTURAL CHOICES */}
           <div className="grid sm:grid-cols-2 gap-3.5">
             
@@ -145,8 +165,8 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
             >
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                    <Laptop size={11} /> Normal / PWA
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${envInfo.badgeColor}`}>
+                    <Laptop size={11} /> {envInfo.badgeText}
                   </span>
                   <div className={`w-4 h-4 rounded-full flex items-center justify-center border ${
                     selectedMode === 'default'
@@ -161,7 +181,7 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
                   Default / Built-in
                 </div>
                 <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Best for everyday usage and standalone PWA. Connects to your local machine (<code>localhost:3000</code>) or default cloud server with zero configuration.
+                  {envInfo.defaultOptionDesc}
                 </p>
               </div>
 
@@ -221,7 +241,7 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
               </span>
               <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[280px]">
                 {selectedMode === 'default'
-                  ? 'Default Server (Auto)'
+                  ? envInfo.targetEndpoint
                   : (inputUrl || 'Not specified')}
               </span>
             </div>
@@ -236,7 +256,7 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
                 ) : testResult?.success ? (
                   <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Online • {testResult.latency}ms latency (v{testResult.data?.version || '2.6.1'})
+                    Online • {testResult.latency}ms latency (v{testResult.data?.version || '2.6.2'})
                   </div>
                 ) : testResult ? (
                   <div className="flex items-center gap-1.5 text-red-500 font-medium">
@@ -295,7 +315,7 @@ export default function ServerModal({ isOpen, onClose, onToast }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handlePreset('https://universal-media-extractor-vav8.onrender.com')}
+                    onClick={() => handlePreset(DEFAULT_RENDER_SERVER)}
                     className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors"
                   >
                     Cloud Render

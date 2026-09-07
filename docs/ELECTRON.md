@@ -36,11 +36,11 @@ npm run dist:win:arm64   # Native Windows on ARM (Snapdragon X Elite / Surface C
 
 The compiled executables will be generated in `dist-electron/`:
 - **x64 (Intel/AMD)**:
-  - `UniExtract-2.6.1-x64-Setup.exe` (NSIS Installer)
-  - `UniExtract-Portable-2.6.1-x64.exe` (Standalone Portable)
+  - `UniExtract-2.6.2-x64-Setup.exe` (NSIS Installer)
+  - `UniExtract-Portable-2.6.2-x64.exe` (Standalone Portable)
 - **ARM64 (Snapdragon / Copilot+ PCs)**:
-  - `UniExtract-2.6.1-arm64-Setup.exe` (Native ARM64 NSIS Installer)
-  - `UniExtract-Portable-2.6.1-arm64.exe` (Native ARM64 Portable)
+  - `UniExtract-2.6.2-arm64-Setup.exe` (Native ARM64 NSIS Installer)
+  - `UniExtract-Portable-2.6.2-arm64.exe` (Native ARM64 Portable)
 
 ### 2. Linux & macOS
 ```bash
@@ -56,8 +56,8 @@ npm run dist:all     # Builds all supported targets
 You do not need to build binaries locally on your personal machine to publish updates. When you are ready to publish a new release:
 
 ```bash
-git tag v2.6.1
-git push origin v2.6.1
+git tag v2.6.2
+git push origin v2.6.2
 ```
 
 GitHub Actions (`.github/workflows/release.yml`) will automatically:
