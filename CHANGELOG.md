@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.8] - 2026-09-08
+
+### 👤 Single-User Installer Enforcement
+- **Removed Global Multi-User Option**: Completely removed the "Who should this application be installed for? (Anyone who uses this computer / Only for me)" prompt from the Windows Electron NSIS installer.
+- **Dedicated Current-User Target**: Locked installation scope strictly to the current user profile (`%LocalAppData%\Programs\Uni Extract`), preventing file permission conflicts, updater lockouts, and administrative isolation issues seen with global machine-wide installs.
+- **Zero-Elevation Seamless Setup**: Bypasses Windows UAC administrator elevation requirements during fresh installs and in-app auto-updates, allowing smooth non-admin operation.
+
+### 🎨 Modern Branded Installer Aesthetics (MUI2)
+- **High-Resolution Branded Sidebars**: Replaced retro Windows 98/XP NSIS metro graphics with custom 24-bit bitmap sidebars (`build-resources/installerSidebar.bmp` and `uninstallerSidebar.bmp`) featuring a modern deep slate-to-indigo gradient, glowing radial backdrop, the Uni Extract logo, glassmorphic feature badges, and AryansDevStudios signature.
+- **Seamless Header Integration**: Added a clean right-aligned header bitmap (`build-resources/installerHeader.bmp`) designed with a pure white background that blends smoothly into inner wizard pages (Choose Install Location and File Extraction).
+- **Dedicated Welcome Page**: Configured a welcoming onboarding screen (`customWelcomePage`) introducing Uni Extract's capabilities with custom greeting typography before presenting destination folder choices.
+- **Cancellation Safeguard**: Added `MUI_ABORTWARNING` dialog confirmation to prevent accidental installer terminations.
+- **Automated Graphics Script**: Added `scripts/generate-installer-graphics.py` and `npm run installer:graphics` to programmatically regenerate installer graphics.
+
 ## [2.8.7] - 2026-09-08
 
 ### 🛡️ Crash Prevention & Stream Lifecycle Hardening
