@@ -3,7 +3,7 @@ import { apiFetch } from '../utils/api';
 import { AlertCircle, ArrowLeft, Boxes, Check, ChevronRight, Cpu, Download, ExternalLink, GitBranch, HelpCircle, Laptop, Package, Server, ShieldCheck, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.8.6';
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.8.7';
 
 function formatBytes(bytes) {
   if (!bytes) return 'Size unavailable';
@@ -37,7 +37,7 @@ function getPackageKind(asset = {}) {
 }
 
 function createStaticReleaseAssets(version = APP_VERSION) {
-  const cleanVersion = String(version || '2.8.6').replace(/^v/i, '');
+  const cleanVersion = String(version || '2.8.7').replace(/^v/i, '');
   const tag = `v${cleanVersion}`;
   const base = `https://github.com/AryansDevStudios/UniExtract/releases/download/${tag}`;
   return [

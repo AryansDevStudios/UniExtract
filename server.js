@@ -146,9 +146,19 @@ const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
 
     if (job.downloadInstance) {
         try {
+            job.downloadInstance.stdout?.removeAllListeners('data');
+            job.downloadInstance.stderr?.removeAllListeners('data');
+            job.downloadInstance.removeAllListeners('close');
+            job.downloadInstance.removeAllListeners('error');
+        } catch (e) {}
+
+        try {
             if (process.platform === 'win32' && job.downloadInstance.pid) {
                 execSync(`taskkill /pid ${job.downloadInstance.pid} /T /F`, { stdio: 'ignore' });
-            } else {
+            } else if (job.downloadInstance.pid) {
+                try {
+                    execSync(`pkill -P ${job.downloadInstance.pid} -9`, { stdio: 'ignore' });
+                } catch (e) {}
                 job.downloadInstance.kill('SIGKILL');
             }
         } catch (e) {}
@@ -156,9 +166,19 @@ const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
 
     if (job.activeFfmpeg && job.activeFfmpeg.pid) {
         try {
+            job.activeFfmpeg.stdout?.removeAllListeners('data');
+            job.activeFfmpeg.stderr?.removeAllListeners('data');
+            job.activeFfmpeg.removeAllListeners('close');
+            job.activeFfmpeg.removeAllListeners('error');
+        } catch (e) {}
+
+        try {
             if (process.platform === 'win32') {
                 execSync(`taskkill /pid ${job.activeFfmpeg.pid} /T /F`, { stdio: 'ignore' });
             } else {
+                try {
+                    execSync(`pkill -P ${job.activeFfmpeg.pid} -9`, { stdio: 'ignore' });
+                } catch (e) {}
                 job.activeFfmpeg.kill('SIGKILL');
             }
         } catch (e) {}
@@ -177,7 +197,7 @@ const abortJob = (jobId, reason = 'Client disconnected or cancelled') => {
 
     setTimeout(() => {
         delete jobs[jobId];
-    }, 4000);
+    }, 30000);
 };
 
 // =============================================================================
@@ -195,7 +215,7 @@ const STALL_NO_OUTPUT_MS = 360000;     // 6 minutes of total engine silence
 setInterval(() => {
     const now = Date.now();
     Object.entries(jobs).forEach(([jobId, job]) => {
-        if (job.status !== 'downloading') return;
+        if (!job || job.status !== 'downloading') return;
 
         // NEW (#16): stall detection — kill and fail rather than hang forever
         if (job.lastOutputTime && (now - job.lastOutputTime > STALL_NO_OUTPUT_MS)) {
@@ -205,9 +225,14 @@ setInterval(() => {
             logger(jobId, `Download engine stalled — marking job as error.`, "ERROR");
             if (inst && inst.pid) {
                 try {
+                    inst.stdout?.removeAllListeners('data');
+                    inst.stderr?.removeAllListeners('data');
+                } catch (e) {}
+                try {
                     if (process.platform === 'win32') {
                         spawnSync('taskkill', ['/pid', String(inst.pid), '/T', '/F'], { stdio: 'ignore' });
                     } else {
+                        try { spawnSync('pkill', ['-P', String(inst.pid), '-9'], { stdio: 'ignore' }); } catch (e) {}
                         inst.kill('SIGKILL');
                     }
                 } catch (e) {}
@@ -2385,7 +2410,8 @@ async function completeDownload(jobId, finalFile, ctx) {
 
         if (chapterFiles.length > 1) {
             try {
-                const zipPath = await createChapterZip(jobId, chapterFiles, jobs[jobId].title || 'chapter_bundle');
+                const zipPath = await createChapterZip(jobId, chapterFiles, jobs[jobId]?.title || 'chapter_bundle');
+                if (!jobs[jobId] || jobs[jobId].status === 'cancelled') return;
                 chapterFiles.forEach((cf) => {
                     try { if (fs.existsSync(cf)) fs.unlinkSync(cf); } catch (e) {}
                 });
@@ -2405,18 +2431,28 @@ async function completeDownload(jobId, finalFile, ctx) {
         }
     }
 
-    // KEY: Mark as 'completed' IMMEDIATELY so the user can download the raw
-    // file. Task 2 (metadata/thumb injection) runs in the background.
+    if (!jobs[jobId] || jobs[jobId].status === 'cancelled') return;
+
+    // KEY: For standard downloads, mark as 'completed' IMMEDIATELY so the user can download the raw
+    // file while Task 2 (metadata/thumb injection) runs in the background.
+    // For clipped downloads, keep status as 'processing' until FFmpeg produces the trimmed clip.
     if (fs.existsSync(finalFile)) {
-        jobs[jobId].status = 'completed';
-        jobs[jobId].file = path.basename(finalFile);
-        jobs[jobId].rawDownloadFile = path.basename(finalFile);
-        jobs[jobId].progress = '100%';
-        logger(jobId, `Download Finished. Output (raw): ${jobs[jobId].file} — File is ready for delivery.`, "SUCCESS");
+        if (!jobs[jobId].clipRequested) {
+            jobs[jobId].status = 'completed';
+            jobs[jobId].file = path.basename(finalFile);
+            jobs[jobId].rawDownloadFile = path.basename(finalFile);
+            jobs[jobId].progress = '100%';
+            logger(jobId, `Download Finished. Output (raw): ${jobs[jobId].file} — File is ready for delivery.`, "SUCCESS");
+        } else {
+            jobs[jobId].status = 'processing';
+            jobs[jobId].rawDownloadFile = path.basename(finalFile);
+            jobs[jobId].progress = 'Trimming media clip...';
+            logger(jobId, `Download Finished. Trimming requested segment (${jobs[jobId].clipStart || '00:00:00'} -> ${jobs[jobId].clipEnd || 'end'})...`, "PROGRESS");
+        }
     }
 
-    // TASK 2: background, non-blocking (unchanged pipeline)
-    if (fs.existsSync(finalFile)) {
+    // TASK 2: background post-processing & clip trimming
+    if (fs.existsSync(finalFile) && jobs[jobId] && jobs[jobId].status !== 'cancelled') {
         jobs[jobId].postProcessStatus = 'running';
         runTask2PostProcessing(jobId, finalFile, baseName, jobs[jobId].isAudioOnly, jobs[jobId].isMuted, mTitle, mArtist, mDate, mThumb, jobs[jobId].embedSubs, jobs[jobId].subLang, ctx.container, jobs[jobId].targetAudio, jobs[jobId].targetVideo, thumbFile)
             .then((polishedFile) => {
@@ -2426,16 +2462,34 @@ async function completeDownload(jobId, finalFile, ctx) {
                     jobs[jobId].postProcessStatus = 'done';
                     jobs[jobId].file = jobs[jobId].postProcessFile;
                     jobs[jobId].extension = path.extname(polishedFile).replace('.', '') || jobs[jobId].extension;
-                    logger(jobId, `Task 2 Packaging Successful: ${jobs[jobId].postProcessFile} (Polished)`, "META");
+                    if (jobs[jobId].clipRequested) {
+                        jobs[jobId].status = 'completed';
+                        jobs[jobId].progress = '100%';
+                        logger(jobId, `Clip trimmed successfully: ${jobs[jobId].file} — File is ready for delivery.`, "SUCCESS");
+                    } else {
+                        logger(jobId, `Task 2 Packaging Successful: ${jobs[jobId].postProcessFile} (Polished)`, "META");
+                    }
                 } else {
                     jobs[jobId].postProcessStatus = 'failed';
-                    logger(jobId, `Task 2 finished without producing a polished file; raw file still available.`, "WARN");
+                    if (jobs[jobId].clipRequested) {
+                        jobs[jobId].status = 'error';
+                        jobs[jobId].error = 'FFmpeg could not create the requested clip.';
+                        logger(jobId, `Clip processing failed: output file not found.`, "ERROR");
+                    } else {
+                        logger(jobId, `Task 2 finished without producing a polished file; raw file still available.`, "WARN");
+                    }
                 }
             })
             .catch((err) => {
                 if (!jobs[jobId] || jobs[jobId].status === 'cancelled') return;
                 jobs[jobId].postProcessStatus = 'failed';
-                logger(jobId, `Task 2 crashed: ${err.message} — raw file still available.`, "WARN");
+                if (jobs[jobId].clipRequested) {
+                    jobs[jobId].status = 'error';
+                    jobs[jobId].error = `FFmpeg clip processing failed: ${err.message}`;
+                    logger(jobId, `Clip processing failed: ${err.message}`, "ERROR");
+                } else {
+                    logger(jobId, `Task 2 crashed: ${err.message} — raw file still available.`, "WARN");
+                }
             });
     }
 }
@@ -2479,6 +2533,17 @@ const startDownloadEngine = (jobId, ctx) => {
     }
 
     const downloadProc = spawn(ytDlpPath, ytdlpArgs, { windowsHide: true });
+    if (!jobs[jobId] || jobs[jobId].status === 'cancelled') {
+        try {
+            if (process.platform === 'win32' && downloadProc.pid) {
+                spawnSync('taskkill', ['/pid', String(downloadProc.pid), '/T', '/F'], { stdio: 'ignore' });
+            } else if (downloadProc.pid) {
+                try { spawnSync('pkill', ['-P', String(downloadProc.pid), '-9'], { stdio: 'ignore' }); } catch (e) {}
+                downloadProc.kill('SIGKILL');
+            }
+        } catch (e) {}
+        return;
+    }
     jobs[jobId].downloadInstance = downloadProc;
     jobs[jobId].lastOutputTime = Date.now();
 
@@ -2487,11 +2552,13 @@ const startDownloadEngine = (jobId, ctx) => {
     let stderrTail = [];
 
     downloadProc.stdout.on('data', (chunk) => {
+        if (!jobs[jobId] || jobs[jobId].status === 'cancelled' || jobs[jobId].status === 'error') return;
         jobs[jobId].lastOutputTime = Date.now();
         stdoutBuf += chunk.toString();
         const lines = stdoutBuf.split(/\r\n|\r|\n/);
         stdoutBuf = lines.pop();
         for (const line of lines) {
+            if (!jobs[jobId] || jobs[jobId].status === 'cancelled' || jobs[jobId].status === 'error') return;
             const t = line.trim();
             if (!t) continue;
 
@@ -2534,6 +2601,7 @@ const startDownloadEngine = (jobId, ctx) => {
     });
 
     downloadProc.stderr.on('data', (chunk) => {
+        if (!jobs[jobId] || jobs[jobId].status === 'cancelled' || jobs[jobId].status === 'error') return;
         jobs[jobId].lastOutputTime = Date.now();
         const lines = chunk.toString().split(/\r\n|\r|\n/);
         for (const line of lines) {
@@ -2629,10 +2697,10 @@ app.post('/api/download', async (req, res) => {
         } else {
             logger(jobId, `Warning: Inverted clip range requested (${clipStart} -> ${clipEnd}). Clip disabled to prevent failure.`, "WARN");
         }
-    } else if (clipStartSeconds !== null && clipEndSeconds === null) {
+    } else if (clipStartSeconds !== null && clipStartSeconds > 0 && clipEndSeconds === null) {
         resolvedClipStart = formatSecondsToClock(clipStartSeconds);
     }
-    const clipRequested = Boolean(resolvedClipStart || resolvedClipEnd);
+    const clipRequested = Boolean((resolvedClipStart && resolvedClipStart !== '00:00:00') || resolvedClipEnd);
 
     const heightMap = {
         '8k': 4320,
@@ -2830,13 +2898,6 @@ app.post('/api/download', async (req, res) => {
     if (splitChapters) {
         ffmpegArgs.push('--split-chapters');
     }
-    if (resolvedClipStart && resolvedClipEnd) {
-        ffmpegArgs.push('--download-sections', `*${resolvedClipStart}-${resolvedClipEnd}`);
-        ffmpegArgs.push('--force-keyframes-at-cuts');
-    } else if (resolvedClipStart && resolvedClipStart !== '00:00:00') {
-        ffmpegArgs.push('--download-sections', `*${resolvedClipStart}-inf`);
-        ffmpegArgs.push('--force-keyframes-at-cuts');
-    }
     if (embedSubs && subLang) {
         ffmpegArgs.push('--write-subs', '--write-auto-subs', '--sub-langs', subLang, '--convert-subs', 'srt');
     }
@@ -2883,16 +2944,37 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
         const embeddedFile = baseName + '_final.' + targetExt;
         let embedArgs = [];
         let subtitleFile = null;
-        const clipTimestampArgs = (jobs[jobId] && jobs[jobId].clipRequested)
-            ? ['-fflags', '+genpts', '-avoid_negative_ts', 'make_zero']
+        const clipRequested = Boolean(jobs[jobId]?.clipRequested);
+        const clipStartSeconds = clipRequested ? (parseTimeToSeconds(jobs[jobId].clipStart) || 0) : 0;
+        const clipEndSeconds = clipRequested ? parseTimeToSeconds(jobs[jobId].clipEnd) : null;
+        const clipDurationSeconds = (clipRequested && clipEndSeconds !== null) ? Math.max(0, clipEndSeconds - clipStartSeconds) : null;
+
+        const clipInputArgs = (clipRequested && clipStartSeconds > 0) ? ['-ss', String(clipStartSeconds)] : [];
+        const clipOutputArgs = clipRequested
+            ? [
+                ...(clipDurationSeconds !== null ? ['-t', String(clipDurationSeconds)] : []),
+                '-avoid_negative_ts', 'make_zero'
+              ]
             : [];
+
+        let vCodec = 'libx264';
+        let vCodecExtra = ['-preset', 'fast', '-crf', '18', '-pix_fmt', 'yuv420p'];
+        if (targetExt === 'webm') {
+            vCodec = 'libvpx-vp9';
+            vCodecExtra = ['-crf', '30', '-b:v', '0'];
+        }
+        const videoCodecArgs = clipRequested
+            ? ['-c:v:0', vCodec, ...vCodecExtra]
+            : ['-c:v:0', 'copy'];
 
         if (isAudioOnly) {
             if (targetExt === 'flac' || targetExt === 'wav') {
                 embedArgs = [
-                    '-y', '-threads', '0', '-i', finalFile,
+                    '-y', '-threads', '0',
+                    ...clipInputArgs,
+                    '-i', finalFile,
                     ...(thumbFile ? ['-i', thumbFile] : []),
-                    ...clipTimestampArgs,
+                    ...clipOutputArgs,
                     '-map', '0:a:0',
                     ...(thumbFile ? ['-map', '1:0'] : []),
                     '-c:a', targetExt === 'flac' ? 'flac' : 'pcm_s16le',
@@ -2906,11 +2988,14 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                     embeddedFile
                 ];
             } else if (targetExt === 'mkv') {
+                const aCodecArgs = clipRequested ? ['-c:a', 'aac', '-b:a', '192k'] : ['-c:a', 'copy'];
                 embedArgs = [
-                    '-y', '-threads', '0', '-i', finalFile,
-                    ...clipTimestampArgs,
+                    '-y', '-threads', '0',
+                    ...clipInputArgs,
+                    '-i', finalFile,
+                    ...clipOutputArgs,
                     '-map', '0:a:0',
-                    '-c:a', 'copy',
+                    ...aCodecArgs,
                     ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
                     '-metadata', `title=${mTitle}`,
                     '-metadata', `artist=${mArtist}`,
@@ -2922,11 +3007,13 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                 ];
             } else if (targetExt === 'm4a') {
                 const isSourceAac = finalFile.toLowerCase().endsWith('.m4a');
-                const aCodecArgs = isSourceAac ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '256k'];
+                const aCodecArgs = (clipRequested || !isSourceAac) ? ['-c:a', 'aac', '-b:a', '256k'] : ['-c:a', 'copy'];
                 embedArgs = [
-                    '-y', '-threads', '0', '-i', finalFile,
+                    '-y', '-threads', '0',
+                    ...clipInputArgs,
+                    '-i', finalFile,
                     ...(thumbFile ? ['-i', thumbFile] : []),
-                    ...clipTimestampArgs,
+                    ...clipOutputArgs,
                     '-map', '0:a:0',
                     ...(thumbFile ? ['-map', '1:0'] : []),
                     ...aCodecArgs,
@@ -2941,10 +3028,12 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                 ];
             } else if (targetExt === 'opus') {
                 const isSourceOpus = finalFile.toLowerCase().endsWith('.opus') || finalFile.toLowerCase().endsWith('.webm');
-                const aCodecArgs = isSourceOpus ? ['-c:a', 'copy'] : ['-c:a', 'libopus', '-b:a', '160k'];
+                const aCodecArgs = (clipRequested || !isSourceOpus) ? ['-c:a', 'libopus', '-b:a', '160k'] : ['-c:a', 'copy'];
                 embedArgs = [
-                    '-y', '-threads', '0', '-i', finalFile,
-                    ...clipTimestampArgs,
+                    '-y', '-threads', '0',
+                    ...clipInputArgs,
+                    '-i', finalFile,
+                    ...clipOutputArgs,
                     '-map', '0:a:0',
                     ...aCodecArgs,
                     '-metadata', `title=${mTitle}`,
@@ -2958,9 +3047,11 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
             } else {
                 const lameBitrate = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy' ? ['-b:a', targetAudio] : ['-b:a', '320k'];
                 embedArgs = [
-                    '-y', '-threads', '0', '-i', finalFile,
+                    '-y', '-threads', '0',
+                    ...clipInputArgs,
+                    '-i', finalFile,
                     ...(thumbFile ? ['-i', thumbFile] : []),
-                    ...clipTimestampArgs,
+                    ...clipOutputArgs,
                     '-map', '0:a:0',
                     ...(thumbFile ? ['-map', '1:0'] : []),
                     '-c:a', 'libmp3lame', ...lameBitrate, '-ac', '2',
@@ -2986,13 +3077,13 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                 }
             }
 
-            const inputs = ['-y', '-i', finalFile];
+            const inputs = ['-y', ...clipInputArgs, '-i', finalFile];
             let nextInputIdx = 1;
             let subInputIdx = -1;
             let thumbInputIdx = -1;
 
             if (subtitleFile) {
-                inputs.push('-i', subtitleFile);
+                inputs.push(...clipInputArgs, '-i', subtitleFile);
                 subInputIdx = nextInputIdx++;
             }
             if (thumbFile && targetExt !== 'mkv') {
@@ -3032,9 +3123,9 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                 if (targetExt === 'mkv') {
                     embedArgs = [
                         ...inputs,
-                        ...clipTimestampArgs,
+                        ...clipOutputArgs,
                         ...streamMaps,
-                        '-c:v:0', 'copy',
+                        ...videoCodecArgs,
                         '-an',
                         ...subCodecArgs,
                         ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
@@ -3044,9 +3135,9 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                 } else {
                     embedArgs = [
                         ...inputs,
-                        ...clipTimestampArgs,
+                        ...clipOutputArgs,
                         ...streamMaps,
-                        '-c:v:0', 'copy',
+                        ...videoCodecArgs,
                         '-an',
                         ...subCodecArgs,
                         '-movflags', '+faststart',
@@ -3057,7 +3148,9 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                 }
             } else {
                 const isTranscode = targetAudio && targetAudio !== 'best' && targetAudio !== 'copy';
-                const audioCodecArgs = isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio] : ['-c:a', 'copy'];
+                const audioCodecArgs = clipRequested
+                    ? (targetExt === 'webm' ? ['-c:a', 'libopus', '-b:a', '160k'] : ['-c:a', 'aac', '-b:a', '192k'])
+                    : (isTranscode ? ['-c:a', 'aac', '-b:a', targetAudio] : ['-c:a', 'copy']);
 
                 const streamMaps = ['-map', '0:v:0', '-map', '0:a:0?'];
                 if (subInputIdx !== -1) streamMaps.push('-map', `${subInputIdx}:0`);
@@ -3066,9 +3159,9 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                 if (targetExt === 'mkv') {
                     embedArgs = [
                         ...inputs,
-                        ...clipTimestampArgs,
+                        ...clipOutputArgs,
                         ...streamMaps,
-                        '-c:v:0', 'copy',
+                        ...videoCodecArgs,
                         ...audioCodecArgs,
                         ...subCodecArgs,
                         ...(thumbFile ? ['-attach', thumbFile, '-metadata:s:t', 'mimetype=image/jpeg'] : []),
@@ -3078,9 +3171,9 @@ async function runTask2PostProcessing(jobId, finalFile, baseName, isAudioOnly, i
                 } else {
                     embedArgs = [
                         ...inputs,
-                        ...clipTimestampArgs,
+                        ...clipOutputArgs,
                         ...streamMaps,
-                        '-c:v:0', 'copy',
+                        ...videoCodecArgs,
                         ...audioCodecArgs,
                         ...subCodecArgs,
                         '-movflags', '+faststart',

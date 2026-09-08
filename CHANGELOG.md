@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.7] - 2026-09-08
+
+### 🛡️ Crash Prevention & Stream Lifecycle Hardening
+- **Stream Handler Exception Guards**: Added defensive existence guards across all yt-dlp `stdout` and `stderr` stream data callbacks. Completely eliminates the unhandled `TypeError: Cannot set properties of undefined (setting 'lastOutputTime')` exceptions when downloads are cancelled, aborted, or purged from memory.
+- **Process Tree Termination (Linux / Cloud)**: Updated process abort and watchdog stall termination to execute `pkill -P <pid> -9` on Linux/POSIX platforms (Render, Docker, VPS), ensuring child processes (like FFmpeg) spawned by yt-dlp are fully terminated instead of remaining orphaned.
+- **Detached Stream Listeners**: Proactively detaches stream listeners (`data`, `error`, `close`) when aborting jobs or handling stall events to prevent trailing buffered pipe data from triggering callbacks after job deletion.
+- **Extended Memory Purge Grace Period**: Increased the cancellation job memory purge grace period from 4 seconds to 30 seconds, giving client polling loops and pending network sockets ample time to gracefully complete before memory reclamation.
+
+### ✂️ Robust Video Trimming & Audio-Video Synchronization
+- **Eliminated yt-dlp Section-Download Throttling**: Removed `--download-sections` from yt-dlp execution. Because YouTube severely throttles sequential HTTP requests routed through FFmpeg down to ~40KB/s (causing 0% progress hangs, connection drops, and timeouts), media streams are now downloaded natively at full multi-fragment speed (4 concurrent fragments, 10MB chunking).
+- **Accurate Post-Download FFmpeg Trimming**: Segments are trimmed directly from local disk via FFmpeg using fast input seeking (`-ss`) and duration limits (`-t`) with `-avoid_negative_ts make_zero`.
+- **Perfect Audio/Video Sync**: Transcodes trimmed video with `libx264` (or `libvpx-vp9` for WebM) and audio with `aac` (or `libopus` for WebM/Opus, `libmp3lame` for MP3) to guarantee frame-accurate cuts and eliminate audio drifting or desynchronization.
+- **Smart Clip Delivery Hand-off**: Clipped downloads transition smoothly to `processing` ("Trimming media clip...") and only deliver the final cut file once FFmpeg finishes, preventing premature delivery of raw uncut media.
+- **Accurate Clip Request Detection**: Fixed clip detection logic in `/api/download` so default `00:00:00` start times without an end time are correctly treated as full downloads rather than false-positive clips.
+
 ## [2.8.6] - 2026-09-08
 
 ### 🎨 Responsive Dropdown Menus & Truncation Elimination
