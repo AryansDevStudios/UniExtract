@@ -182,9 +182,6 @@
   ],
   "author": "AryansDevStudios <aryansdevstudios@gmail.com> (https://github.com/AryansDevStudios)",
   "license": "MIT",
-  "directories": {
-    "doc": "docs"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/AryansDevStudios/UniExtract.git"
