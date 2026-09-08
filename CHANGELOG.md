@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Startup Engine Controls**: Added `FFMPEG_MODE` (`auto`, `native`, `static`), `FFMPEG_PREFER_STATIC`, and `FFMPEG_PATH` environment variables.
 - **Enhanced Healthcheck**: Added comprehensive FFmpeg status, version, and active hardware transcoder metadata to `GET /api/health`.
 
+### 📦 Download Center & Release Engine
+- **Direct GitHub API Fallback**: Added direct client-side fallback to GitHub's Releases API in `DownloadPage.jsx` when the backend server is unreachable or returning empty arrays.
+- **Auto-Fetch on Mount**: Guaranteed download packages load immediately upon opening the Download Center.
+- **Filter Reset & Retry**: Added proactive "Reset Filters" and "Retry" buttons to immediately recover if filter selections or network interruptions result in 0 visible packages.
+- **GitHub Token Support**: Backend update proxy now respects `GITHUB_TOKEN` to avoid rate limits on high-traffic instances.
+
+### 📚 Documentation & Reference Suite
+- **API Reference**: Added comprehensive `docs/API_REFERENCE.md` documenting all 17 REST endpoints with request/response schemas.
+- **Configuration Guide**: Added `docs/CONFIGURATION.md` detailing every environment variable, cloud parameter, and Docker Compose setup.
+- **Deployment Architecture**: Modernized `docs/DEPLOYMENT_MODES.md` and `docs/ELECTRON.md` with multi-arch packaging instructions and hardware acceleration guides.
+
+
 ## [2.8.0] - 2026-09-08
 
 ### 🚀 Stable Release Highlights
