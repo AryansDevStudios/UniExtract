@@ -1,87 +1,142 @@
-# Uni Extract - Electron Desktop Application
+# Uni Extract - Electron Desktop Application 💻
 
-This document covers running, debugging, and packaging Uni Extract as a native desktop app using Electron across Windows, Linux, and macOS.
+This document covers running, developing, and packaging Uni Extract as a native desktop application using Electron across Windows, Linux, and macOS.
+
+---
+
+## 🏗️ Desktop Architecture Overview
+
+The desktop version of Uni Extract is **100% self-contained and offline-capable**. Unlike the web client, it does **not** depend on external cloud servers or Render:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                 UNISEXTRACT DESKTOP RUNTIME                 │
+│                                                             │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │               Electron Main Process                 │   │
+│   │       (Window Manager, Auto-Updater, Menus)         │   │
+│   └──────────────────────────┬──────────────────────────┘   │
+│                              │ spawns embedded server       │
+│                              ▼                              │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │           Embedded Node.js Express Engine           │   │
+│   │         (localhost:3000 - server.js runtime)        │   │
+│   └──────────────────────────┬──────────────────────────┘   │
+│                              │                              │
+│         ┌────────────────────┴────────────────────┐         │
+│         ▼                                         ▼         │
+│   [ Bundled yt-dlp ]                     [ Bundled FFmpeg ] │
+│   (Stream Extraction)                    (GPU Transcoding)  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **Embedded Local Engine**: When the app launches, `electron/main.js` automatically starts `server.js` bound to `127.0.0.1:3000`.
+- **Bundled Binaries**: Both `yt-dlp` and `ffmpeg` (or host native FFmpeg) are bundled and unpacked via `asarUnpack`.
+- **Zero Configuration**: Users do not need Node.js, Python, or command-line tools installed.
+- **Process Isolation**: When the window is closed, all child processes (active conversions, downloads, and the local server) are gracefully terminated.
 
 ---
 
 ## 💻 Running in Development
 
-Ensure both server and client dev servers run alongside Electron:
+Run both server and client development servers alongside Electron:
 
 ```bash
+# 1. Install dependencies
 npm install
+
+# 2. Start dev environment with hot-reloading
 npm run electron:dev
 ```
 
 This command:
 1. Starts the Node.js Express backend (`server.js`).
-2. Starts the Vite client development server on port `5173`.
-3. Waits for the Vite server to be reachable, then launches the Electron desktop shell with Chrome DevTools.
+2. Starts the Vite client dev server on port `5173`.
+3. Waits for the Vite server to become reachable, then launches Electron with Chrome DevTools enabled.
 
 ---
 
 ## 📦 Production Builds (Multi-Platform)
 
-To bundle the application into production executables:
+Executables are generated in the `dist-electron/` directory:
 
 ### 1. Windows (x64 & ARM64)
 ```bash
-# Build both x64 and ARM64 (default):
+# Build both x64 and ARM64 packages:
 npm run dist:win
 
-# Or build a specific architecture:
-npm run dist:win:x64     # Standard Intel/AMD PCs
+# Or target specific architectures:
+npm run dist:win:x64     # Standard Intel / AMD 64-bit PCs
 npm run dist:win:arm64   # Native Windows on ARM (Snapdragon X Elite / Surface Copilot+)
 ```
 
-The compiled executables will be generated in `dist-electron/`:
-- **x64 (Intel/AMD)**:
-  - `UniExtract-2.6.2-x64-Setup.exe` (NSIS Installer)
-  - `UniExtract-Portable-2.6.2-x64.exe` (Standalone Portable)
-- **ARM64 (Snapdragon / Copilot+ PCs)**:
-  - `UniExtract-2.6.2-arm64-Setup.exe` (Native ARM64 NSIS Installer)
-  - `UniExtract-Portable-2.6.2-arm64.exe` (Native ARM64 Portable)
+#### Generated Artifacts:
+- **x64**:
+  - `UniExtract-2.8.2-x64-Setup.exe` (NSIS Installer with desktop shortcut)
+  - `UniExtract-Portable-2.8.2-x64.exe` (Self-contained single-file portable executable)
+- **ARM64**:
+  - `UniExtract-2.8.2-arm64-Setup.exe` (Native ARM64 NSIS Installer)
+  - `UniExtract-Portable-2.8.2-arm64.exe` (Native ARM64 Portable)
+
+---
 
 ### 2. Linux & macOS
 ```bash
-npm run dist:linux   # Builds Linux .AppImage and .deb packages
-npm run dist:mac     # Builds macOS .dmg and .zip archives
-npm run dist:all     # Builds all supported targets
+# Linux: Builds .AppImage and .deb packages
+npm run dist:linux
+
+# macOS: Builds universal/x64 .dmg installer and .zip archive
+npm run dist:mac
+
+# Build all platforms simultaneously:
+npm run dist:all
 ```
 
 ---
 
-### 🤖 Automated GitHub Release Workflow
+## 🔐 Windows Code Signing & Publisher Trust
 
-You do not need to build binaries locally on your personal machine to publish updates. When you are ready to publish a new release:
+UniExtract executables can be trusted locally on Windows without triggering Windows SmartScreen warnings using the included developer certificate scripts:
 
-```bash
-git tag v2.6.2
-git push origin v2.6.2
-```
+- **Certificate**: `AryansDevStudios.cer`
+- **One-Click Trust Script (Batch)**:
+  ```cmd
+  scripts\trust-publisher.bat
+  ```
+- **PowerShell Script**:
+  ```powershell
+  scripts\trust-publisher.ps1
+  ```
 
-GitHub Actions (`.github/workflows/release.yml`) will automatically:
-1. Spin up a multi-platform runner matrix (`windows-latest`, `ubuntu-latest`, `macos-latest`).
-2. Fetch dependencies, bundle `ffmpeg-static` and `yt-dlp`.
-3. Package **Windows** (x64 & ARM64 NSIS + Portable), **Linux** (.AppImage & .deb), and **macOS** (.dmg & .zip).
-4. Calculate SHA-256 checksums (`checksums.txt`) for all release binaries.
-5. Publish an official **GitHub Release** with all installers and checksums attached.
-
-You can also trigger builds manually anytime from the GitHub repository by going to **Actions** → **Build & Release Desktop Apps** → **Run workflow**.
+Running this script installs the `AryansDevStudios` root certificate into the local machine's `Trusted Root Certification Authorities` and `Trusted Publishers` certificate stores.
 
 ---
 
-## 🍪 Cookie Persistence in Desktop Mode
+## 🔄 In-App Auto-Updater & Traffic Safety
 
-- **Installed Mode (NSIS)**: Cookies are automatically persisted in `%APPDATA%\Uni Extract\cookies.txt`, meaning updates and reinstalls preserve your session tokens. Legacy tokens from `%APPDATA%\Universal Media Extractor\` are migrated automatically.
-- **Portable Mode**: Placing a `cookies.txt` in the same directory as the portable executable keeps your authentication persistent on USB flash drives or across multiple machines.
-- **In-App Manager**: You can also use the in-app Cookies modal to paste or upload cookies at any time.
+The desktop app includes an enterprise-grade update system:
+
+1. **Traffic-Safe Updates**: The updater probes `http://127.0.0.1:3000/api/updates/active-jobs`. If any download or transcode is currently in-flight, updates are deferred until all jobs complete to prevent data loss.
+2. **Dual Release Channels**:
+   - **Stable**: Recommended for everyday use.
+   - **Pre-release (Beta)**: Early access to upcoming features.
+3. **Channel Switching**: Users can toggle release channels at any time inside the app Settings or Release Center.
 
 ---
 
-## ⚙️ Architecture Notes
+## 🍪 Cookie Persistence & Session Management
 
-- The Electron main process (`electron/main.js`) starts the bundled Node.js server automatically upon launch.
-- Child processes are automatically terminated when the application window is closed.
-- Both **FFmpeg** (`ffmpeg-static`) and **yt-dlp** binaries are automatically bundled and unpacked via `asarUnpack`, making the desktop application 100% self-contained with zero external software or PATH requirements on the end user's machine.
-- Temporary files and yt-dlp binary caches are isolated into system temp and app data directories (`uniextract-temp`).
+- **Installed Mode (NSIS)**: Cookies are stored in `%APPDATA%\Uni Extract\cookies.txt`. Reinstalling or updating the app preserves authentication and session tokens automatically.
+- **Portable Mode**: Placing `cookies.txt` in the same directory as `UniExtract-Portable.exe` keeps your sessions persistent across USB drives or different computers.
+- **In-App Manager**: Paste or upload cookies via the in-app Cookies modal to unlock restricted or member-only videos.
+
+---
+
+## 🎬 FFmpeg Hardware Acceleration
+
+The desktop app automatically leverages host GPU acceleration:
+- **Windows**: NVIDIA NVENC, Intel QuickSync, AMD AMF, and Windows Media Foundation (`h264_mf`).
+- **macOS**: Apple VideoToolbox (M1/M2/M3/M4 Apple Silicon & Intel T2).
+- **Linux**: Linux VA-API, NVIDIA NVENC, and Intel QuickSync.
+
+If native FFmpeg is installed on your PC (via WinGet, Chocolatey, or Homebrew), the desktop app prioritizes your host FFmpeg to achieve maximum encoding speed and dynamic codec support.
