@@ -8,11 +8,12 @@ A modern, high-performance, multi-platform media extraction and transcoding engi
 
 | Document | Link | Description |
 |---|---|---|
-| 🚀 **Deployment Modes & Pairing** | [docs/DEPLOYMENT_MODES.md](docs/DEPLOYMENT_MODES.md) | Architectural pairing scenarios (Netlify + Render/VPS, PWA, Headless API, systemd setup) |
-| 💻 **Electron Desktop App** | [docs/ELECTRON.md](docs/ELECTRON.md) | Windows (x64 & ARM64), Linux (.AppImage/.deb), macOS (.dmg/.zip) packaging |
+| 🚀 **Deployment Modes & Architecture** | [docs/DEPLOYMENT_MODES.md](docs/DEPLOYMENT_MODES.md) | Architectural pairing scenarios (Netlify + Render/VPS, PWA, Headless API, systemd setup) |
+| 💻 **Electron Desktop App** | [docs/ELECTRON.md](docs/ELECTRON.md) | Windows (x64 & ARM64), Linux (.AppImage/.deb), macOS (.dmg/.zip) packaging & architecture |
+| 📡 **REST API Reference** | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | Complete JSON API specification for extraction, streaming, and conversion endpoints |
+| ⚙️ **Environment Configuration** | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Complete `.env` variables reference, cloud parameters, and Docker Compose guide |
 | 🤖 **CI/CD & GitHub Workflows** | [Automated Workflows](#-automated-cicd--github-workflows) | Cross-platform releases, continuous integration, Docker multi-arch, & scheduled health checks |
 | ⚡ **Modular Quick Start** | [Quick Start Guide](#-modular-download--quick-start) | Sparse-checkout commands to download only what you need without cloning full repository |
-| 📡 **REST API Reference** | [API Reference](#-rest-api-reference) | Complete JSON API specification for extraction, streaming, and conversion endpoints |
 
 ---
 
@@ -236,10 +237,10 @@ npm run dist:mac         # Builds macOS .dmg and .zip packages
 npm run dist:all         # Builds all targets
 ```
 The compiled executables will be generated in `dist-electron/`:
-- **x64 (Intel / AMD)**: `UniExtract-2.6.2-x64-Setup.exe` & `UniExtract-Portable-2.6.2-x64.exe`
-- **ARM64 (Snapdragon / Copilot+)**: `UniExtract-2.6.2-arm64-Setup.exe` & `UniExtract-Portable-2.6.2-arm64.exe`
-- **Linux**: `UniExtract-2.6.2-x86_64.AppImage` & `UniExtract-2.6.2-amd64.deb`
-- **macOS**: `UniExtract-2.6.2-x64.dmg` & `UniExtract-2.6.2-arm64.dmg`
+- **x64 (Intel / AMD)**: `UniExtract-2.8.2-x64-Setup.exe` & `UniExtract-Portable-2.8.2-x64.exe`
+- **ARM64 (Snapdragon / Copilot+)**: `UniExtract-2.8.2-arm64-Setup.exe` & `UniExtract-Portable-2.8.2-arm64.exe`
+- **Linux**: `UniExtract-2.8.2-x86_64.AppImage` & `UniExtract-2.8.2-amd64.deb`
+- **macOS**: `UniExtract-2.8.2-x64.dmg` & `UniExtract-2.8.2-arm64.dmg`
 
 In portable mode, placing a `cookies.txt` next to the executable keeps your authentication persistent across runs.
 
@@ -251,7 +252,7 @@ Uni Extract exposes a full set of JSON endpoints for media extraction, streaming
 
 ### 1. `GET /api/health`
 Health check and server uptime indicator.
-- **Response**: `{ "status": "ok", "version": "2.6.2", "uptime": 120, "timestamp": 1725619200000 }`
+- **Response**: `{ "status": "ok", "version": "2.8.2", "uptime": 120, "timestamp": 1725619200000 }`
 
 ---
 
@@ -381,8 +382,8 @@ Uni Extract includes a production-grade automated CI/CD suite powered by **GitHu
 ### 🚀 Publishing a Multi-Platform Release
 When you are ready to publish a new release:
 ```bash
-git tag v2.6.2
-git push origin v2.6.2
+git tag v2.8.2
+git push origin v2.8.2
 ```
 GitHub Actions will spin up Windows, Ubuntu, and macOS runners in parallel, package all native desktop binaries, compute SHA-256 checksums, and attach all installer files to the release automatically.
 

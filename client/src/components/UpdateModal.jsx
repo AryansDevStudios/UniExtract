@@ -64,7 +64,7 @@ export default function UpdateModal({
 
  if (!isOpen || !updateInfo) return null;
 
- const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.6.2';
+ const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.8.2';
  const currentVersion = updateInfo.currentVersion || appVersion;
  const latestVersion = updateInfo.latestVersion || appVersion;
  const releaseName = updateInfo.releaseName || `v${latestVersion}`;

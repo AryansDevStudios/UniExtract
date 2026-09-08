@@ -57,8 +57,24 @@ const getJson = (endpoint) => new Promise((resolve, reject) => {
     }).on('error', reject);
 });
 
-setTimeout(async () => {
+const waitForServer = async (retries = 15) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await getJson('/api/health');
+            return true;
+        } catch (e) {
+            await new Promise(r => setTimeout(r, 1000));
+        }
+    }
+    throw new Error('Timed out waiting for server to be ready on port 3098');
+};
+
+(async () => {
     try {
+        console.log('[TEST UPDATES] Waiting for server to become ready...');
+        await waitForServer();
+        console.log('✓ Server is ready.');
+
         console.log('[TEST UPDATES] Probing GET /api/updates/active-jobs...');
         const activeJobsRes = await getJson('/api/updates/active-jobs');
         console.log('✓ Active jobs response:', activeJobsRes);
@@ -81,4 +97,4 @@ setTimeout(async () => {
         console.error('[TEST UPDATES] Endpoint probe failed:', err.message);
         cleanup(1);
     }
-}, 2000);
+})();

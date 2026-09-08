@@ -937,7 +937,7 @@ app.get('/favfavicon.ico', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-    const appVersion = require('./package.json').version || '2.6.2';
+    const appVersion = require('./package.json').version || '2.8.2';
     res.json({
         status: 'ok',
         version: appVersion,
@@ -955,7 +955,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/version', (req, res) => {
-    const appVersion = require('./package.json').version || '2.6.2';
+    const appVersion = require('./package.json').version || '2.8.2';
     res.json({ version: appVersion, name: 'uni-extract' });
 });
 
@@ -1045,7 +1045,7 @@ app.get('/api/updates/active-jobs', (req, res) => {
 });
 
 app.get('/api/updates', async (req, res) => {
-    const currentVersion = require('./package.json').version || '2.6.2';
+    const currentVersion = require('./package.json').version || '2.8.2';
     const channel = req.query.channel === 'beta' ? 'beta' : 'stable';
     const force = req.query.force === 'true';
     const now = Date.now();
