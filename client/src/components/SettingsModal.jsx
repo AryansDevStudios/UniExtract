@@ -156,7 +156,7 @@ export default function SettingsModal({
 
  if (!isOpen) return null;
 
- const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.8.3';
+ const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.8.4';
  const currentVersion = updateInfo?.currentVersion || appVersion;
  const envInfo = getEnvironmentInfo(getCustomServerUrl());
  const isSnoozed = snoozeUntil && Date.now() < Number(snoozeUntil);

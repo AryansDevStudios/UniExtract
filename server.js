@@ -316,10 +316,11 @@ const cleanLanguageName = (rawLang, note = '') => {
 
     if (cleanNote) {
         cleanNote = cleanNote
-            .replace(/original\s*\(default\)/i, '(Original)')
-            .replace(/original/i, '(Original)')
-            .replace(/dubbed/i, '(Dubbed)')
-            .replace(/default/i, '')
+            .replace(/\(?\boriginal\s*\(default\)\)?/gi, '(Original)')
+            .replace(/\(?\boriginal\b\)?/gi, '(Original)')
+            .replace(/\(?\bdubbed\b\)?/gi, '(Dubbed)')
+            .replace(/\bdefault\b/gi, '')
+            .replace(/\(\s*\((.*?)\)\s*\)/g, '($1)')
             .replace(/\s+/g, ' ')
             .trim();
         return cleanNote;
@@ -957,7 +958,7 @@ app.get('/favfavicon.ico', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-    const appVersion = require('./package.json').version || '2.8.3';
+    const appVersion = require('./package.json').version || '2.8.4';
     res.json({
         status: 'ok',
         version: appVersion,
@@ -975,7 +976,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/version', (req, res) => {
-    const appVersion = require('./package.json').version || '2.8.3';
+    const appVersion = require('./package.json').version || '2.8.4';
     res.json({ version: appVersion, name: 'uni-extract' });
 });
 
@@ -1057,7 +1058,7 @@ function categorizeReleaseNotes(body) {
 }
 
 function createStaticReleaseAssets(version) {
-    const cleanVersion = String(version || '2.8.3').replace(/^v/i, '');
+    const cleanVersion = String(version || '2.8.4').replace(/^v/i, '');
     const tag = `v${cleanVersion}`;
     const base = `https://github.com/AryansDevStudios/UniExtract/releases/download/${tag}`;
     return [
@@ -1092,7 +1093,7 @@ app.get('/api/updates/active-jobs', (req, res) => {
 });
 
 app.get('/api/updates', async (req, res) => {
-    const currentVersion = require('./package.json').version || '2.8.3';
+    const currentVersion = require('./package.json').version || '2.8.4';
     const channel = req.query.channel === 'beta' ? 'beta' : 'stable';
     const force = req.query.force === 'true';
     const now = Date.now();

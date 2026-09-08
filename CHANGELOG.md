@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.4] - 2026-09-08
+
+### 🛡️ Cloud & Low-Memory Deployment Resilience (Render / VPS)
+- **YouTube Radio & Mix Auto-Stripping**: When analyzing media URLs with video IDs (`/watch?v=...`), automatically strips dynamic YouTube Radio parameters (`list=RD...` and `start_radio=1`). Prevents automated YouTube mixes from accidentally launching 50-item background playlist extractions when users simply want the song.
+- **Throttled Concurrency**: Reduced concurrent playlist format enrichment probes (`probeVideoFormats`) from 8 down to 2 (configurable via `CONCURRENT_PROBES`), decreasing peak memory consumption from ~750MB to <200MB and preventing Out-Of-Memory (OOM) container kills on 512MB RAM cloud tiers (Render Free/Starter, small VPS instances).
+- **Process Crash Guards**: Added global `uncaughtException` and `unhandledRejection` safety listeners to `server.js` with structured logging, ensuring background asynchronous errors never terminate the server process.
+
+### 🎯 Clean & Focused UI Loading State
+- **Single Loading Indicator**: Removed duplicate loading spinners from the search input's left icon and right submit button. Now displays only a single, focused, centered `"Scanning Media..."` status spinner during analysis.
+- **ReferenceError Fix**: Resolved a JavaScript variable scoping regression (`ReferenceError: url is not defined`) in `handleAnalyze` during deep-link query parameter parsing on initial page mount.
+
 ## [2.8.3] - 2026-09-08
 
 ### 🧭 SPA Clean Path Routing & History State Sync

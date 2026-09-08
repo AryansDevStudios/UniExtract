@@ -16,35 +16,43 @@ export default function LanguagePanel({
  const audioTracks = metadata?.audioTracks || [];
  const subtitles = metadata?.subtitles || [];
 
- const audioOptions = audioTracks.length > 1
- ? audioTracks.map(track => ({ id: track.id, display: track.language || 'Audio' }))
- : [];
+  const audioOptions = audioTracks.length > 1
+    ? audioTracks.map(track => {
+        const display = (track.language || 'Audio')
+          .replace(/\(\s*\((.*?)\)\s*\)/g, '($1)')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return { id: track.id, display };
+      })
+    : [];
 
- const subtitleOptions = subtitles.map(sub => {
- let label = sub.name || '';
- if (!label) {
- const base = sub.lang.replace(/-(orig|auto)$/i, '');
- try {
- label = new Intl.DisplayNames(['en'], { type: 'language' }).of(base) || base.toUpperCase();
- } catch (e) {
- label = base.toUpperCase();
- }
- }
+  const subtitleOptions = subtitles.map(sub => {
+    let label = sub.name || '';
+    if (!label) {
+      const base = sub.lang.replace(/-(orig|auto)$/i, '');
+      try {
+        label = new Intl.DisplayNames(['en'], { type: 'language' }).of(base) || base.toUpperCase();
+      } catch (e) {
+        label = base.toUpperCase();
+      }
+    }
 
- const isOrig = sub.isOrig || sub.lang.includes('orig');
- const isAuto = sub.isAuto;
+    const isOrig = sub.isOrig || sub.lang.includes('orig');
+    const isAuto = sub.isAuto;
 
- if (isOrig && !label.toLowerCase().includes('original')) {
- label = `${label} (Original)`;
- } else if (isAuto && !label.toLowerCase().includes('auto') && !label.toLowerCase().includes('original')) {
- label = `${label} (Auto)`;
- }
+    if (isOrig && !label.toLowerCase().includes('original')) {
+      label = `${label} (Original)`;
+    } else if (isAuto && !label.toLowerCase().includes('auto') && !label.toLowerCase().includes('original')) {
+      label = `${label} (Auto)`;
+    }
 
- return {
- id: sub.lang,
- display: label
- };
- });
+    label = label.replace(/\(\s*\((.*?)\)\s*\)/g, '($1)').replace(/\s+/g, ' ').trim();
+
+    return {
+      id: sub.lang,
+      display: label
+    };
+  });
 
  const selectedSub = subtitles.find(s => s.lang === subLang) || subtitles[0];
 
