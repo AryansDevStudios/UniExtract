@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Link as LinkIcon, Loader2, Clipboard, X } from 'lucide-react';
+import { ArrowRight, Link as LinkIcon, Clipboard, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function SearchBox({ onAnalyze, isLoading, initialUrl = '' }) {
@@ -51,13 +51,9 @@ export default function SearchBox({ onAnalyze, isLoading, initialUrl = '' }) {
         
         {/* Left Icon with Gradient Accent */}
         <div className="pl-4 pr-2 flex items-center pointer-events-none">
-          {isLoading ? (
-            <Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-slate-500" />
-          ) : (
-            <div className="p-1.5 rounded-full bg-gradient-to-br from-fuchsia-500/20 via-purple-500/20 to-cyan-500/20">
-                <LinkIcon className="w-5 h-5 text-cyan-500 dark:text-cyan-400" />
-            </div>
-          )}
+          <div className="p-1.5 rounded-full bg-gradient-to-br from-fuchsia-500/20 via-purple-500/20 to-cyan-500/20">
+            <LinkIcon className="w-5 h-5 text-cyan-500 dark:text-cyan-400" />
+          </div>
         </div>
         
         {/* Input */}
@@ -109,11 +105,7 @@ export default function SearchBox({ onAnalyze, isLoading, initialUrl = '' }) {
             disabled={isLoading || !url}
             className="flex items-center justify-center h-10 w-10 rounded-full bg-gradient-to-br from-fuchsia-500 via-purple-600 to-cyan-500 hover:from-fuchsia-400 hover:to-cyan-400 disabled:from-slate-200 dark:disabled:from-slate-800 disabled:to-slate-200 dark:disabled:to-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 text-white transition-all shadow-md disabled:shadow-none flex-shrink-0 ml-1"
           >
-            {isLoading ? (
-                <Loader2 size={20} className="animate-spin" />
-            ) : (
-                <ArrowRight size={20} />
-            )}
+            <ArrowRight size={20} />
           </button>
         </div>
       </div>
