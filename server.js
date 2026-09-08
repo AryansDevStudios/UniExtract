@@ -560,16 +560,144 @@ const cleanMediaUrl = (rawUrl) => {
     }
 };
 
-// --- ENSURE FFMPEG BINARY ---
-let resolvedFfmpegPath = process.env.FFMPEG_PATH || null;
+// --- ENSURE FFMPEG BINARY (CROSS-PLATFORM NATIVE FIRST WITH STATIC FALLBACK) ---
+let resolvedFfmpegPath = null;
+let ffmpegMeta = {
+    path: null,
+    source: 'none', // 'native' | 'static' | 'custom' | 'none'
+    version: null,
+    hardwareAcceleration: null,
+    mode: 'auto'
+};
 
-const ensureFfmpeg = () => {
-    if (resolvedFfmpegPath && fs.existsSync(resolvedFfmpegPath)) {
-        return resolvedFfmpegPath;
+const testFfmpegExecutable = (candidatePath) => {
+    if (!candidatePath || typeof candidatePath !== 'string') return null;
+    try {
+        if (!fs.existsSync(candidatePath)) return null;
+        if (process.platform !== 'win32') {
+            try {
+                fs.accessSync(candidatePath, fs.constants.X_OK);
+            } catch (e) {
+                return null;
+            }
+        }
+        const stat = fs.statSync(candidatePath);
+        if (!stat.isFile()) return null;
+
+        const probe = spawnSync(candidatePath, ['-version'], {
+            timeout: 4000,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore']
+        });
+
+        if (probe.status === 0 && probe.stdout) {
+            const lines = probe.stdout.trim().split(/\r?\n/);
+            const firstLine = lines[0] || 'ffmpeg version unknown';
+            return {
+                path: candidatePath,
+                versionLine: firstLine,
+                fullOutput: probe.stdout
+            };
+        }
+    } catch (e) {}
+    return null;
+};
+
+const isBundledFfmpegPath = (candidatePath) => {
+    if (!candidatePath) return false;
+    const normalized = path.normalize(candidatePath).toLowerCase();
+    return normalized.includes('node_modules') ||
+           normalized.includes('app.asar') ||
+           normalized.includes('ffmpeg-static') ||
+           normalized.includes('@ffmpeg-installer');
+};
+
+const findNativeFfmpeg = () => {
+    const candidates = [];
+
+    // 1. Search PATH via system lookup command
+    try {
+        if (process.platform === 'win32') {
+            const whereOut = spawnSync('where.exe', ['ffmpeg'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+            if (whereOut.status === 0 && whereOut.stdout) {
+                const foundLines = whereOut.stdout.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                candidates.push(...foundLines);
+            }
+        } else {
+            const whichOut = spawnSync('which', ['-a', 'ffmpeg'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+            if (whichOut.status === 0 && whichOut.stdout) {
+                const foundLines = whichOut.stdout.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                candidates.push(...foundLines);
+            } else {
+                // Fallback to simple 'which ffmpeg'
+                const singleWhich = spawnSync('which', ['ffmpeg'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+                if (singleWhich.status === 0 && singleWhich.stdout) {
+                    candidates.push(singleWhich.stdout.trim().split(/\r?\n/)[0].trim());
+                }
+            }
+        }
+    } catch (e) {}
+
+    // 2. Standard system locations per OS
+    if (process.platform === 'win32') {
+        const localAppData = process.env.LOCALAPPDATA || '';
+        const programData = process.env.ProgramData || 'C:\\ProgramData';
+        const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+        const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+        const homeDir = os.homedir();
+
+        candidates.push(
+            path.join(localAppData, 'Microsoft', 'WinGet', 'Links', 'ffmpeg.exe'),
+            path.join(programData, 'chocolatey', 'bin', 'ffmpeg.exe'),
+            path.join(homeDir, 'scoop', 'shims', 'ffmpeg.exe'),
+            path.join(programFiles, 'ffmpeg', 'bin', 'ffmpeg.exe'),
+            path.join(programFiles, 'ffmpeg', 'ffmpeg.exe'),
+            path.join(programFilesX86, 'ffmpeg', 'bin', 'ffmpeg.exe'),
+            'C:\\ffmpeg\\bin\\ffmpeg.exe',
+            'C:\\ffmpeg\\ffmpeg.exe'
+        );
+    } else if (process.platform === 'darwin') {
+        // macOS standard paths (Homebrew Apple Silicon / Intel, MacPorts, etc.)
+        candidates.push(
+            '/opt/homebrew/bin/ffmpeg',
+            '/usr/local/bin/ffmpeg',
+            '/opt/local/bin/ffmpeg',
+            path.join(os.homedir(), 'bin', 'ffmpeg'),
+            path.join(os.homedir(), '.local', 'bin', 'ffmpeg'),
+            '/usr/bin/ffmpeg'
+        );
+    } else {
+        // Linux (Render containers, Docker, Ubuntu, Debian, Alpine, Arch, etc.)
+        candidates.push(
+            '/usr/bin/ffmpeg',
+            '/usr/local/bin/ffmpeg',
+            '/bin/ffmpeg',
+            '/snap/bin/ffmpeg',
+            '/usr/lib/jellyfin-ffmpeg/ffmpeg',
+            path.join(os.homedir(), '.local', 'bin', 'ffmpeg'),
+            path.join(os.homedir(), 'bin', 'ffmpeg'),
+            '/opt/ffmpeg/bin/ffmpeg'
+        );
     }
 
-    const candidatePaths = [
-        process.env.FFMPEG_PATH,
+    // Deduplicate and test each candidate (skipping bundled node_modules paths)
+    const seen = new Set();
+    for (const candidate of candidates) {
+        if (!candidate || seen.has(candidate)) continue;
+        seen.add(candidate);
+        if (isBundledFfmpegPath(candidate)) continue;
+
+        const tested = testFfmpegExecutable(candidate);
+        if (tested) {
+            return tested;
+        }
+    }
+
+    return null;
+};
+
+const findStaticFfmpeg = () => {
+    const staticCandidates = [
         (() => {
             try {
                 const p = require('ffmpeg-static');
@@ -593,23 +721,87 @@ const ensureFfmpeg = () => {
         })()
     ];
 
-    for (const candidate of candidatePaths) {
-        if (candidate && fs.existsSync(candidate)) {
-            resolvedFfmpegPath = candidate;
-            break;
+    const seen = new Set();
+    for (const candidate of staticCandidates) {
+        if (!candidate || seen.has(candidate)) continue;
+        seen.add(candidate);
+
+        const tested = testFfmpegExecutable(candidate);
+        if (tested) {
+            return tested;
         }
     }
 
-    if (!resolvedFfmpegPath) {
-        try {
-            const checkCmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
-            const sysPath = execSync(checkCmd).toString().trim().split(/\r?\n/)[0].trim();
-            if (sysPath && fs.existsSync(sysPath)) {
-                resolvedFfmpegPath = sysPath;
-            }
-        } catch (e) {}
+    return null;
+};
+
+const ensureFfmpeg = () => {
+    if (resolvedFfmpegPath && fs.existsSync(resolvedFfmpegPath)) {
+        return resolvedFfmpegPath;
     }
 
+    const envMode = (process.env.FFMPEG_MODE || '').toLowerCase().trim();
+    const preferStatic = process.env.FFMPEG_PREFER_STATIC === 'true' || process.env.FFMPEG_FORCE_STATIC === 'true';
+    const effectiveMode = envMode || (preferStatic ? 'static' : 'auto');
+    ffmpegMeta.mode = effectiveMode;
+
+    console.log("\n" + "=".repeat(60));
+    logger(null, "Probing FFmpeg Environment & Binary Availability...", "START");
+    logger(null, `FFmpeg Resolution Mode: ${effectiveMode.toUpperCase()} | Platform: ${process.platform} (${process.arch})`);
+
+    // Case 1: Explicit FFMPEG_PATH provided
+    if (process.env.FFMPEG_PATH) {
+        const explicitCandidate = process.env.FFMPEG_PATH;
+        logger(null, `Checking explicit FFMPEG_PATH override: ${explicitCandidate}`);
+        const tested = testFfmpegExecutable(explicitCandidate);
+        if (tested) {
+            resolvedFfmpegPath = tested.path;
+            ffmpegMeta.source = 'custom';
+            ffmpegMeta.path = tested.path;
+            ffmpegMeta.version = tested.versionLine;
+            logger(null, `✓ Explicit FFmpeg binary validated: ${resolvedFfmpegPath}`, "SYSTEM");
+            logger(null, `FFmpeg Engine: ${tested.versionLine}`, "SYSTEM");
+        } else {
+            logger(null, `WARNING: Explicit FFMPEG_PATH '${explicitCandidate}' is invalid or not executable. Falling back...`, "WARN");
+        }
+    }
+
+    // Case 2: Auto or Native mode -> Probe native system FFmpeg first
+    if (!resolvedFfmpegPath && effectiveMode !== 'static') {
+        logger(null, "Checking for host native FFmpeg (supports dynamic codecs & hardware acceleration)...");
+        const nativeMatch = findNativeFfmpeg();
+        if (nativeMatch) {
+            resolvedFfmpegPath = nativeMatch.path;
+            ffmpegMeta.source = 'native';
+            ffmpegMeta.path = nativeMatch.path;
+            ffmpegMeta.version = nativeMatch.versionLine;
+            logger(null, `✓ Native system FFmpeg detected: ${resolvedFfmpegPath}`, "SYSTEM");
+            logger(null, `FFmpeg Engine: ${nativeMatch.versionLine}`, "SYSTEM");
+            logger(null, "FFmpeg Type: Native System Binary (dynamic codecs & hardware acceleration supported)", "SYSTEM");
+        } else {
+            logger(null, `Host native FFmpeg not found on this ${process.platform} system.`);
+            if (effectiveMode === 'native') {
+                logger(null, "CRITICAL: FFMPEG_MODE is set to 'native' but no native FFmpeg was found!", "CRITICAL");
+            }
+        }
+    }
+
+    // Case 3: Fallback to bundled static build if native not found or mode is 'static'
+    if (!resolvedFfmpegPath && effectiveMode !== 'native') {
+        logger(null, "Falling back to bundled static FFmpeg (ffmpeg-static)...");
+        const staticMatch = findStaticFfmpeg();
+        if (staticMatch) {
+            resolvedFfmpegPath = staticMatch.path;
+            ffmpegMeta.source = 'static';
+            ffmpegMeta.path = staticMatch.path;
+            ffmpegMeta.version = staticMatch.versionLine;
+            logger(null, `✓ Bundled static FFmpeg active: ${resolvedFfmpegPath}`, "FALLBACK");
+            logger(null, `FFmpeg Engine: ${staticMatch.versionLine}`, "FALLBACK");
+            logger(null, "FFmpeg Type: Bundled Static Binary (CPU-only processing fallback; dynamic hwaccel stripped)", "FALLBACK");
+        }
+    }
+
+    // Update PATH so child processes (yt-dlp, CLI helpers) access the selected binary
     if (resolvedFfmpegPath) {
         const ffmpegDir = path.dirname(resolvedFfmpegPath);
         const currentPath = process.env.PATH || '';
@@ -618,44 +810,111 @@ const ensureFfmpeg = () => {
             process.env.PATH = `${ffmpegDir}${path.delimiter}${currentPath}`;
         }
         process.env.FFMPEG_PATH = resolvedFfmpegPath;
-        logger(null, `FFmpeg binary active: ${resolvedFfmpegPath}`);
     } else {
-        logger(null, `WARNING: FFmpeg binary not found in Node.js packages or PATH!`, "WARN");
+        ffmpegMeta.source = 'none';
+        logger(null, "CRITICAL: No usable FFmpeg binary found in system PATH or bundled packages!", "CRITICAL");
     }
 
+    console.log("=".repeat(60) + "\n");
     return resolvedFfmpegPath;
 };
 
-const detectHardware = () => {
-    console.log("\n" + "=".repeat(50));
-    logger(null, "Probing Hardware Acceleration Capabilities...");
-    ensureFfmpeg();
+const testEncoderHardwareSupport = (ffmpegBin, encoderName) => {
     try {
-        const encoders = execSync('ffmpeg -encoders').toString();
-        try {
-            const verLine = execSync('ffmpeg -version').toString().split(/\r?\n/)[0].trim();
-            logger(null, `FFmpeg Engine: ${verLine}`);
-        } catch (e) {}
+        const res = spawnSync(ffmpegBin, [
+            '-hide_banner',
+            '-loglevel', 'error',
+            '-f', 'lavfi',
+            '-i', 'color=c=black:s=64x64:d=0.04',
+            '-c:v', encoderName,
+            '-frames:v', '1',
+            '-f', 'null',
+            '-'
+        ], {
+            timeout: 2000,
+            stdio: ['ignore', 'ignore', 'ignore']
+        });
+        return res.status === 0;
+    } catch (e) {
+        return false;
+    }
+};
 
-        if (encoders.includes('h264_qsv')) {
-            selectedEncoder = 'h264_qsv';
-            logger(null, "SUCCESS: Found Intel QuickSync (h264_qsv)", "HARDWARE");
-        } else if (encoders.includes('h264_nvenc')) {
-            selectedEncoder = 'h264_nvenc';
-            logger(null, "SUCCESS: Found NVIDIA NVENC (h264_nvenc)", "HARDWARE");
-        } else if (encoders.includes('h264_videotoolbox')) {
-            selectedEncoder = 'h264_videotoolbox';
-            logger(null, "SUCCESS: Found Apple VideoToolbox (h264_videotoolbox)", "HARDWARE");
-        } else if (encoders.includes('h264_amf')) {
-            selectedEncoder = 'h264_amf';
-            logger(null, "SUCCESS: Found AMD AMF (h264_amf)", "HARDWARE");
+const detectHardware = () => {
+    console.log("\n" + "=".repeat(60));
+    logger(null, "Probing Hardware Acceleration Capabilities...");
+    const activeFfmpeg = ensureFfmpeg();
+
+    if (!activeFfmpeg) {
+        logger(null, "ERROR: Cannot probe hardware acceleration. No FFmpeg binary available.", "CRITICAL");
+        console.log("=".repeat(60) + "\n");
+        return;
+    }
+
+    try {
+        const probe = spawnSync(activeFfmpeg, ['-encoders'], {
+            timeout: 5000,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore']
+        });
+        const encodersOutput = (probe.stdout || '') + (probe.stderr || '');
+
+        // Select candidates appropriate for the active operating system
+        const platformCandidates = [];
+        if (process.platform === 'win32') {
+            platformCandidates.push(
+                { id: 'h264_nvenc', name: 'NVIDIA NVENC (h264_nvenc)' },
+                { id: 'h264_qsv', name: 'Intel QuickSync (h264_qsv)' },
+                { id: 'h264_amf', name: 'AMD AMF (h264_amf)' },
+                { id: 'h264_mf', name: 'Windows Media Foundation (h264_mf)' }
+            );
+        } else if (process.platform === 'darwin') {
+            platformCandidates.push(
+                { id: 'h264_videotoolbox', name: 'Apple VideoToolbox (h264_videotoolbox)' }
+            );
         } else {
-            logger(null, "NOTICE: No hardware encoder detected. Using CPU (libx264).", "FALLBACK");
+            // Linux / Render containers / Docker / BSD
+            platformCandidates.push(
+                { id: 'h264_nvenc', name: 'NVIDIA NVENC (h264_nvenc)' },
+                { id: 'h264_qsv', name: 'Intel QuickSync (h264_qsv)' },
+                { id: 'h264_vaapi', name: 'Linux VA-API (h264_vaapi)' },
+                { id: 'h264_amf', name: 'AMD AMF (h264_amf)' },
+                { id: 'h264_v4l2m2m', name: 'ARM V4L2 (h264_v4l2m2m)' }
+            );
+        }
+
+        const verifiedEncoders = [];
+        for (const candidate of platformCandidates) {
+            // 1. Check if the binary was compiled with this encoder
+            if (encodersOutput.includes(candidate.id)) {
+                // 2. Actually test whether the host GPU/driver can initialize and encode with it
+                if (testEncoderHardwareSupport(activeFfmpeg, candidate.id)) {
+                    verifiedEncoders.push(candidate);
+                }
+            }
+        }
+
+        if (verifiedEncoders.length > 0) {
+            selectedEncoder = verifiedEncoders[0].id;
+            ffmpegMeta.hardwareAcceleration = selectedEncoder;
+            verifiedEncoders.forEach(enc => {
+                logger(null, `SUCCESS: Verified working hardware encoder: ${enc.name}`, "HARDWARE");
+            });
+            logger(null, `Active Hardware Transcoder: ${selectedEncoder}`, "HARDWARE");
+        } else {
+            selectedEncoder = 'libx264';
+            ffmpegMeta.hardwareAcceleration = false;
+            if (ffmpegMeta.source === 'static') {
+                logger(null, "NOTICE: Static build is CPU-only (libx264). Dynamic hardware acceleration is stripped from static packages.", "FALLBACK");
+                logger(null, "TIP: Install native FFmpeg (e.g. 'apt-get install -y ffmpeg' on Linux/Render) to enable GPU acceleration.", "INFO");
+            } else {
+                logger(null, "NOTICE: No active GPU hardware encoder verified on host. Using CPU (libx264).", "FALLBACK");
+            }
         }
     } catch (err) {
-        logger(null, "ERROR: FFmpeg probe failed. Is FFmpeg installed?", "CRITICAL");
+        logger(null, `ERROR: FFmpeg encoder probe failed: ${err.message}`, "CRITICAL");
     }
-    console.log("=".repeat(50) + "\n");
+    console.log("=".repeat(60) + "\n");
 };
 detectHardware();
 
@@ -683,7 +942,15 @@ app.get('/api/health', (req, res) => {
         status: 'ok',
         version: appVersion,
         uptime: Math.floor(process.uptime()),
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        ffmpeg: {
+            path: resolvedFfmpegPath,
+            source: ffmpegMeta.source,
+            version: ffmpegMeta.version,
+            encoder: selectedEncoder,
+            hardwareAcceleration: ffmpegMeta.hardwareAcceleration || false,
+            mode: ffmpegMeta.mode
+        }
     });
 });
 

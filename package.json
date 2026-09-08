@@ -1,6 +1,6 @@
 {
   "name": "uni-extract",
-  "version": "2.8.1",
+  "version": "2.8.2",
   "description": "A modern high-performance media downloader and transcoder using Express, FFmpeg, and yt-dlp",
   "main": "electron/main.js",
   "scripts": {
@@ -180,10 +180,18 @@
     "ffmpeg",
     "media-extractor"
   ],
-  "author": {
-    "name": "AryansDevStudios",
-    "email": "aryansdevstudios@gmail.com",
-    "url": "https://github.com/AryansDevStudios"
+  "author": "AryansDevStudios <aryansdevstudios@gmail.com> (https://github.com/AryansDevStudios)",
+  "license": "MIT",
+  "directories": {
+    "doc": "docs"
   },
-  "license": "MIT"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AryansDevStudios/UniExtract.git"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/AryansDevStudios/UniExtract/issues"
+  },
+  "homepage": "https://github.com/AryansDevStudios/UniExtract#readme"
 }

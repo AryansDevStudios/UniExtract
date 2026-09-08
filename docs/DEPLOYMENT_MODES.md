@@ -217,3 +217,26 @@ docker run -d \
    Cross-Origin Resource Sharing (CORS) is enabled by default in `server.js`, allowing any static frontend (e.g., Netlify or `localhost:5173`) to safely communicate with your backend.
 3. **Repository Privacy**:
    `cookies.txt` is gitignored and will never be committed to public GitHub repositories. On cloud hosts, supply cookies via `COOKIES_CONTENT` or `COOKIES_BASE64` in `.env`.
+
+---
+
+## 🎬 FFmpeg Engine & Hardware Acceleration Probing
+
+UniExtract uses a **Smart Startup FFmpeg Resolution Engine** designed to maximize speed, hardware acceleration, and dynamic codec compatibility across Linux (Render, Docker, VPS), macOS, and Windows:
+
+### Resolution Strategy:
+1. **Host Native First**: On startup, the server automatically probes the host system or container for a native FFmpeg binary (via PATH, `which`, `where.exe`, and well-known system paths like `/usr/bin/ffmpeg` or WinGet/Homebrew).
+   - If found, it validates the binary with `-version`.
+   - Native FFmpeg unlocks **dynamic hardware acceleration** (NVIDIA NVENC, Intel QuickSync, Linux VA-API, Apple VideoToolbox, AMD AMF) and complete host codec libraries.
+2. **Seamless Static Fallback**: If no native FFmpeg is detected on the device/container, it automatically falls back to bundled static FFmpeg (`ffmpeg-static`), ensuring zero deployment failures or setup friction.
+3. **Hardware Acceleration Probe**: The server inspects supported encoders (`-encoders`) on boot and logs the active hardware or CPU transcoder.
+
+### Configuration Environment Variables:
+| Variable | Values | Description |
+|---|---|---|
+| `FFMPEG_MODE` | `auto` (default), `native`, `static` | `auto` probes native first and falls back to static. `native` forces host binary. `static` forces CPU static build. |
+| `FFMPEG_PREFER_STATIC` | `true`, `false` | Quick shorthand to force the bundled static build (`ffmpeg-static`). |
+| `FFMPEG_PATH` | `/custom/path/ffmpeg` | Overrides auto-detection with an explicit executable path. |
+
+> **Render / Docker Tip**: Install native FFmpeg (`apt-get install -y ffmpeg` or Alpine `apk add ffmpeg`) in your container or custom image to automatically take advantage of native system performance!
+

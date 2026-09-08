@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.2] - 2026-09-08
+
+### ⚡ Smart Native FFmpeg Resolution & Real GPU Probing
+- **Native-First Auto-Detection**: On startup, UniExtract now automatically checks the host or container for native FFmpeg binaries (`/usr/bin/ffmpeg`, WinGet, Homebrew, Chocolatey, Scoop, and system PATH) before falling back to bundled static FFmpeg (`ffmpeg-static`).
+- **Dynamic Codecs & Acceleration**: Preserves dynamic hardware acceleration libraries (NVENC, QuickSync, VA-API, VideoToolbox, AMF) that were stripped in static Linux builds.
+- **Real GPU Hardware Micro-Probing**: Replaced static string matching of `-encoders` with live single-frame test-encoding (`testEncoderHardwareSupport`) to verify actual GPU driver and hardware availability, eliminating false positives (e.g., claiming NVENC/VA-API without hardware).
+- **Startup Engine Controls**: Added `FFMPEG_MODE` (`auto`, `native`, `static`), `FFMPEG_PREFER_STATIC`, and `FFMPEG_PATH` environment variables.
+- **Enhanced Healthcheck**: Added comprehensive FFmpeg status, version, and active hardware transcoder metadata to `GET /api/health`.
+
 ## [2.8.0] - 2026-09-08
 
 ### 🚀 Stable Release Highlights
