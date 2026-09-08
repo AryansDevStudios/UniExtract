@@ -262,6 +262,14 @@ const logger = (jobId, message, type = 'INFO') => {
     console.log(`${timestamp} ${idTag} ${typeTag} ${message}`);
 };
 
+// Global error handlers to prevent unhandled rejections or runtime exceptions from crashing the server
+process.on('uncaughtException', (err) => {
+    logger(null, `Uncaught Exception caught: ${err?.message || err}\n${err?.stack || ''}`, 'ERROR');
+});
+process.on('unhandledRejection', (reason) => {
+    logger(null, `Unhandled Rejection caught: ${reason?.message || reason}`, 'ERROR');
+});
+
 const parseTimeToSeconds = (value) => {
     if (!value || typeof value !== 'string') return null;
     const cleaned = value.trim();
@@ -526,18 +534,26 @@ const cleanMediaUrl = (rawUrl) => {
 
         if (parsed.hostname.includes('youtube.com')) {
             const listParam = parsed.searchParams.get('list');
-            const isPlaylistUrl = parsed.pathname.includes('/playlist') || (listParam && !parsed.searchParams.has('v'));
+            const hasVideo = parsed.searchParams.has('v');
+            const isPlaylistUrl = parsed.pathname.includes('/playlist') || (listParam && !hasVideo);
 
+            // Handle YouTube Radio / Mixes (list=RD...)
             if (listParam && listParam.startsWith('RD')) {
-                if (parsed.pathname.includes('/playlist') && !parsed.searchParams.has('v')) {
+                if (hasVideo) {
+                    // When watching a specific video, YouTube appends automated radio list=RD...: strip it so user gets the video
+                    parsed.searchParams.delete('list');
+                } else if (parsed.pathname.includes('/playlist')) {
+                    // Standalone mix playlist link: resolve seed video ID and route to /watch?v=...
                     const seedVideoId = listParam.replace(/^RD(AMVM|AMBN|CLAK5uy_)?/, '').slice(0, 11);
                     if (seedVideoId && seedVideoId.length >= 11) {
                         parsed.pathname = '/watch';
                         parsed.searchParams.set('v', seedVideoId);
+                        parsed.searchParams.delete('list');
                     }
                 }
             } else if (!isPlaylistUrl && !parsed.pathname.includes('/playlist')) {
-                if (!listParam || (!listParam.startsWith('PL') && !listParam.startsWith('OLAK') && !listParam.startsWith('UU') && !listParam.startsWith('FL'))) {
+                // Strip non-standard list parameters on video watch links (preserve genuine playlists PL/OLAK/UU/FL)
+                if (listParam && !listParam.startsWith('PL') && !listParam.startsWith('OLAK') && !listParam.startsWith('UU') && !listParam.startsWith('FL')) {
                     parsed.searchParams.delete('list');
                 }
             }
@@ -545,10 +561,14 @@ const cleanMediaUrl = (rawUrl) => {
             parsed.searchParams.delete('si');
             parsed.searchParams.delete('pp');
             parsed.searchParams.delete('playnext');
+            parsed.searchParams.delete('start_radio');
+            parsed.searchParams.delete('rv');
         } else if (parsed.hostname.includes('youtu.be')) {
             parsed.searchParams.delete('si');
             parsed.searchParams.delete('pp');
             parsed.searchParams.delete('playnext');
+            parsed.searchParams.delete('start_radio');
+            parsed.searchParams.delete('rv');
         }
 
         const trackingParams = ['igsh', 'utm_source', 'utm_medium', 'utm_campaign', 'is_from_webapp', 'sender_device', 'share_app_id', 'feature', 'fbclid'];
@@ -1804,6 +1824,7 @@ function startPlaylistEnrichment(playlistId, items) {
 
     (async () => {
         logger(null, `Starting format analysis for playlist "${playlistId}" (${pendingItems.length} videos to probe)`, "ANALYSIS");
+        const maxConcurrent = Math.max(1, parseInt(process.env.CONCURRENT_PROBES || '2', 10));
         const executing = [];
         for (const item of pendingItems) {
             const p = probeVideoFormats(item.id).then(formatData => {
@@ -1813,13 +1834,15 @@ function startPlaylistEnrichment(playlistId, items) {
                     job.maxPlaylistHeight = formatData.maxHeight;
                     updatePlaylistMaxResolution(job);
                 }
-                executing.splice(executing.indexOf(p), 1);
+                const idx = executing.indexOf(p);
+                if (idx !== -1) executing.splice(idx, 1);
             }).catch(() => {
                 job.completed = Object.keys(job.items).length;
-                executing.splice(executing.indexOf(p), 1);
+                const idx = executing.indexOf(p);
+                if (idx !== -1) executing.splice(idx, 1);
             });
             executing.push(p);
-            if (executing.length >= 8) {
+            if (executing.length >= maxConcurrent) {
                 await Promise.race(executing);
             }
         }
@@ -1827,7 +1850,9 @@ function startPlaylistEnrichment(playlistId, items) {
         job.isDone = true;
         updatePlaylistMaxResolution(job);
         logger(null, `Playlist "${playlistId}" format analysis completed: ${job.completed}/${job.total} videos probed. Highest resolution: ${job.maxPlaylistResolution.toUpperCase()}`, "SUCCESS");
-    })();
+    })().catch(err => {
+        logger(null, `Playlist format enrichment notice: ${err?.message || err}`, "WARN");
+    });
 
     return job;
 }

@@ -50,6 +50,20 @@ export function sanitizeQueryUrl(raw) {
   // Correct missing 'v=' parameter in YouTube URLs (e.g. watch?=...)
   url = url.replace(/(youtube\.com\/watch\?)=([a-zA-Z0-9_-]+)/i, (_match, p1, p2) => `${p1}v=${p2}`);
 
+  // Clean YouTube Mix/Radio parameters (list=RD...) when video ID 'v' is present
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('youtube.com') && parsed.pathname.includes('/watch') && parsed.searchParams.has('v')) {
+      const list = parsed.searchParams.get('list');
+      if (list && list.startsWith('RD')) {
+        parsed.searchParams.delete('list');
+      }
+      parsed.searchParams.delete('start_radio');
+      parsed.searchParams.delete('rv');
+      return parsed.toString();
+    }
+  } catch (e) {}
+
   return url;
 }
 
