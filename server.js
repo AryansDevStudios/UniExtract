@@ -380,20 +380,34 @@ const collectAudioTracks = (info) => {
         const displayLabel = cleanLanguageName(rawLang, note);
         const langKey = rawLang || displayLabel.toLowerCase();
 
+        const isOriginal = (fmt.language_preference !== undefined && fmt.language_preference >= 0) ||
+                           (note && note.toLowerCase().includes('original')) ||
+                           (fmt.is_default === true);
+
         const abr = fmt.abr || fmt.tbr || 0;
         const existing = map.get(langKey);
 
-        if (!existing || abr > existing.abr) {
+        if (!existing || abr > existing.abr || (isOriginal && !existing.isOriginal)) {
             map.set(langKey, {
                 id: fmt.format_id,
                 language: displayLabel,
                 abr,
-                ext: fmt.ext || 'audio'
+                ext: fmt.ext || 'audio',
+                isOriginal: !!isOriginal,
+                languageCode: rawLang
             });
         }
     }
 
-    return [...map.values()];
+    const tracks = [...map.values()];
+    // Always sort the original audio track FIRST, then sort by highest bitrate
+    tracks.sort((a, b) => {
+        if (a.isOriginal && !b.isOriginal) return -1;
+        if (!a.isOriginal && b.isOriginal) return 1;
+        return (b.abr || 0) - (a.abr || 0);
+    });
+
+    return tracks;
 };
 
 const collectSubtitleOptions = (info) => {
@@ -958,7 +972,7 @@ app.get('/favfavicon.ico', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-    const appVersion = require('./package.json').version || '2.8.4';
+    const appVersion = require('./package.json').version || '2.8.5';
     res.json({
         status: 'ok',
         version: appVersion,
@@ -976,7 +990,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/version', (req, res) => {
-    const appVersion = require('./package.json').version || '2.8.4';
+    const appVersion = require('./package.json').version || '2.8.5';
     res.json({ version: appVersion, name: 'uni-extract' });
 });
 
@@ -1058,7 +1072,7 @@ function categorizeReleaseNotes(body) {
 }
 
 function createStaticReleaseAssets(version) {
-    const cleanVersion = String(version || '2.8.4').replace(/^v/i, '');
+    const cleanVersion = String(version || '2.8.5').replace(/^v/i, '');
     const tag = `v${cleanVersion}`;
     const base = `https://github.com/AryansDevStudios/UniExtract/releases/download/${tag}`;
     return [
@@ -1093,7 +1107,7 @@ app.get('/api/updates/active-jobs', (req, res) => {
 });
 
 app.get('/api/updates', async (req, res) => {
-    const currentVersion = require('./package.json').version || '2.8.4';
+    const currentVersion = require('./package.json').version || '2.8.5';
     const channel = req.query.channel === 'beta' ? 'beta' : 'stable';
     const force = req.query.force === 'true';
     const now = Date.now();
@@ -1940,6 +1954,10 @@ function buildVideoAnalysisResponse(info) {
             resDisplay = `${width}w`;
         }
 
+        const isOriginal = (f.language_preference !== undefined && f.language_preference >= 0) ||
+                           (f.format_note && f.format_note.toLowerCase().includes('original')) ||
+                           (f.is_default === true);
+
         return {
             id: f.format_id,
             ext: f.ext,
@@ -1952,6 +1970,8 @@ function buildVideoAnalysisResponse(info) {
             label: label,
             fps: f.fps || null,
             audio_channels: f.audio_channels || 2,
+            isOriginal: !!isOriginal,
+            language: f.language || null,
             codec_info: hasVideo ? (f.vcodec ? f.vcodec.split('.')[0] : 'VID') : (hasAudio ? (f.acodec ? f.acodec.split('.')[0] : 'AUD') : 'RAW')
         };
     });
@@ -2703,11 +2723,19 @@ app.post('/api/download', async (req, res) => {
         namingTag = `${vLabel || 'NoVideo'}_${aLabel || 'NoAudio'}`;
     }
 
-    if (audioLang && audioLang !== 'default' && audioLang !== '') {
+    const hasExplicitAudioLang = audioLang && audioLang !== 'default' && audioLang !== 'original' && audioLang !== '';
+    if (hasExplicitAudioLang) {
         if (isAudioOnly) {
             formatSelection = audioLang;
         } else if (vId && !isMuted) {
             formatSelection = `${vId}+${audioLang}`;
+        }
+    } else if (!aId || aId === 'bestaudio/best' || aId === 'bestaudio' || aId === 'mp3' || aId === 'm4a') {
+        const originalAudioSelector = 'bestaudio[language_preference>=0]/bestaudio[format_note*=original]/bestaudio/best';
+        if (isAudioOnly) {
+            formatSelection = originalAudioSelector;
+        } else if (vId && !isMuted) {
+            formatSelection = `${vId}+${originalAudioSelector}`;
         }
     }
 

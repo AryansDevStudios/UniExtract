@@ -212,6 +212,8 @@ function App() {
     
     const vList = (data.formats || []).filter(f => f.vcodec).sort((a,b) => (b.height - a.height) || ((a.size || Infinity) - (b.size || Infinity)));
     const aList = (data.formats || []).filter(f => f.acodec && !f.vcodec).sort((a,b) => {
+      if (a.isOriginal && !b.isOriginal) return -1;
+      if (!a.isOriginal && b.isOriginal) return 1;
       const abrA = parseInt(a.abr) || 0;
       const abrB = parseInt(b.abr) || 0;
       if (abrA !== abrB) return abrB - abrA;
@@ -221,19 +223,23 @@ function App() {
     if (vList.length > 0) setSelectedVideo({ id: vList[0].id, size: vList[0].size, label: vList[0].label });
     else setSelectedVideo({ id: '', size: 0, label: 'NoVideo' });
     
-    if (aList.length > 0) setSelectedAudio({ id: aList[0].id, size: aList[0].size, label: aList[0].label });
+    // Find original audio track and select it by default (never a random dub)
+    const originalAudioTrack = (data.audioTracks || []).find(t => t.isOriginal || t.language?.toLowerCase().includes('original')) || (data.audioTracks || [])[0];
+    const initialAudioId = originalAudioTrack?.id || (aList[0]?.id || '');
+    const matchedAudioFormat = aList.find(a => a.id === initialAudioId) || aList[0];
+
+    if (matchedAudioFormat) setSelectedAudio({ id: matchedAudioFormat.id, size: matchedAudioFormat.size, label: matchedAudioFormat.label });
     else setSelectedAudio({ id: '', size: 0, label: 'PreMerged' });
     
     const prefContainer = localStorage.getItem('umx_pref_container') || 'default';
     const prefEmbedSubs = localStorage.getItem('umx_pref_embed_subs') === 'true';
     const prefSplitChapters = localStorage.getItem('umx_pref_split_chapters') === 'true';
-    const prefAudioLang = localStorage.getItem('umx_pref_audio_lang') || 'default';
 
     setSelectedContainer(prefContainer);
     setSplitChapters(prefSplitChapters);
     setClipStart('00:00:00');
     setClipEnd('');
-    setAudioLang(prefAudioLang);
+    setAudioLang(initialAudioId);
     setEmbedSubs(prefEmbedSubs);
     setSubLang((data.subtitles && data.subtitles[0]?.lang) || 'en');
   };

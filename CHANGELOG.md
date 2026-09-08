@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.5] - 2026-09-08
+
+### 🎵 Original Audio Track Default Selection & Enforcement
+- **Visible Original Track by Default**: The Audio Language selector now detects and highlights the real Original audio track (e.g. `English (US) (Original)`) by default, completely eliminating the ambiguous `"Default / Original"` option.
+- **Dubbed Audio Prevention**: Fixed an issue where multi-track audio videos (e.g. YouTube multi-dub) defaulted to whichever arbitrary dub was first in the manifest (e.g. German, Spanish, French). The player and download queue now strictly prioritize the original language stream.
+- **Backend Fallback Enforcement**: When downloading without an explicit audio dub selection, `server.js` now enforces `bestaudio[language_preference>=0]/bestaudio[format_note*=original]/bestaudio/best`, guaranteeing the original track is downloaded instead of a random dub.
+- **Formatting Polish**: Cleaned up duplicate nested parentheses in audio track labels (e.g. `English (US) ((Original))` -> `English (US) (Original)`).
+
 ## [2.8.4] - 2026-09-08
 
 ### 🛡️ Cloud & Low-Memory Deployment Resilience (Render / VPS)

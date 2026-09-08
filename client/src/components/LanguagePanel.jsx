@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Globe2, Languages, Download, FileText, Sparkles, Check, Loader2 } from 'lucide-react';
 import { apiUrl } from '../utils/api';
 
@@ -22,9 +22,16 @@ export default function LanguagePanel({
           .replace(/\(\s*\((.*?)\)\s*\)/g, '($1)')
           .replace(/\s+/g, ' ')
           .trim();
-        return { id: track.id, display };
+        return { id: track.id, display, isOriginal: Boolean(track.isOriginal) };
       })
     : [];
+
+  useEffect(() => {
+    if (audioOptions.length > 0 && (!audioLang || !audioOptions.some(opt => opt.id === audioLang))) {
+      const orig = audioOptions.find(opt => opt.isOriginal || opt.display.toLowerCase().includes('original')) || audioOptions[0];
+      if (orig) setAudioLang(orig.id);
+    }
+  }, [audioOptions, audioLang, setAudioLang]);
 
   const subtitleOptions = subtitles.map(sub => {
     let label = sub.name || '';
@@ -96,23 +103,22 @@ export default function LanguagePanel({
  <Globe2 size={15} className="text-cyan-400" /> Language & Captions
  </div>
 
- {audioOptions.length > 1 && (
- <div className="mb-4">
- <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
- Audio Language
- <select
- value={audioLang}
- onChange={(e) => setAudioLang(e.target.value)}
- className="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 outline-none focus:border-indigo-500 shadow-2xs font-medium"
- >
- <option value="default">Default / Original</option>
- {audioOptions.map(opt => (
- <option key={opt.id} value={opt.id}>{opt.display}</option>
- ))}
- </select>
- </label>
- </div>
- )}
+  {audioOptions.length > 1 && (
+    <div className="mb-4">
+      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+        Audio Language
+        <select
+          value={audioLang && audioOptions.some(opt => opt.id === audioLang) ? audioLang : (audioOptions[0]?.id || '')}
+          onChange={(e) => setAudioLang(e.target.value)}
+          className="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 outline-none focus:border-indigo-500 shadow-2xs font-medium"
+        >
+          {audioOptions.map(opt => (
+            <option key={opt.id} value={opt.id}>{opt.display}</option>
+          ))}
+        </select>
+      </label>
+    </div>
+  )}
 
  {subtitleOptions.length > 0 && (
  <div className="space-y-3.5">
