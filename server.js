@@ -310,20 +310,25 @@ const cleanLanguageName = (rawLang, note = '') => {
 
     let cleanNote = note.trim()
         .replace(/,\s*(low|medium|high|ultra|tiny|small).*$/i, '')
-        .replace(/\b(low|medium|high)\b/gi, '')
+        .replace(/\b(low|medium|high|ultra|tiny|small)\b/gi, '')
+        .replace(/^[\s,;:-]+|[\s,;:-]+$/g, '')
         .replace(/\s+/g, ' ')
         .trim();
 
     if (cleanNote) {
         cleanNote = cleanNote
+            .replace(/\[\s*original\s*\]/gi, '(Original)')
+            .replace(/\[\s*dubbed\s*\]/gi, '(Dubbed)')
             .replace(/\(?\boriginal\s*\(default\)\)?/gi, '(Original)')
             .replace(/\(?\boriginal\b\)?/gi, '(Original)')
             .replace(/\(?\bdubbed\b\)?/gi, '(Dubbed)')
             .replace(/\bdefault\b/gi, '')
+            .replace(/\[\s*\((.*?)\)\s*\]/g, '($1)')
             .replace(/\(\s*\((.*?)\)\s*\)/g, '($1)')
+            .replace(/^[\s,;:-]+|[\s,;:-]+$/g, '')
             .replace(/\s+/g, ' ')
             .trim();
-        return cleanNote;
+        if (cleanNote) return cleanNote;
     }
 
     return langName || (rawLang ? rawLang.toUpperCase() : 'Audio');
@@ -1954,8 +1959,12 @@ function buildVideoAnalysisResponse(info) {
             resDisplay = `${width}w`;
         }
 
+        const rawLang = (f.language || f.language_code || '').toLowerCase().trim();
+        const note = f.format_note || '';
+        const displayLabel = cleanLanguageName(rawLang, note);
+
         const isOriginal = (f.language_preference !== undefined && f.language_preference >= 0) ||
-                           (f.format_note && f.format_note.toLowerCase().includes('original')) ||
+                           (note && note.toLowerCase().includes('original')) ||
                            (f.is_default === true);
 
         return {
@@ -1971,7 +1980,8 @@ function buildVideoAnalysisResponse(info) {
             fps: f.fps || null,
             audio_channels: f.audio_channels || 2,
             isOriginal: !!isOriginal,
-            language: f.language || null,
+            language: displayLabel || (f.language ? f.language.toUpperCase() : null),
+            format_note: note || null,
             codec_info: hasVideo ? (f.vcodec ? f.vcodec.split('.')[0] : 'VID') : (hasAudio ? (f.acodec ? f.acodec.split('.')[0] : 'AUD') : 'RAW')
         };
     });

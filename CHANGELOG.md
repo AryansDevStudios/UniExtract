@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.6] - 2026-09-08
+
+### 🎨 Responsive Dropdown Menus & Truncation Elimination
+- **Never-Truncated File Sizes**: Rebuilt trigger buttons for Video Quality and Audio Track dropdowns with dedicated right-aligned file size badges (`289.4 MB`, `7.3 MB`), completely eliminating mid-word ellipsis truncation (`289...` and `Stereo •...`).
+- **Responsive Collision-Aware Popover Menus**: Replaced narrow fixed containers with responsive `sm:min-w-[360px] md:min-w-[420px]` popovers featuring smart alignment (`left-0` for video, right-aligned `sm:right-0` for audio and format) to prevent off-screen overflow on desktop and mobile.
+- **Modern Glass Aesthetics**: Styled dropdowns with `rounded-2xl`, glass blur backdrop (`backdrop-blur-2xl`), deep elevation shadow, and subtle borders.
+- **Scrollbar Polish**: Disabled Windows WebKit scrollbar arrow buttons (`▲` / `▼`) via CSS across all dropdowns and list views.
+- **Dismiss Handlers**: Replaced brittle blur events with robust pointerdown click-outside listeners and `Escape` key dismiss.
+
+### 🎧 Audio Track Language & Dub Label Enrichment
+- **Human-Readable Language Labels**: Audio streams in `metadata.formats` are now enriched using `cleanLanguageName(rawLang, note)` to provide clear language names (e.g. `English (Original)`, `Spanish (Dubbed)`, `German`, `Japanese`).
+- **Original Audio Tag**: Audio tracks detect and display prominent `ORIGINAL` tags, allowing users to distinguish between multiple same-bitrate audio dubs at a glance.
+- **Structured Option Cards**: Dropdown items now display color-coded quality/codec pills (`4K`, `FHD`, `HD`, `OPUS`, `MP4A`), primary titles, specs/channels subtitles, file sizes, and active checkmarks `✓`.
+- **Bi-Directional Track Sync**: Selecting an audio stream in the main Audio Track dropdown seamlessly updates the Language & Captions panel and vice-versa.
+
 ## [2.8.5] - 2026-09-08
 
 ### 🎵 Original Audio Track Default Selection & Enforcement
