@@ -239,11 +239,11 @@ function App() {
   };
 
   const handleAnalyze = async (rawUrl) => {
-    const cleanUrl = typeof rawUrl === 'string' ? rawUrl.trim() : '';
-    if (!cleanUrl) return showToast("Please paste a URL first.", "error");
+    const url = typeof rawUrl === 'string' ? rawUrl.trim() : '';
+    if (!url) return showToast("Please paste a URL first.", "error");
 
-    setInputUrl(cleanUrl);
-    syncRouteToUrl(downloadsOpen ? ROUTE_DOWNLOADS : ROUTE_HOME, cleanUrl, true);
+    setInputUrl(url);
+    syncRouteToUrl(downloadsOpen ? ROUTE_DOWNLOADS : ROUTE_HOME, url, true);
     
     // SPAM PREVENTION: Ignore subsequent clicks if we are already analyzing
     if (isAnalyzingRef.current) return;

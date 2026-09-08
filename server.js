@@ -937,7 +937,7 @@ app.get('/favfavicon.ico', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-    const appVersion = require('./package.json').version || '2.8.2';
+    const appVersion = require('./package.json').version || '2.8.3';
     res.json({
         status: 'ok',
         version: appVersion,
@@ -955,7 +955,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/version', (req, res) => {
-    const appVersion = require('./package.json').version || '2.8.2';
+    const appVersion = require('./package.json').version || '2.8.3';
     res.json({ version: appVersion, name: 'uni-extract' });
 });
 
@@ -1037,7 +1037,7 @@ function categorizeReleaseNotes(body) {
 }
 
 function createStaticReleaseAssets(version) {
-    const cleanVersion = String(version || '2.8.2').replace(/^v/i, '');
+    const cleanVersion = String(version || '2.8.3').replace(/^v/i, '');
     const tag = `v${cleanVersion}`;
     const base = `https://github.com/AryansDevStudios/UniExtract/releases/download/${tag}`;
     return [
@@ -1072,7 +1072,7 @@ app.get('/api/updates/active-jobs', (req, res) => {
 });
 
 app.get('/api/updates', async (req, res) => {
-    const currentVersion = require('./package.json').version || '2.8.2';
+    const currentVersion = require('./package.json').version || '2.8.3';
     const channel = req.query.channel === 'beta' ? 'beta' : 'stable';
     const force = req.query.force === 'true';
     const now = Date.now();

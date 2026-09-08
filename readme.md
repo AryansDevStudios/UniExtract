@@ -40,6 +40,11 @@ A modern, high-performance, multi-platform media extraction and transcoding engi
   - **PWA & Local Mode**: Binds securely to `127.0.0.1` and auto-hides external server selectors because backend runs locally.
   - **Electron App**: Packaged as standard Windows installer (NSIS) or self-contained Portable executable.
   - **Remote Web Mode (Netlify + Render)**: Includes a dedicated Server Selector modal allowing users to connect their frontend to custom or private backend endpoints.
+- 🧭 **SPA Clean Path Routing & Deep-Link Auto-Analysis**:
+  - Direct, bookmarkable SPA paths: `/downloads`, `/cookies`, `/settings`, `/server`, and `/update` with seamless browser history (`pushState` / `popState`).
+  - Automated deep-link query parameter parsing (`?url=...`, `?q=...`) with instant media fetching upon page load.
+  - Fault-tolerant URL sanitizer repairing common mistakes (e.g. `youtobe.com`, `watch?=` missing `v`, missing protocols, raw video IDs).
+  - Rate-limit resilient Download Center with deterministic fallback to 25 official multi-platform release mirrors.
 - 🛡️ **Bandwidth & Resource Saver**:
   - Active download cancellation: aborting a download instantly terminates backend yt-dlp/FFmpeg child processes and deletes intermediate files.
   - Automatic temporary disk cleanup with a 15-minute grace window for multi-chunk mobile downloads.
@@ -237,12 +242,52 @@ npm run dist:mac         # Builds macOS .dmg and .zip packages
 npm run dist:all         # Builds all targets
 ```
 The compiled executables will be generated in `dist-electron/`:
-- **x64 (Intel / AMD)**: `UniExtract-2.8.2-x64-Setup.exe` & `UniExtract-Portable-2.8.2-x64.exe`
-- **ARM64 (Snapdragon / Copilot+)**: `UniExtract-2.8.2-arm64-Setup.exe` & `UniExtract-Portable-2.8.2-arm64.exe`
-- **Linux**: `UniExtract-2.8.2-x86_64.AppImage` & `UniExtract-2.8.2-amd64.deb`
-- **macOS**: `UniExtract-2.8.2-x64.dmg` & `UniExtract-2.8.2-arm64.dmg`
+- **x64 (Intel / AMD)**: `UniExtract-2.8.3-x64-Setup.exe` & `UniExtract-Portable-2.8.3-x64.exe`
+- **ARM64 (Snapdragon / Copilot+)**: `UniExtract-2.8.3-arm64-Setup.exe` & `UniExtract-Portable-2.8.3-arm64.exe`
+- **Linux**: `UniExtract-2.8.3-x86_64.AppImage` & `UniExtract-2.8.3-amd64.deb`
+- **macOS**: `UniExtract-2.8.3-x64.dmg` & `UniExtract-2.8.3-arm64.dmg`
 
 In portable mode, placing a `cookies.txt` next to the executable keeps your authentication persistent across runs.
+
+---
+
+## 🧭 SPA Clean Path Routing & Deep-Linking
+
+UniExtract includes full Single Page Application (SPA) clean path routing and URL deep-linking with zero-reload browser history synchronization (`pushState` / `popstate`).
+
+### 📍 Clean Path Routes
+
+| Path | Destination | Description |
+|---|---|---|
+| `/` | **Home** | Main media URL analyzer, resolution selector, audio picker, and batch playlist engine. |
+| `/downloads` (or `/download`) | **Download Center** | Multi-platform native installers, portable binaries, and source archives with rate-limit resilient mirrors. |
+| `/cookies` (or `/cookie`) | **Cookie Manager** | Session cookie sanitizer, platform inspector, and authentication manager. |
+| `/settings` | **Preferences** | Audio/video quality priorities, clip timestamps, and theme preferences. |
+| `/server` | **Server Selector** | Remote backend switcher (Netlify / PWA to Render, VPS, or Docker backend). |
+| `/update` (or `/updates`) | **Update Center** | Version checker, release notes changelog viewer, and automatic desktop updater. |
+
+Direct deep links to any route (e.g. `https://your-domain.com/downloads`) are fully supported across local Express, Netlify (`_redirects`), Render, and static web hosts.
+
+### 🔗 Deep-Link Query Auto-Analysis
+
+You can link directly to media queries to prefill the search input and automatically trigger analysis upon page load:
+
+```text
+https://uniextract.app/?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ
+```
+
+Supported query parameters:
+- `?url=<media_url>`
+- `?q=<media_url>`
+- `?link=<media_url>`
+- `?video=<media_url>`
+
+#### 🩹 Built-In Typo Repair & URL Normalization
+UniExtract automatically repairs malformed or incomplete deep-link inputs before scanning:
+- **Common Domain Typos**: Automatically repairs `youtobe.com` or `yotube.com` -> `youtube.com`.
+- **Malformed Query Parameters**: Automatically repairs `watch?=` missing the `v` parameter -> `watch?v=`.
+- **Missing Protocols**: Prepends `https://` if `http://` or `https://` was omitted (e.g. `youtu.be/XYZ` -> `https://youtu.be/XYZ`).
+- **Raw Video IDs**: Direct 11-character YouTube video IDs (`dQw4w9WgXcQ`) automatically expand to `https://www.youtube.com/watch?v=dQw4w9WgXcQ`.
 
 ---
 
@@ -252,7 +297,7 @@ Uni Extract exposes a full set of JSON endpoints for media extraction, streaming
 
 ### 1. `GET /api/health`
 Health check and server uptime indicator.
-- **Response**: `{ "status": "ok", "version": "2.8.2", "uptime": 120, "timestamp": 1725619200000 }`
+- **Response**: `{ "status": "ok", "version": "2.8.3", "uptime": 120, "timestamp": 1725619200000 }`
 
 ---
 
@@ -382,8 +427,8 @@ Uni Extract includes a production-grade automated CI/CD suite powered by **GitHu
 ### 🚀 Publishing a Multi-Platform Release
 When you are ready to publish a new release:
 ```bash
-git tag v2.8.2
-git push origin v2.8.2
+git tag v2.8.3
+git push origin v2.8.3
 ```
 GitHub Actions will spin up Windows, Ubuntu, and macOS runners in parallel, package all native desktop binaries, compute SHA-256 checksums, and attach all installer files to the release automatically.
 

@@ -6,6 +6,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.3] - 2026-09-08
+
+### 🧭 SPA Clean Path Routing & History State Sync
+- **Dedicated Route Paths**: Added first-class clean path routing without page reloads across the web client, PWA, and desktop interfaces:
+  - `/` — Core media extractor, format ladder, and batch playlist engine.
+  - `/downloads` (and `/download`) — Download Center with cross-platform native installers, portable builds, and source archives.
+  - `/cookies` (and `/cookie`) — Cookie sanitizer and session token manager.
+  - `/settings` — User preferences, resolution priorities, and default configurations.
+  - `/server` — Cloud and custom backend endpoint connection selector.
+  - `/update` (and `/updates`) — Version status, release notes, and update wizard.
+- **Bi-Directional Route Synchronization**: Opening modals automatically updates the browser address bar path without page reloads, and browser Back/Forward navigation seamlessly opens or closes modals.
+- **Universal SPA Redirection**: Added Netlify and static hosting `_redirects` (`/* /index.html 200`) and Express wildcard route handlers to serve `index.html` on direct deep path requests.
+
+### 🔗 Deep-Link Query Auto-Analysis & Typo Repair
+- **Automated Query Scanning**: Passing `?url=...`, `?q=...`, `?link=...`, or `?video=...` in the URL automatically prefills the search bar and triggers media analysis upon website load.
+- **Smart Typo Repair**:
+  - Automatically fixes common typos (e.g. `youtobe.com` -> `youtube.com`, `yotube.com` -> `youtube.com`).
+  - Repairs broken query string syntax such as `watch?=` missing the `v` parameter (`watch?v=`).
+  - Automatically prepends `https://` if the protocol was omitted.
+  - Resolves raw 11-character YouTube video IDs directly into full watch URLs.
+
+### 🛡️ GitHub Releases API Rate-Limit Resilience
+- **Deterministic Static Manifest Fallback**: When GitHub API unauthenticated rate limits (HTTP 403 / 60 req/hr) are hit, `DownloadPage.jsx` instantly falls back to a deterministic 25-package release manifest.
+- **Uncapped Direct CDN Mirrors**: All download links route to `github.com/AryansDevStudios/UniExtract/releases/download/...`, which runs on GitHub CDN and is never subject to API rate limits.
+- **Persistent Asset Caching**: Successful releases API payloads are cached in `localStorage` for 1 hour to prevent redundant external queries.
+- **Backend Updates Fallback**: Updated `/api/updates` in `server.js` to return direct release asset mirrors instead of an empty package list when rate-limited.
+
 ## [2.8.2] - 2026-09-08
 
 ### ⚡ Smart Native FFmpeg Resolution & Real GPU Probing
