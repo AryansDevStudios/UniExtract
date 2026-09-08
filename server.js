@@ -1036,6 +1036,33 @@ function categorizeReleaseNotes(body) {
     return categories;
 }
 
+function createStaticReleaseAssets(version) {
+    const cleanVersion = String(version || '2.8.2').replace(/^v/i, '');
+    const tag = `v${cleanVersion}`;
+    const base = `https://github.com/AryansDevStudios/UniExtract/releases/download/${tag}`;
+    return [
+        { name: `UniExtract-${cleanVersion}-x64-Setup.exe`, size: 135214320, url: `${base}/UniExtract-${cleanVersion}-x64-Setup.exe`, type: 'windows-installer', arch: 'x64' },
+        { name: `UniExtract-Portable-${cleanVersion}-x64.exe`, size: 134919096, url: `${base}/UniExtract-Portable-${cleanVersion}-x64.exe`, type: 'windows-portable', arch: 'x64' },
+        { name: `UniExtract-${cleanVersion}-arm64-Setup.exe`, size: 129645880, url: `${base}/UniExtract-${cleanVersion}-arm64-Setup.exe`, type: 'windows-installer', arch: 'arm64' },
+        { name: `UniExtract-Portable-${cleanVersion}-arm64.exe`, size: 129351104, url: `${base}/UniExtract-Portable-${cleanVersion}-arm64.exe`, type: 'windows-portable', arch: 'arm64' },
+        { name: `UniExtract-${cleanVersion}-Setup.exe`, size: 264097800, url: `${base}/UniExtract-${cleanVersion}-Setup.exe`, type: 'windows-installer', arch: 'universal' },
+        { name: `UniExtract-Portable-${cleanVersion}.exe`, size: 263802752, url: `${base}/UniExtract-Portable-${cleanVersion}.exe`, type: 'windows-portable', arch: 'universal' },
+        { name: `UniExtract-${cleanVersion}-x86_64.AppImage`, size: 190446590, url: `${base}/UniExtract-${cleanVersion}-x86_64.AppImage`, type: 'linux-appimage', arch: 'x64' },
+        { name: `UniExtract-${cleanVersion}-amd64.deb`, size: 156414404, url: `${base}/UniExtract-${cleanVersion}-amd64.deb`, type: 'linux-deb', arch: 'x64' },
+        { name: `UniExtract-${cleanVersion}-arm64.AppImage`, size: 190672809, url: `${base}/UniExtract-${cleanVersion}-arm64.AppImage`, type: 'linux-appimage', arch: 'arm64' },
+        { name: `UniExtract-${cleanVersion}-x64.dmg`, size: 174608436, url: `${base}/UniExtract-${cleanVersion}-x64.dmg`, type: 'macos-dmg', arch: 'x64' },
+        { name: `UniExtract-${cleanVersion}-x64.zip`, size: 174271886, url: `${base}/UniExtract-${cleanVersion}-x64.zip`, type: 'archive-zip', arch: 'x64' },
+        { name: `UniExtract-${cleanVersion}-arm64.dmg`, size: 169581002, url: `${base}/UniExtract-${cleanVersion}-arm64.dmg`, type: 'macos-dmg', arch: 'arm64' },
+        { name: `UniExtract-${cleanVersion}-arm64.zip`, size: 169196522, url: `${base}/UniExtract-${cleanVersion}-arm64.zip`, type: 'archive-zip', arch: 'arm64' },
+        { name: `AryansDevStudios.cer`, size: 894, url: `${base}/AryansDevStudios.cer`, type: 'other', arch: 'universal' },
+        { name: `trust-publisher.bat`, size: 1286, url: `${base}/trust-publisher.bat`, type: 'other', arch: 'universal' },
+        { name: `latest.yml`, size: 673, url: `${base}/latest.yml`, type: 'other', arch: 'universal' },
+        { name: `latest-mac.yml`, size: 814, url: `${base}/latest-mac.yml`, type: 'other', arch: 'universal' },
+        { name: `latest-linux.yml`, size: 543, url: `${base}/latest-linux.yml`, type: 'other', arch: 'universal' },
+        { name: `latest-linux-arm64.yml`, size: 384, url: `${base}/latest-linux-arm64.yml`, type: 'other', arch: 'universal' }
+    ];
+}
+
 app.get('/api/updates/active-jobs', (req, res) => {
     res.json({
         activeJobsCount: getActiveJobsCount(),
@@ -1100,10 +1127,14 @@ app.get('/api/updates', async (req, res) => {
                 });
             }
 
-            return res.json({
+            // Fallback to static manifest for current version so users are never left with 0 packages
+            const fallbackAssets = createStaticReleaseAssets(currentVersion);
+            const fallbackData = {
                 channel,
                 currentVersion,
                 latestVersion: currentVersion,
+                latestTag: `v${currentVersion}`,
+                releaseUrl: `https://github.com/AryansDevStudios/UniExtract/releases/tag/v${currentVersion}`,
                 updateAvailable: false,
                 bumpType: 'none',
                 activeJobsCount: getActiveJobsCount(),
@@ -1111,9 +1142,16 @@ app.get('/api/updates', async (req, res) => {
                 integrity: integrityInfo,
                 isElectron: process.env.IS_ELECTRON === 'true',
                 isPortable: process.env.ELECTRON_PORTABLE === 'true',
-                assets: [],
-                message: 'No newer release published on GitHub or rate limit reached.'
-            });
+                assets: fallbackAssets,
+                isFallback: true,
+                message: 'GitHub API rate limit reached or offline. Direct download mirrors provided.'
+            };
+
+            // Cache fallback for 10 minutes to protect upstream rate limit
+            cachedReleaseData[channel] = fallbackData;
+            lastReleaseCheck[channel] = now - RELEASE_CACHE_TTL + (10 * 60 * 1000);
+
+            return res.json(fallbackData);
         }
 
         const data = await response.json();

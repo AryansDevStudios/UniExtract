@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../utils/api';
-import { ArrowLeft, Boxes, Check, ChevronRight, Cpu, Download, ExternalLink, GitBranch, HelpCircle, Laptop, Package, Server, ShieldCheck, Sparkles } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Boxes, Check, ChevronRight, Cpu, Download, ExternalLink, GitBranch, HelpCircle, Laptop, Package, Server, ShieldCheck, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
+
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.8.2';
 
 function formatBytes(bytes) {
   if (!bytes) return 'Size unavailable';
@@ -32,6 +34,49 @@ function getPackageKind(asset = {}) {
   if (value.includes('archive') || value.endsWith('.zip') || value.endsWith('.tar.gz')) return 'Archive';
   if (value.endsWith('.deb') || value.endsWith('.dmg') || value.endsWith('.exe')) return 'Installer';
   return 'Package';
+}
+
+function createStaticReleaseAssets(version = APP_VERSION) {
+  const cleanVersion = String(version || '2.8.2').replace(/^v/i, '');
+  const tag = `v${cleanVersion}`;
+  const base = `https://github.com/AryansDevStudios/UniExtract/releases/download/${tag}`;
+  return [
+    { name: `UniExtract-${cleanVersion}-x64-Setup.exe`, size: 135214320, url: `${base}/UniExtract-${cleanVersion}-x64-Setup.exe`, type: 'windows-installer', arch: 'x64' },
+    { name: `UniExtract-Portable-${cleanVersion}-x64.exe`, size: 134919096, url: `${base}/UniExtract-Portable-${cleanVersion}-x64.exe`, type: 'windows-portable', arch: 'x64' },
+    { name: `UniExtract-${cleanVersion}-arm64-Setup.exe`, size: 129645880, url: `${base}/UniExtract-${cleanVersion}-arm64-Setup.exe`, type: 'windows-installer', arch: 'arm64' },
+    { name: `UniExtract-Portable-${cleanVersion}-arm64.exe`, size: 129351104, url: `${base}/UniExtract-Portable-${cleanVersion}-arm64.exe`, type: 'windows-portable', arch: 'arm64' },
+    { name: `UniExtract-${cleanVersion}-Setup.exe`, size: 264097800, url: `${base}/UniExtract-${cleanVersion}-Setup.exe`, type: 'windows-installer', arch: 'universal' },
+    { name: `UniExtract-Portable-${cleanVersion}.exe`, size: 263802752, url: `${base}/UniExtract-Portable-${cleanVersion}.exe`, type: 'windows-portable', arch: 'universal' },
+    { name: `UniExtract-${cleanVersion}-x86_64.AppImage`, size: 190446590, url: `${base}/UniExtract-${cleanVersion}-x86_64.AppImage`, type: 'linux-appimage', arch: 'x64' },
+    { name: `UniExtract-${cleanVersion}-amd64.deb`, size: 156414404, url: `${base}/UniExtract-${cleanVersion}-amd64.deb`, type: 'linux-deb', arch: 'x64' },
+    { name: `UniExtract-${cleanVersion}-arm64.AppImage`, size: 190672809, url: `${base}/UniExtract-${cleanVersion}-arm64.AppImage`, type: 'linux-appimage', arch: 'arm64' },
+    { name: `UniExtract-${cleanVersion}-x64.dmg`, size: 174608436, url: `${base}/UniExtract-${cleanVersion}-x64.dmg`, type: 'macos-dmg', arch: 'x64' },
+    { name: `UniExtract-${cleanVersion}-x64.zip`, size: 174271886, url: `${base}/UniExtract-${cleanVersion}-x64.zip`, type: 'archive-zip', arch: 'x64' },
+    { name: `UniExtract-${cleanVersion}-arm64.dmg`, size: 169581002, url: `${base}/UniExtract-${cleanVersion}-arm64.dmg`, type: 'macos-dmg', arch: 'arm64' },
+    { name: `UniExtract-${cleanVersion}-arm64.zip`, size: 169196522, url: `${base}/UniExtract-${cleanVersion}-arm64.zip`, type: 'archive-zip', arch: 'arm64' },
+    { name: `AryansDevStudios.cer`, size: 894, url: `${base}/AryansDevStudios.cer`, type: 'other', arch: 'universal' },
+    { name: `trust-publisher.bat`, size: 1286, url: `${base}/trust-publisher.bat`, type: 'other', arch: 'universal' },
+    { name: `latest.yml`, size: 673, url: `${base}/latest.yml`, type: 'other', arch: 'universal' },
+    { name: `latest-mac.yml`, size: 814, url: `${base}/latest-mac.yml`, type: 'other', arch: 'universal' },
+    { name: `latest-linux.yml`, size: 543, url: `${base}/latest-linux.yml`, type: 'other', arch: 'universal' },
+    { name: `latest-linux-arm64.yml`, size: 384, url: `${base}/latest-linux-arm64.yml`, type: 'other', arch: 'universal' }
+  ];
+}
+
+function getCachedRelease(channel) {
+  try {
+    const raw = localStorage.getItem(`umx_download_cache_${channel}`);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function setCachedRelease(channel, data) {
+  try {
+    localStorage.setItem(`umx_download_cache_${channel}`, JSON.stringify(data));
+  } catch (e) {}
 }
 
 function normalizeAssets(rawAssets = []) {
@@ -77,15 +122,29 @@ const ARCHITECTURES = ['All', 'x64', 'ARM64', 'Universal'];
 const PACKAGE_KINDS = ['All', 'Installer', 'Portable', 'Archive', 'Release metadata'];
 
 export default function DownloadPage({ updateInfo, onBack }) {
+  const initialRelease = useMemo(() => {
+    if (updateInfo?.assets?.length > 0) return updateInfo;
+    const cached = getCachedRelease('stable');
+    if (cached?.assets?.length > 0) return cached;
+    return {
+      channel: 'stable',
+      latestVersion: APP_VERSION,
+      latestTag: `v${APP_VERSION}`,
+      releaseUrl: `https://github.com/AryansDevStudios/UniExtract/releases/tag/v${APP_VERSION}`,
+      assets: normalizeAssets(createStaticReleaseAssets(APP_VERSION)),
+      isFallback: true
+    };
+  }, [updateInfo]);
+
   const [channel, setChannel] = useState(updateInfo?.channel || 'stable');
-  const [release, setRelease] = useState(updateInfo || null);
+  const [release, setRelease] = useState(initialRelease);
   const [platform, setPlatform] = useState('All');
   const [architecture, setArchitecture] = useState('All');
   const [packageKind, setPackageKind] = useState('All');
   const [isLoadingRelease, setIsLoadingRelease] = useState(false);
   const [fetchError, setFetchError] = useState(null);
 
-  const fetchReleaseData = async (targetChannel) => {
+  const fetchReleaseData = async (targetChannel, force = false) => {
     setIsLoadingRelease(true);
     setFetchError(null);
 
@@ -93,7 +152,7 @@ export default function DownloadPage({ updateInfo, onBack }) {
 
     // 1. Try local or proxied backend /api/updates first
     try {
-      const response = await apiFetch(`/api/updates?channel=${targetChannel}&force=true`);
+      const response = await apiFetch(`/api/updates?channel=${targetChannel}${force ? '&force=true' : ''}`);
       if (response.ok) {
         const data = await response.json();
         if (data && Array.isArray(data.assets) && data.assets.length > 0) {
@@ -101,6 +160,7 @@ export default function DownloadPage({ updateInfo, onBack }) {
             ...data,
             assets: normalizeAssets(data.assets)
           };
+          setCachedRelease(targetChannel, resolvedData);
         }
       }
     } catch (e) {
@@ -131,12 +191,34 @@ export default function DownloadPage({ updateInfo, onBack }) {
             releaseUrl: rel.html_url || 'https://github.com/AryansDevStudios/UniExtract/releases',
             assets: normalizeAssets(rel.assets || [])
           };
+          setCachedRelease(targetChannel, resolvedData);
         } else {
-          setFetchError(`GitHub API returned status ${ghRes.status}`);
+          const is403 = ghRes.status === 403;
+          const msg = is403
+            ? `GitHub API rate limit exceeded for your IP (status 403). Direct download mirrors for v${APP_VERSION} are active below.`
+            : `GitHub API returned status ${ghRes.status}. Showing direct download mirrors for v${APP_VERSION}.`;
+          setFetchError(msg);
         }
       } catch (err) {
         console.error('[DownloadPage] Direct GitHub API fetch error:', err);
-        setFetchError(err.message || 'Network error fetching releases');
+        setFetchError(`Network error reaching GitHub API. Showing direct download mirrors for v${APP_VERSION}.`);
+      }
+    }
+
+    // 3. Fallback: If both backend and direct GitHub API failed to return assets, use deterministic static manifest
+    if (!resolvedData) {
+      const cached = getCachedRelease(targetChannel);
+      if (cached?.assets?.length > 0) {
+        resolvedData = cached;
+      } else {
+        resolvedData = {
+          channel: targetChannel,
+          latestVersion: APP_VERSION,
+          latestTag: `v${APP_VERSION}`,
+          releaseUrl: `https://github.com/AryansDevStudios/UniExtract/releases/tag/v${APP_VERSION}`,
+          assets: normalizeAssets(createStaticReleaseAssets(APP_VERSION)),
+          isFallback: true
+        };
       }
     }
 
@@ -148,15 +230,15 @@ export default function DownloadPage({ updateInfo, onBack }) {
 
   // Automatically fetch on mount if no assets are loaded yet, or when channel updates
   useEffect(() => {
-    if (!release || !Array.isArray(release.assets) || release.assets.length === 0) {
-      fetchReleaseData(channel);
+    if (!release || !Array.isArray(release.assets) || release.assets.length === 0 || release.isFallback) {
+      fetchReleaseData(channel, false);
     }
   }, [channel]);
 
   const selectChannel = (nextChannel) => {
-    if (nextChannel === channel && release?.assets?.length > 0) return;
+    if (nextChannel === channel && release?.assets?.length > 0 && !release.isFallback) return;
     setChannel(nextChannel);
-    fetchReleaseData(nextChannel);
+    fetchReleaseData(nextChannel, false);
   };
 
   const resetFilters = () => {
@@ -166,8 +248,8 @@ export default function DownloadPage({ updateInfo, onBack }) {
   };
 
   const assets = release?.assets || [];
-  const latestVersion = release?.latestVersion || release?.currentVersion || 'latest';
-  const releaseUrl = release?.releaseUrl || 'https://github.com/AryansDevStudios/UniExtract/releases';
+  const latestVersion = release?.latestVersion || release?.currentVersion || APP_VERSION;
+  const releaseUrl = release?.releaseUrl || `https://github.com/AryansDevStudios/UniExtract/releases/tag/v${latestVersion}`;
   const filteredAssets = useMemo(() => assets.filter(asset => (
     (platform === 'All' || getPlatform(asset.name) === platform) &&
     (architecture === 'All' || getArchitecture(asset) === architecture) &&
@@ -198,6 +280,22 @@ export default function DownloadPage({ updateInfo, onBack }) {
           {CHANNELS.map(item => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => selectChannel(item.id)} className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${channel === item.id ? 'border-teal-600 bg-teal-50 text-teal-800 dark:border-cyan-400 dark:bg-cyan-500/10 dark:text-cyan-200' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-cyan-400'}`}><Icon size={18} className="shrink-0" /><span className="min-w-0"><strong className="block text-sm">{item.label}</strong><span className="block text-xs opacity-70">{item.description}</span></span>{channel === item.id && <Check size={16} className="ml-auto shrink-0" />}</button>; })}
         </div>
       </div>
+
+      {fetchError && (
+        <div className="mt-4 mx-4 sm:mx-0 flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-200">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertCircle size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
+            <span className="truncate">{fetchError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => fetchReleaseData(channel, true)}
+            className="shrink-0 font-bold text-amber-700 underline hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="mt-5 border-y border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/40 sm:rounded-xl sm:border sm:px-4">
         <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400"><Laptop size={14} /> 2. Choose platform</div>
