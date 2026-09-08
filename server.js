@@ -1076,14 +1076,30 @@ app.get('/api/updates', async (req, res) => {
             ? 'https://api.github.com/repos/AryansDevStudios/UniExtract/releases?per_page=10'
             : 'https://api.github.com/repos/AryansDevStudios/UniExtract/releases/latest';
 
-        const response = await fetch(ghUrl, {
-            headers: {
-                'User-Agent': `UniExtract-UpdateChecker/${currentVersion} (${channel})`,
-                'Accept': 'application/vnd.github.v3+json'
-            }
-        });
+        const reqHeaders = {
+            'User-Agent': `UniExtract-UpdateChecker/${currentVersion} (${channel})`,
+            'Accept': 'application/vnd.github.v3+json'
+        };
+        if (process.env.GITHUB_TOKEN) {
+            reqHeaders['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
+        }
+
+        const response = await fetch(ghUrl, { headers: reqHeaders });
 
         if (!response.ok) {
+            if (cachedReleaseData[channel]) {
+                return res.json({
+                    ...cachedReleaseData[channel],
+                    channel,
+                    currentVersion,
+                    activeJobsCount: getActiveJobsCount(),
+                    updatePendingWhenIdle,
+                    integrity: integrityInfo,
+                    isElectron: process.env.IS_ELECTRON === 'true',
+                    isPortable: process.env.ELECTRON_PORTABLE === 'true'
+                });
+            }
+
             return res.json({
                 channel,
                 currentVersion,
@@ -1095,6 +1111,7 @@ app.get('/api/updates', async (req, res) => {
                 integrity: integrityInfo,
                 isElectron: process.env.IS_ELECTRON === 'true',
                 isPortable: process.env.ELECTRON_PORTABLE === 'true',
+                assets: [],
                 message: 'No newer release published on GitHub or rate limit reached.'
             });
         }
@@ -1155,6 +1172,18 @@ app.get('/api/updates', async (req, res) => {
             isPortable: process.env.ELECTRON_PORTABLE === 'true'
         });
     } catch (err) {
+        if (cachedReleaseData[channel]) {
+            return res.json({
+                ...cachedReleaseData[channel],
+                channel,
+                currentVersion,
+                activeJobsCount: getActiveJobsCount(),
+                updatePendingWhenIdle,
+                integrity: integrityInfo,
+                isElectron: process.env.IS_ELECTRON === 'true',
+                isPortable: process.env.ELECTRON_PORTABLE === 'true'
+            });
+        }
         res.json({
             channel,
             currentVersion,
@@ -1166,6 +1195,7 @@ app.get('/api/updates', async (req, res) => {
             integrity: integrityInfo,
             isElectron: process.env.IS_ELECTRON === 'true',
             isPortable: process.env.ELECTRON_PORTABLE === 'true',
+            assets: [],
             error: err.message
         });
     }
