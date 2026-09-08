@@ -11,9 +11,22 @@ import SettingsModal from './components/SettingsModal';
 import DownloadPage from './components/DownloadPage';
 import { apiUrl, apiFetch, getCustomServerUrl, shouldShowServerSelector } from './utils/api';
 import { isOnlineFrontend } from './utils/environment';
+import { 
+  matchRoute, 
+  getAutoAnalyzeUrl, 
+  syncRouteToUrl, 
+  ROUTE_HOME, 
+  ROUTE_DOWNLOADS, 
+  ROUTE_COOKIES, 
+  ROUTE_SETTINGS, 
+  ROUTE_SERVERS, 
+  ROUTE_UPDATES 
+} from './utils/routes';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function App() {
+  const initialRoute = typeof window !== 'undefined' ? matchRoute(window.location.pathname) : 'home';
+
   const [isDark, setIsDark] = useState(() => {
     return localStorage.theme === 'dark' || (!localStorage.theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
   });
@@ -41,15 +54,33 @@ function App() {
   const pollIntervalRef = useRef(null);
 
   const [toasts, setToasts] = useState([]);
-  const [cookieModalOpen, setCookieModalOpen] = useState(false);
+  const [cookieModalOpen, setCookieModalOpen] = useState(initialRoute === 'cookies');
   const [cookieStatus, setCookieStatus] = useState(null);
-  const [serverModalOpen, setServerModalOpen] = useState(false);
+  const [serverModalOpen, setServerModalOpen] = useState(initialRoute === 'servers');
   const [customServerUrl, setCustomServerUrlState] = useState(() => getCustomServerUrl());
-  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [updateModalOpen, setUpdateModalOpen] = useState(initialRoute === 'updates');
   const [updateInfo, setUpdateInfo] = useState(null);
-  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(initialRoute === 'settings');
+  const [downloadsOpen, setDownloadsOpen] = useState(initialRoute === 'downloads');
+  const [inputUrl, setInputUrl] = useState('');
   const showDownloadButton = isOnlineFrontend();
+
+  const openRoute = (route) => {
+    setDownloadsOpen(route === 'downloads');
+    setCookieModalOpen(route === 'cookies');
+    setSettingsModalOpen(route === 'settings');
+    setServerModalOpen(route === 'servers');
+    setUpdateModalOpen(route === 'updates');
+
+    let targetPath = ROUTE_HOME;
+    if (route === 'downloads') targetPath = ROUTE_DOWNLOADS;
+    else if (route === 'cookies') targetPath = ROUTE_COOKIES;
+    else if (route === 'settings') targetPath = ROUTE_SETTINGS;
+    else if (route === 'servers') targetPath = ROUTE_SERVERS;
+    else if (route === 'updates') targetPath = ROUTE_UPDATES;
+
+    syncRouteToUrl(targetPath, inputUrl);
+  };
 
   const fetchCookieStatus = async () => {
     try {
@@ -75,6 +106,36 @@ function App() {
       console.error('Failed to load update info:', e);
     }
   };
+
+  // Browser back / forward button navigation synchronization
+  useEffect(() => {
+    const handlePopState = () => {
+      const route = matchRoute(window.location.pathname);
+      setDownloadsOpen(route === 'downloads');
+      setCookieModalOpen(route === 'cookies');
+      setSettingsModalOpen(route === 'settings');
+      setServerModalOpen(route === 'servers');
+      setUpdateModalOpen(route === 'updates');
+
+      const autoUrl = getAutoAnalyzeUrl();
+      if (autoUrl && autoUrl !== inputUrl) {
+        setInputUrl(autoUrl);
+        handleAnalyze(autoUrl);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [inputUrl]);
+
+  // Deep-linking: Automatically analyze URL from query params (?url=...) on website load
+  useEffect(() => {
+    const autoUrl = getAutoAnalyzeUrl();
+    if (autoUrl) {
+      setInputUrl(autoUrl);
+      handleAnalyze(autoUrl);
+    }
+  }, []);
 
   useEffect(() => {
     fetchCookieStatus();
@@ -177,8 +238,12 @@ function App() {
     setSubLang((data.subtitles && data.subtitles[0]?.lang) || 'en');
   };
 
-  const handleAnalyze = async (url) => {
-    if (!url) return showToast("Please paste a URL first.", "error");
+  const handleAnalyze = async (rawUrl) => {
+    const cleanUrl = typeof rawUrl === 'string' ? rawUrl.trim() : '';
+    if (!cleanUrl) return showToast("Please paste a URL first.", "error");
+
+    setInputUrl(cleanUrl);
+    syncRouteToUrl(downloadsOpen ? ROUTE_DOWNLOADS : ROUTE_HOME, cleanUrl, true);
     
     // SPAM PREVENTION: Ignore subsequent clicks if we are already analyzing
     if (isAnalyzingRef.current) return;
@@ -390,20 +455,20 @@ function App() {
         isDark={isDark} 
         toggleTheme={() => setIsDark(!isDark)} 
         cookieStatus={cookieStatus}
-        onOpenCookies={() => setCookieModalOpen(true)}
-        onOpenServer={() => setServerModalOpen(true)}
+        onOpenCookies={() => openRoute('cookies')}
+        onOpenServer={() => openRoute('servers')}
         customServerUrl={customServerUrl}
         showServerSelector={shouldShowServerSelector()}
         updateInfo={updateInfo}
-        onOpenUpdate={() => setUpdateModalOpen(true)}
-        onOpenDownloads={() => setDownloadsOpen(true)}
-        showDownloadButton={showDownloadButton}
-        onOpenSettings={() => setSettingsModalOpen(true)}
+        onOpenUpdate={() => openRoute('updates')}
+        onOpenDownloads={() => openRoute('downloads')}
+        showDownloadButton={showDownloadButton || downloadsOpen}
+        onOpenSettings={() => openRoute('settings')}
       />
 
-      {downloadsOpen && showDownloadButton ? (
+      {downloadsOpen ? (
         <main className="flex-1 w-full">
-          <DownloadPage updateInfo={updateInfo} onBack={() => setDownloadsOpen(false)} />
+          <DownloadPage updateInfo={updateInfo} onBack={() => openRoute('home')} />
         </main>
       ) : (
       <main className="flex-1 w-full max-w-6xl mx-auto px-3 sm:px-6 md:px-8 flex flex-col items-center justify-center -mt-4 sm:-mt-10 py-8 sm:py-20">
@@ -413,7 +478,7 @@ function App() {
           animate={{ opacity: 1, y: 0 }}
           className="w-full space-y-3"
         >
-          <SearchBox onAnalyze={handleAnalyze} isLoading={isAnalyzing} />
+          <SearchBox onAnalyze={handleAnalyze} isLoading={isAnalyzing} initialUrl={inputUrl} />
         </motion.div>
 
         <AnimatePresence mode="wait">
@@ -476,7 +541,7 @@ function App() {
 
       <AuthModal 
         isOpen={cookieModalOpen}
-        onClose={() => setCookieModalOpen(false)}
+        onClose={() => openRoute('home')}
         cookieStatus={cookieStatus}
         onCookieUpdated={fetchCookieStatus}
         onToast={showToast}
@@ -484,13 +549,13 @@ function App() {
 
       <ServerModal 
         isOpen={serverModalOpen}
-        onClose={() => setServerModalOpen(false)}
+        onClose={() => openRoute('home')}
         onToast={showToast}
       />
 
       <UpdateModal 
         isOpen={updateModalOpen}
-        onClose={() => setUpdateModalOpen(false)}
+        onClose={() => openRoute('home')}
         updateInfo={updateInfo}
         onRefreshUpdate={() => fetchUpdateInfo(true)}
         activeJobsCount={downloadJob ? 1 : (updateInfo?.activeJobsCount || 0)}
@@ -498,14 +563,14 @@ function App() {
 
       <SettingsModal 
         isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
+        onClose={() => openRoute('home')}
         isDark={isDark}
         toggleTheme={() => setIsDark(!isDark)}
         history={history}
         onClearHistory={() => setHistory([])}
-        onOpenCookies={() => setCookieModalOpen(true)}
-        onOpenServer={() => setServerModalOpen(true)}
-        onOpenUpdate={() => setUpdateModalOpen(true)}
+        onOpenCookies={() => openRoute('cookies')}
+        onOpenServer={() => openRoute('servers')}
+        onOpenUpdate={() => openRoute('updates')}
         updateInfo={updateInfo}
         onToast={showToast}
       />

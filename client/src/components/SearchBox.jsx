@@ -1,9 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowRight, Link as LinkIcon, Loader2, Clipboard, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export default function SearchBox({ onAnalyze, isLoading }) {
-  const [url, setUrl] = useState('');
+export default function SearchBox({ onAnalyze, isLoading, initialUrl = '' }) {
+  const [url, setUrl] = useState(initialUrl || '');
+
+  useEffect(() => {
+    if (initialUrl && initialUrl !== url) {
+      setUrl(initialUrl);
+    }
+  }, [initialUrl]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
